@@ -10,7 +10,6 @@
   <ItemGroup>
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.19" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.19" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.19" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.19">
       <PrivateAssets>all</PrivateAssets>
@@ -19,7 +18,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.19" />
     <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="9.0.19" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,12 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Common\Extensions\" />
-    <Folder Include="Common\Middleware\" />
     <Folder Include="Common\Results\" />
     <Folder Include="Common\Security\" />
-    <Folder Include="Modules\Auth\Requests\" />
-    <Folder Include="Modules\Auth\Services\" />
     <Folder Include="Modules\Events\Requests\" />
     <Folder Include="Modules\Events\Services\" />
   </ItemGroup>

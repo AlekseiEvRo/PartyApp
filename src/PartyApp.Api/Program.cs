@@ -1,4 +1,15 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+using Microsoft.OpenApi.Models;
+
+using PartyApp.Api.Common.Middleware;
+using PartyApp.Api.Modules.Auth;
+using PartyApp.Api.Modules.Auth.Services;
+using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
 using Serilog;
 
@@ -24,9 +35,83 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // SignalR
 builder.Services.AddSignalR();
 
+// JWT Authentication
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = "Bearer";
+    options.DefaultChallengeScheme = "Bearer";
+})
+.AddJwtBearer("Bearer", options =>
+{
+    // Не мапим стандартные JWT-claims в ClaimTypes, используем короткие имена
+    options.MapInboundClaims = false;
+
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+
+        ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "party-app",
+        ValidAudience = builder.Configuration["Jwt:Audience"] ?? "party-app-clients",
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(
+                builder.Configuration["Jwt:SigningKey"] ?? "SuperSecretKeyForDevelopmentOnly12345!"
+            )
+        ),
+
+        NameClaimType = "name",
+        RoleClaimType = "role"
+    };
+});
+
+// Authorization + политика для админов
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+});
+
+// Auth services
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+
 // Swagger / OpenAPI
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "PartyApp API",
+        Version = "v1"
+    });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Введите JWT токен"
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 // CORS для будущего фронтенда
 builder.Services.AddCors(options =>
@@ -41,43 +126,24 @@ builder.Services.AddCors(options =>
     });
 });
 
-// JWT Authentication
-builder.Services.AddAuthentication(options =>
-    {
-        options.DefaultAuthenticateScheme = "Bearer";
-        options.DefaultChallengeScheme = "Bearer";
-    })
-    .AddJwtBearer("Bearer", options =>
-    {
-        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "party-app",
-            ValidAudience = builder.Configuration["Jwt:Audience"] ?? "party-app-clients",
-            IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
-                System.Text.Encoding.UTF8.GetBytes(
-                    builder.Configuration["Jwt:SigningKey"] ?? "SuperSecretKeyForDevelopmentOnly12345!"
-                )
-            )
-        };
-    });
-
-// Authorization
-builder.Services.AddAuthorization();
-
 var app = builder.Build();
+
+// Обработка исключений
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Swagger в development
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    app.MapGet("/", () => Results.Redirect("/swagger"));
 }
 
+app.UseCors("Web");
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Применяем миграции при старте
 using (var scope = app.Services.CreateScope())
 {
     Directory.CreateDirectory("App_Data");
@@ -86,14 +152,16 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-app.UseCors("Web");
+// Редирект с корня на Swagger
+app.MapGet("/", () => Results.Redirect("/swagger"));
 
-app.UseAuthentication();
-app.UseAuthorization();
+// Health
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+// Модули
+app.MapAuthEndpoints();
 
 // Позже:
 // app.MapHub<PartyHub>("/hubs/party");
-
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.Run();
