@@ -1,14 +1,16 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi;
 using Microsoft.OpenApi.Models;
 
 using PartyApp.Api.Common.Middleware;
+using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Auth;
 using PartyApp.Api.Modules.Auth.Services;
+using PartyApp.Api.Modules.Notifications;
 using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
 using Serilog;
@@ -64,6 +66,22 @@ builder.Services.AddAuthentication(options =>
         NameClaimType = "name",
         RoleClaimType = "role"
     };
+    
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+
+            return Task.CompletedTask;
+        }
+    };
 });
 
 // Authorization + политика для админов
@@ -76,6 +94,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
 
 // Swagger / OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -140,6 +159,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("Web");
 
+// Статические файлы (для тестовой страницы SignalR)
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -161,7 +184,11 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 // Модули
 app.MapAuthEndpoints();
 
-// Позже:
-// app.MapHub<PartyHub>("/hubs/party");
+// Модули
+app.MapAuthEndpoints();
+app.MapNotificationsEndpoints();
+
+// SignalR
+app.MapHub<PartyHub>("/hubs/party");
 
 app.Run();

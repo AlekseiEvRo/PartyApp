@@ -1,0 +1,103 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <title>PartyApp SignalR Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        input[type="text"] { width: 400px; padding: 6px; }
+        button { padding: 6px 12px; margin-left: 8px; }
+        #log { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: auto; list-style: none; }
+        #log li { margin: 4px 0; }
+    </style>
+</head>
+<body>
+<h1>PartyApp SignalR Test</h1>
+
+<div>
+    <label>JWT Token:</label><br />
+    <input type="text" id="tokenInput" placeholder="Вставь accessToken сюда" />
+    <button id="connectBtn">Подключиться</button>
+    <button id="disconnectBtn" disabled>Отключиться</button>
+</div>
+
+<hr />
+
+<div>
+    <label>Сообщение:</label>
+    <input type="text" id="messageInput" placeholder="Привет всем!" />
+    <button id="sendBtn" disabled>Отправить всем</button>
+</div>
+
+<h3>Лог:</h3>
+<ul id="log"></ul>
+
+<script>
+    let connection = null;
+
+    function log(msg) {
+        const li = document.createElement('li');
+        li.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        document.getElementById('log').appendChild(li);
+    }
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+        const token = document.getElementById('tokenInput').value.trim();
+        if (!token) { alert('Введи JWT токен'); return; }
+
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl('/hubs/party', {
+                accessTokenFactory: () => token
+            })
+            .withAutomaticReconnect()
+            .build();
+
+        // Обработчики входящих событий
+        connection.on('ReceiveMessage', (user, message) => {
+            log(`💬 ${user}: ${message}`);
+        });
+
+        connection.on('ReceiveBroadcast', (message) => {
+            log(`📢 Broadcast: ${message}`);
+        });
+
+        connection.onreconnecting(() => log('⚠️ Переподключение...'));
+        connection.onreconnected(() => log('✅ Переподключено'));
+        connection.onclose(() => log('❌ Соединение закрыто'));
+
+        try {
+            await connection.start();
+            log('✅ Подключено к /hubs/party');
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = false;
+            document.getElementById('connectBtn').disabled = true;
+        } catch (err) {
+            log('❌ Ошибка подключения: ' + err);
+        }
+    });
+
+    document.getElementById('disconnectBtn').addEventListener('click', async () => {
+        if (connection) {
+            await connection.stop();
+            log('Отключено вручную');
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('disconnectBtn').disabled = true;
+            document.getElementById('connectBtn').disabled = false;
+        }
+    });
+
+    document.getElementById('sendBtn').addEventListener('click', async () => {
+        const message = document.getElementById('messageInput').value;
+        if (connection && message) {
+            try {
+                await connection.invoke('SendMessage', message);
+                document.getElementById('messageInput').value = '';
+            } catch (err) {
+                log('Ошибка отправки: ' + err);
+            }
+        }
+    });
+</script>
+</body>
+</html>
