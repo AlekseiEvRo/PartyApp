@@ -78,6 +78,14 @@ if (app.Environment.IsDevelopment())
     app.MapGet("/", () => Results.Redirect("/swagger"));
 }
 
+using (var scope = app.Services.CreateScope())
+{
+    Directory.CreateDirectory("App_Data");
+
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 app.UseCors("Web");
 
 app.UseAuthentication();
