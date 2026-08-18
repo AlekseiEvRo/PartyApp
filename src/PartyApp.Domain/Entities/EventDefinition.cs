@@ -1,19 +1,16 @@
 ﻿using PartyApp.Domain.Common;
+using PartyApp.Domain.Enums;
 
 namespace PartyApp.Domain.Entities;
 
 public class EventDefinition: BaseEntity
 {
-    /// <summary>Ключ для фабрики обработчиков: "quiz", "word_rush", "photo_challenge"...</summary>
     public string Type { get; set; } = string.Empty;
-
     public string DisplayName { get; set; } = string.Empty;
     public string? Description { get; set; }
-    
-    /// <summary>
-    /// Гибкий конфиг ивента (вопросы, лимиты времени, баллы и т.д.)
-    /// </summary>
     public string ConfigJson { get; set; } = "{}";
+
+    public AvailabilityMode Availability { get; set; } = AvailabilityMode.Manual;
 
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
