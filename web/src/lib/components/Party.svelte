@@ -1,4 +1,5 @@
 <script lang="ts">
+    import InstallPrompt from './InstallPrompt.svelte';
     import { onMount, onDestroy } from 'svelte';
     import { api } from '../api';
     import { connect, disconnect, reconnectIfNeeded } from '../signalr';
@@ -51,6 +52,7 @@
 
 <div class="party">
     <Header />
+    <InstallPrompt />
     <main>
         <h2>🎮 Активные ивенты</h2>
 
