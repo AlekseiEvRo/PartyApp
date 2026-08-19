@@ -96,8 +96,47 @@
             btn.textContent = '🥂 Сказать тост';
             btn.onclick = () => submitToEvent(sessionId, { playerName: 'Игрок' });
             actionsContainer.appendChild(btn);
-        } else {
-            actionsContainer.innerHTML = '<p>Ивент доступен. Действие появится позже.</p>';
+        }
+        else if (ev.type === 'promo_code') {
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'flex';
+            wrapper.style.gap = '8px';
+            wrapper.style.alignItems = 'center';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = 'Введи промокод';
+            input.style.flex = '1';
+            input.style.padding = '10px';
+            input.style.borderRadius = '6px';
+            input.style.border = '1px solid #444';
+            input.style.background = '#1a1a2e';
+            input.style.color = '#eee';
+            input.style.fontSize = '16px';
+
+            const btn = document.createElement('button');
+            btn.textContent = '🎁 Активировать';
+            btn.style.background = '#27ae60';
+            btn.style.color = '#fff';
+            btn.style.padding = '10px 20px';
+            btn.style.fontSize = '16px';
+
+            btn.onclick = () => {
+                const code = input.value.trim();
+                if (!code) {
+                    log('⚠️ Введи промокод');
+                    return;
+                }
+                submitToEvent(sessionId, { code: code });
+                input.value = '';
+            };
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(btn);
+            actionsContainer.appendChild(wrapper);
+        }
+        else {
+            actionsContainer.innerHTML = '<p style="color:#666;">Ивент доступен. Действие появится позже.</p>';
         }
     }
 

@@ -192,6 +192,22 @@ using (var scope = app.Services.CreateScope())
         });
         db.SaveChanges();
     }
+    
+    // Seed: создаём определение промокодов, если его нет
+    if (!db.EventDefinitions.Any(d => d.Type == "promo_code"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "promo_code",
+            DisplayName = "Промокоды",
+            Description = "Именинник называет код вслух — введи его здесь и получи баллы!",
+            ConfigJson = "{\"codes\":[\"СДР2025\",\"ВЕЧЕРИНКА\",\"АЛЕКСЕЙ\"],\"pointsPerCode\":15,\"oneTimePerPlayer\":true}",
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+        db.SaveChanges();
+    }
 }
 
 // Обработка исключений
