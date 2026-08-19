@@ -178,7 +178,24 @@ public class EventService : IEventService
         db.PlayerSubmissions.Add(submission);
         await db.SaveChangesAsync(ct);
 
+        if (result.Success && result.PointsAwarded > 0)
+        {
+            var newBalance = await GetPlayerBalanceAsync(playerId, ct);
+            await _hubContext.Clients.User(playerId.ToString()).SendAsync("BalanceUpdated", new
+            {
+                balance = newBalance
+            }, ct);
+        }
+
         return new SubmissionOutcome(result.Success, result.PointsAwarded, result.Message, result.Data);
+    }
+    
+    private async Task<int> GetPlayerBalanceAsync(Guid playerId, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var wallet = await db.Wallets.AsNoTracking().SingleOrDefaultAsync(w => w.UserId == playerId, ct);
+        return wallet?.Balance ?? 0;
     }
     public async Task<object?> GetEventDataAsync(Guid sessionId, CancellationToken ct = default)
     {

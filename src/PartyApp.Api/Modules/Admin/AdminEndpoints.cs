@@ -1,5 +1,9 @@
 ﻿using System.Security.Claims;
+
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+
+using PartyApp.Api.Hubs;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Persistence;
@@ -57,6 +61,7 @@ public static class AdminEndpoints
             GrantPointsRequest request,
             ClaimsPrincipal admin,
             AppDbContext db,
+            IHubContext<PartyHub> hubContext,
             CancellationToken ct) =>
         {
             var playerId = request.PlayerId;
@@ -71,15 +76,13 @@ public static class AdminEndpoints
                 return Results.NotFound(new { error = "Кошелёк игрока не найден" });
 
             if (amount < 0 && wallet.Balance + amount < 0)
-                return Results.BadRequest(new { error = "Недостаточно баллов для списания" });
+                return Results.BadRequest(new { error = "Недостаточно баллов для списания у игрока" });
 
             wallet.Balance += amount;
 
             var transactionType = amount > 0
                 ? WalletTransactionType.AdminGrant
                 : WalletTransactionType.AdminDeduct;
-
-            var adminId = Guid.Parse(admin.FindFirst("sub")!.Value);
 
             var transaction = new WalletTransaction
             {
@@ -91,6 +94,11 @@ public static class AdminEndpoints
 
             db.WalletTransactions.Add(transaction);
             await db.SaveChangesAsync(ct);
+            
+            await hubContext.Clients.User(playerId.ToString()).SendAsync("BalanceUpdated", new
+            {
+                balance = wallet.Balance
+            }, ct);
 
             return Results.Ok(new
             {

@@ -1,5 +1,5 @@
 import * as signalR from '@microsoft/signalr';
-import { activeEvents, connectionState, showToast } from './stores';
+import { activeEvents, connectionState, showToast, balance } from './stores';
 import { getToken } from './api';
 
 let connection: signalR.HubConnection | null = null;
@@ -11,7 +11,6 @@ export function getConnection() {
 export async function connect(): Promise<void> {
     connectionState.set('connecting');
 
-    // Относительный путь — Vite проксирует на API
     connection = new signalR.HubConnectionBuilder()
         .withUrl(`/hubs/party`, {
             accessTokenFactory: () => getToken() || ''
@@ -30,6 +29,10 @@ export async function connect(): Promise<void> {
     connection.on('EventFinished', (data) => {
         activeEvents.update((events) => events.filter((e) => e.sessionId !== data.sessionId));
         showToast('🏁 Ивент завершён', 'info');
+    });
+
+    connection.on('BalanceUpdated', (data: { balance: number }) => {
+        balance.set(data.balance);
     });
 
     connection.onreconnecting(() => connectionState.set('connecting'));
