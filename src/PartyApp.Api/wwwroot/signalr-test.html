@@ -26,6 +26,9 @@
         .quiz-option:disabled { background: #333; color: #666; cursor: not-allowed; }
         .quiz-option.correct { background: #27ae60; }
         .quiz-option.incorrect { background: #c0392b; }
+        .word-rush-input { display: flex; gap: 8px; align-items: center; }
+        .word-rush-input input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #eee; font-size: 16px; }
+        .word-rush-input button { background: #8e44ad; color: #fff; padding: 10px 20px; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -142,6 +145,33 @@
         else if (ev.type === 'quiz') {
             // Загружаем вопросы квиза
             loadQuizQuestions(sessionId, actionsContainer);
+        }
+        else if (ev.type === 'word_rush') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'word-rush-input';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = 'Введи слово с буквами А и Е';
+            input.autocomplete = 'off';
+
+            const btn = document.createElement('button');
+            btn.textContent = '📝 Отправить';
+
+            const submitWord = () => {
+                const word = input.value.trim();
+                if (!word) { log('⚠️ Введи слово'); return; }
+                submitToEvent(sessionId, { word: word });
+                input.value = '';
+                input.focus();
+            };
+
+            btn.onclick = submitWord;
+            input.onkeydown = (e) => { if (e.key === 'Enter') submitWord(); };
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(btn);
+            actionsContainer.appendChild(wrapper);
         }
         else {
             actionsContainer.innerHTML = '<p style="color:#666;">Ивент доступен.</p>';

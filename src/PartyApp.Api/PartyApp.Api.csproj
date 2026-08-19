@@ -27,7 +27,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="App_Data\" />
     <Folder Include="Common\Results\" />
     <Folder Include="Common\Security\" />
     <Folder Include="Modules\Events\Requests\" />

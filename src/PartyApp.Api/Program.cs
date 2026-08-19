@@ -112,6 +112,9 @@ foreach (var handlerType in handlerTypes)
     builder.Services.AddSingleton(typeof(IEventHandler), handlerType);
 }
 
+// Словарь русских слов
+builder.Services.AddSingleton<RussianDictionaryService>();
+
 // Фабрика обработчиков
 builder.Services.AddSingleton<IEventHandlerFactory, EventHandlerFactory>();
 
@@ -236,6 +239,28 @@ using (var scope = app.Services.CreateScope())
                                      "correctIndex": 0
                                  }
                              ]
+                         }
+                         """,
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+    
+    if (!db.EventDefinitions.Any(d => d.Type == "word_rush"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "word_rush",
+            DisplayName = "Слова с буквами А и Е",
+            Description = "Вписывай слова, содержащие буквы А и Е. Только настоящие русские слова!",
+            ConfigJson = """
+                         {
+                             "timeLimitSec": 60,
+                             "requiredLetters": ["А", "Е"],
+                             "minWordLength": 3,
+                             "pointsPerWord": 5,
+                             "uniqueWordsOnly": true
                          }
                          """,
             Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
