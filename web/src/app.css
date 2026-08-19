@@ -16,6 +16,14 @@ body {
 .login-card button { width: 100%; padding: 12px; margin-top: 12px; background: #f5a623; color: #0f0f23; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
 .login-card .link { background: none; color: #3498db; font-size: 14px; margin-top: 16px; cursor: pointer; border: none; }
 .error { color: #e74c3c; margin-top: 12px; }
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    color: #aaa;
+    font-size: 18px;
+}
 
 /* Header */
 header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: #1a1a3e; border-bottom: 2px solid #f5a623; position: sticky; top: 0; z-index: 10; }

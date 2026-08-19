@@ -5,14 +5,34 @@
     import { setToken } from './lib/api';
     import { onMount } from 'svelte';
 
-    onMount(async () => {
-        // Если токен есть, попробуем восстановить сессию
+    let loading = true;
+
+    function isTokenExpired(token: string): boolean {
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const exp = payload.exp * 1000; // exp в секундах → мс
+            return Date.now() > exp;
+        } catch {
+            return true;
+        }
+    }
+
+    async function tryRestoreSession(): Promise<boolean> {
         const token = localStorage.getItem('party_token');
-        if (token) {
+        if (!token) return false;
+
+        if (isTokenExpired(token)) {
+            setToken(null);
+            return false;
+        }
+
+        const maxRetries = 3;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/me`, {
+                const res = await fetch('/api/auth/me', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
+
                 if (res.ok) {
                     const data = await res.json();
                     user.set({
@@ -21,17 +41,38 @@
                         displayName: data.displayName,
                         role: data.role
                     });
-                } else {
-                    setToken(null);
+                    return true;
                 }
-            } catch {
-                setToken(null);
+
+                if (res.status === 401) {
+                    setToken(null);
+                    return false;
+                }
+
+            } catch (e) {
             }
+
+            if (attempt < maxRetries - 1) {
+                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+            }
+        }
+        return false;
+    }
+
+    onMount(async () => {
+        const restored = await tryRestoreSession();
+        loading = false;
+
+        if (!restored && localStorage.getItem('party_token')) {
+            toast.set({ message: '⚠️ Проблемы с сетью. Попробуй обновить.', type: 'info' });
+            setTimeout(() => toast.set(null), 4000);
         }
     });
 </script>
 
-{#if $user}
+{#if loading}
+    <div class="loading">Загрузка...</div>
+{:else if $user}
     <Party />
 {:else}
     <Login />

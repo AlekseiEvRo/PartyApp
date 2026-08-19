@@ -9,13 +9,17 @@ export function getConnection() {
 }
 
 export async function connect(): Promise<void> {
+    if (connection && connection.state === signalR.HubConnectionState.Connected) {
+        return;
+    }
+
     connectionState.set('connecting');
 
     connection = new signalR.HubConnectionBuilder()
         .withUrl(`/hubs/party`, {
             accessTokenFactory: () => getToken() || ''
         })
-        .withAutomaticReconnect()
+        .withAutomaticReconnect([0, 1000, 3000, 5000, 10000, 30000])
         .build();
 
     connection.on('EventStarted', (ev) => {
@@ -41,6 +45,22 @@ export async function connect(): Promise<void> {
 
     await connection.start();
     connectionState.set('connected');
+}
+
+export async function reconnectIfNeeded(): Promise<void> {
+    if (!connection) return;
+
+    const state = connection.state;
+    if (state === signalR.HubConnectionState.Disconnected ||
+        state === signalR.HubConnectionState.Disconnecting) {
+        try {
+            await connection.start();
+            connectionState.set('connected');
+        } catch (e) {
+            console.error('Reconnect failed:', e);
+            connectionState.set('disconnected');
+        }
+    }
 }
 
 export async function disconnect(): Promise<void> {
