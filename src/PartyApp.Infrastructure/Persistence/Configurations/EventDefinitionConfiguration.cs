@@ -14,5 +14,10 @@ public class EventDefinitionConfiguration: IEntityTypeConfiguration<EventDefinit
 
         builder.Property(d => d.DisplayName).HasMaxLength(100).IsRequired();
         builder.Property(d => d.ConfigJson).IsRequired();
+        
+        builder.HasOne(d => d.CreatedBy)
+            .WithMany()
+            .HasForeignKey(d => d.CreatedById)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

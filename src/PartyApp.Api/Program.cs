@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -10,6 +11,9 @@ using PartyApp.Api.Common.Middleware;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Auth;
 using PartyApp.Api.Modules.Auth.Services;
+using PartyApp.Api.Modules.Events;
+using PartyApp.Api.Modules.Events.Handlers;
+using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Api.Modules.Notifications;
 using PartyApp.Api.Modules.Toast;
 using PartyApp.Domain.Entities;
@@ -97,6 +101,23 @@ builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
 builder.Services.AddSingleton<ToastService>();
 builder.Services.AddSignalR();
 
+// === Конструктор ивентов ===
+
+// Автоматическая регистрация всех IEventHandler через reflection
+var handlerTypes = Assembly.GetExecutingAssembly().GetTypes()
+    .Where(t => typeof(IEventHandler).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+
+foreach (var handlerType in handlerTypes)
+{
+    builder.Services.AddSingleton(typeof(IEventHandler), handlerType);
+}
+
+// Фабрика обработчиков
+builder.Services.AddSingleton<IEventHandlerFactory, EventHandlerFactory>();
+
+// Сервис управления ивентами
+builder.Services.AddSingleton<IEventService, EventService>();
+
 // Swagger / OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -148,6 +169,31 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Применяем миграции при старте
+using (var scope = app.Services.CreateScope())
+{
+    Directory.CreateDirectory("App_Data");
+
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+
+    // Seed: создаём определение тоста, если его нет
+    if (!db.EventDefinitions.Any(d => d.Type == "quick_checkin"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "quick_checkin",
+            DisplayName = "Тост за именинника",
+            Description = "Скажи тост и получи балл! Кнопка блокируется, пока кто-то говорит.",
+            ConfigJson = "{\"points\":1,\"cooldownSeconds\":60}",
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+        db.SaveChanges();
+    }
+}
+
 // Обработка исключений
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
@@ -186,6 +232,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapToastEndpoints();
 app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
+app.MapEventsEndpoints();
 
 // SignalR
 app.MapHub<PartyHub>("/hubs/party");
