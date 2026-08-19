@@ -9,6 +9,7 @@ using Microsoft.OpenApi.Models;
 
 using PartyApp.Api.Common.Middleware;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Admin;
 using PartyApp.Api.Modules.Auth;
 using PartyApp.Api.Modules.Auth.Services;
 using PartyApp.Api.Modules.Events;
@@ -331,6 +332,7 @@ app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
 app.MapEventsEndpoints();
 app.MapQrEndpoints();
+app.MapAdminEndpoints();
 
 // SignalR
 app.MapHub<PartyHub>("/hubs/party");
