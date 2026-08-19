@@ -2,8 +2,6 @@ import * as signalR from '@microsoft/signalr';
 import { activeEvents, connectionState, showToast } from './stores';
 import { getToken } from './api';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
-
 let connection: signalR.HubConnection | null = null;
 
 export function getConnection() {
@@ -13,8 +11,9 @@ export function getConnection() {
 export async function connect(): Promise<void> {
     connectionState.set('connecting');
 
+    // Относительный путь — Vite проксирует на API
     connection = new signalR.HubConnectionBuilder()
-        .withUrl(`${API_BASE}/hubs/party`, {
+        .withUrl(`/hubs/party`, {
             accessTokenFactory: () => getToken() || ''
         })
         .withAutomaticReconnect()

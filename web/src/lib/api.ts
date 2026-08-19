@@ -1,5 +1,3 @@
-const API_BASE = import.meta.env.VITE_API_URL || '';
-
 let token: string | null = localStorage.getItem('party_token');
 
 export function setToken(t: string | null) {
@@ -13,7 +11,7 @@ export function getToken() {
 }
 
 export async function api<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
-    const res = await fetch(`${API_BASE}${url}`, {
+    const res = await fetch(url, {
         method,
         headers: {
             'Content-Type': 'application/json',
