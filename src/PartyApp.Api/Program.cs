@@ -18,6 +18,7 @@ using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Api.Modules.Notifications;
 using PartyApp.Api.Modules.Qr;
 using PartyApp.Api.Modules.Toast;
+using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
 using Serilog;
@@ -333,6 +334,7 @@ app.MapNotificationsEndpoints();
 app.MapEventsEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
+app.MapWalletEndpoints();
 
 // SignalR
 app.MapHub<PartyHub>("/hubs/party");

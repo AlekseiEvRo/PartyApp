@@ -1,0 +1,29 @@
+import { writable } from 'svelte/store';
+
+export interface UserInfo {
+    userId: string;
+    username: string;
+    displayName: string;
+    role: string;
+}
+
+export interface ActiveEvent {
+    sessionId: string;
+    definitionId: string;
+    type: string;
+    displayName: string;
+    description?: string;
+    availability: string;
+    startedAt: string;
+}
+
+export const user = writable<UserInfo | null>(null);
+export const balance = writable<number>(0);
+export const activeEvents = writable<ActiveEvent[]>([]);
+export const connectionState = writable<'disconnected' | 'connecting' | 'connected'>('disconnected');
+export const toast = writable<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
+    toast.set({ message, type });
+    setTimeout(() => toast.set(null), 3000);
+}
