@@ -9,6 +9,7 @@ public interface IEventService
     Task<EventSession> StartEventAsync(Guid definitionId, Guid startedById, CancellationToken ct = default);
     Task FinishEventAsync(Guid sessionId, CancellationToken ct = default);
     Task<SubmissionOutcome> SubmitToEventAsync(Guid sessionId, Guid playerId, string payloadJson, CancellationToken ct = default);
+    Task<object?> GetEventDataAsync(Guid sessionId, CancellationToken ct = default);
 }
 
 public record AvailableEventDto(

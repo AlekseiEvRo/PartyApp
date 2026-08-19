@@ -1,6 +1,9 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using System.Text.Json;
+
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Persistence;
@@ -176,5 +179,40 @@ public class EventService : IEventService
         await db.SaveChangesAsync(ct);
 
         return new SubmissionOutcome(result.Success, result.PointsAwarded, result.Message, result.Data);
+    }
+    public async Task<object?> GetEventDataAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var session = await db.EventSessions
+            .Include(s => s.Definition)
+            .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+
+        if (session is null)
+            return null;
+
+        // Возвращаем конфиг как объект
+        try
+        {
+            var config = JsonSerializer.Deserialize<JsonElement>(session.Definition.ConfigJson, EventJsonOptions.Default);
+            return new
+            {
+                sessionId = session.Id,
+                type = session.Definition.Type,
+                displayName = session.Definition.DisplayName,
+                config
+            };
+        }
+        catch
+        {
+            return new
+            {
+                sessionId = session.Id,
+                type = session.Definition.Type,
+                displayName = session.Definition.DisplayName,
+                config = new { }
+            };
+        }
     }
 }

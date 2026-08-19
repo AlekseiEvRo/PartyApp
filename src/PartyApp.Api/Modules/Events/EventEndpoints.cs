@@ -44,6 +44,19 @@ public static class EventsEndpoints
             });
         })
         .RequireAuthorization();
+        
+        group.MapGet("/{sessionId:guid}/data", async (
+                Guid sessionId,
+                IEventService eventService,
+                CancellationToken ct) =>
+            {
+                var data = await eventService.GetEventDataAsync(sessionId, ct);
+                if (data is null)
+                    return Results.NotFound(new { error = "Ивент не найден" });
+
+                return Results.Ok(data);
+            })
+            .RequireAuthorization();
 
         // === Только для админов ===
 

@@ -19,6 +19,13 @@
         #log li { margin: 4px 0; font-size: 13px; }
         .toast-btn { background: #f5a623; color: #1a1a2e; font-size: 16px; padding: 12px 24px; }
         .toast-btn:disabled { background: #666; color: #999; }
+        .quiz-question { margin: 12px 0; padding: 12px; background: #1a1a2e; border-radius: 6px; }
+        .quiz-question h4 { margin: 0 0 8px 0; color: #eee; }
+        .quiz-option { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 10px; background: #0f3460; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        .quiz-option:hover { background: #1a5276; }
+        .quiz-option:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .quiz-option.correct { background: #27ae60; }
+        .quiz-option.incorrect { background: #c0392b; }
     </style>
 </head>
 <body>
@@ -123,10 +130,7 @@
 
             btn.onclick = () => {
                 const code = input.value.trim();
-                if (!code) {
-                    log('⚠️ Введи промокод');
-                    return;
-                }
+                if (!code) { log('⚠️ Введи промокод'); return; }
                 submitToEvent(sessionId, { code: code });
                 input.value = '';
             };
@@ -135,8 +139,109 @@
             wrapper.appendChild(btn);
             actionsContainer.appendChild(wrapper);
         }
+        else if (ev.type === 'quiz') {
+            // Загружаем вопросы квиза
+            loadQuizQuestions(sessionId, actionsContainer);
+        }
         else {
-            actionsContainer.innerHTML = '<p style="color:#666;">Ивент доступен. Действие появится позже.</p>';
+            actionsContainer.innerHTML = '<p style="color:#666;">Ивент доступен.</p>';
+        }
+    }
+
+    async function loadQuizQuestions(sessionId, container) {
+        try {
+            const res = await fetch(`/api/events/${sessionId}/data`, {
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+
+            if (!res.ok) {
+                container.innerHTML = '<p style="color:#c0392b;">Не удалось загрузить вопросы</p>';
+                return;
+            }
+
+            const data = await res.json();
+            const questions = data.config.questions || [];
+
+            if (questions.length === 0) {
+                container.innerHTML = '<p style="color:#666;">Вопросов нет</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+
+            questions.forEach((q, qIndex) => {
+                const qDiv = document.createElement('div');
+                qDiv.className = 'quiz-question';
+                qDiv.id = `quiz-q-${sessionId}-${qIndex}`;
+
+                const qTitle = document.createElement('h4');
+                qTitle.textContent = `${qIndex + 1}. ${q.text}`;
+                qDiv.appendChild(qTitle);
+
+                q.options.forEach((opt, optIndex) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'quiz-option';
+                    btn.textContent = opt;
+                    btn.onclick = () => answerQuizQuestion(sessionId, qIndex, optIndex, btn);
+                    qDiv.appendChild(btn);
+                });
+
+                container.appendChild(qDiv);
+            });
+
+        } catch (err) {
+            container.innerHTML = '<p style="color:#c0392b;">Ошибка загрузки вопросов</p>';
+        }
+    }
+
+    async function answerQuizQuestion(sessionId, questionIndex, answerIndex, clickedBtn) {
+        // Блокируем все кнопки вопроса
+        const qDiv = document.getElementById(`quiz-q-${sessionId}-${questionIndex}`);
+        if (qDiv) {
+            qDiv.querySelectorAll('.quiz-option').forEach(btn => btn.disabled = true);
+        }
+
+        try {
+            const res = await fetch(`/api/events/${sessionId}/submit`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${getToken()}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    payloadJson: JSON.stringify({ questionIndex, answerIndex })
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok || res.status === 409) {
+                if (data.data && typeof data.data.isCorrect === 'boolean') {
+                    // Подсвечиваем правильный и неправильный ответы
+                    if (qDiv) {
+                        const buttons = qDiv.querySelectorAll('.quiz-option');
+                        buttons.forEach((btn, idx) => {
+                            if (idx === data.data.correctIndex) {
+                                btn.classList.add('correct');
+                            } else if (idx === answerIndex && !data.data.isCorrect) {
+                                btn.classList.add('incorrect');
+                            }
+                        });
+                    }
+
+                    if (data.data.isCorrect) {
+                        log(`✅ Вопрос ${questionIndex + 1}: Правильно! +${data.pointsAwarded} баллов`);
+                    } else {
+                        log(`❌ Вопрос ${questionIndex + 1}: Неправильно`);
+                    }
+                } else {
+                    log(`⚠️ ${data.error || data.message}`);
+                }
+            } else {
+                log(`❌ Ошибка: ${data.error || res.status}`);
+            }
+        } catch (err) {
+            log('❌ Ошибка запроса: ' + err);
         }
     }
 

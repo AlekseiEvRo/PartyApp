@@ -190,7 +190,6 @@ using (var scope = app.Services.CreateScope())
             IsActive = true,
             CreatedById = null
         });
-        db.SaveChanges();
     }
     
     // Seed: создаём определение промокодов, если его нет
@@ -206,8 +205,46 @@ using (var scope = app.Services.CreateScope())
             IsActive = true,
             CreatedById = null
         });
-        db.SaveChanges();
     }
+    
+    // Seed: создаём определение квиза, если его нет
+    if (!db.EventDefinitions.Any(d => d.Type == "quiz"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "quiz",
+            DisplayName = "Квиз про именинника",
+            Description = "Ответь на вопросы правильно и получи баллы!",
+            ConfigJson = """
+                         {
+                             "timeLimitSec": 30,
+                             "pointsPerCorrect": 10,
+                             "questions": [
+                                 {
+                                     "text": "В каком городе родился именинник?",
+                                     "options": ["Москва", "Санкт-Петербург", "Тайшет", "Новосибирск"],
+                                     "correctIndex": 2
+                                 },
+                                 {
+                                     "text": "Любимый напиток именинника?",
+                                     "options": ["Пиво", "Вино", "Виски", "Коктейль"],
+                                     "correctIndex": 0
+                                 },
+                                 {
+                                     "text": "Кем работает именинник?",
+                                     "options": ["Программист", "Дизайнер", "Менеджер", "Маркетолог"],
+                                     "correctIndex": 0
+                                 }
+                             ]
+                         }
+                         """,
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+    
+    db.SaveChanges();
 }
 
 // Обработка исключений
