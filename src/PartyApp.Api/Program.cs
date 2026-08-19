@@ -183,9 +183,6 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 // Модули
 app.MapAuthEndpoints();
-
-// Модули
-app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
 
 // SignalR
