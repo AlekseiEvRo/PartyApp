@@ -11,8 +11,8 @@ using PartyApp.Infrastructure.Persistence;
 namespace PartyApp.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260818092849_AddAvailabilityMode")]
-    partial class AddAvailabilityMode
+    [Migration("20260819082952_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -83,10 +83,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("State")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
@@ -252,10 +248,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

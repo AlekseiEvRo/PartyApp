@@ -82,10 +82,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Property<int>("State")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
                     b.HasKey("Id");
 
                     b.HasIndex("DefinitionId");
@@ -249,10 +245,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

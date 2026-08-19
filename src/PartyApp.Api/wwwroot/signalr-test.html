@@ -7,7 +7,9 @@
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; }
         input[type="text"] { width: 400px; padding: 6px; }
-        button { padding: 6px 12px; margin-left: 8px; }
+        button { padding: 8px 14px; margin: 4px; font-size: 14px; }
+        #toastBtn { font-size: 18px; padding: 12px 24px; background: #f5a623; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+        #toastBtn:disabled { background: #ccc; cursor: not-allowed; }
         #log { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: auto; list-style: none; }
         #log li { margin: 4px 0; }
     </style>
@@ -25,6 +27,12 @@
 <hr />
 
 <div>
+    <button id="toastBtn" disabled>🥂 Сказать тост</button>
+</div>
+
+<hr />
+
+<div>
     <label>Сообщение:</label>
     <input type="text" id="messageInput" placeholder="Привет всем!" />
     <button id="sendBtn" disabled>Отправить всем</button>
@@ -35,6 +43,8 @@
 
 <script>
     let connection = null;
+    let isConnected = false;
+    let cooldownInterval = null;
 
     function log(msg) {
         const li = document.createElement('li');
@@ -42,8 +52,57 @@
         document.getElementById('log').appendChild(li);
     }
 
+    function getToken() {
+        return document.getElementById('tokenInput').value.trim();
+    }
+
+    function setToastButtonEnabled(enabled) {
+        const btn = document.getElementById('toastBtn');
+        btn.disabled = !enabled;
+        if (enabled) btn.textContent = '🥂 Сказать тост';
+    }
+
+    function startCooldown(untilUtcIso) {
+        const btn = document.getElementById('toastBtn');
+        btn.disabled = true;
+
+        const until = new Date(untilUtcIso).getTime();
+
+        if (cooldownInterval) clearInterval(cooldownInterval);
+
+        cooldownInterval = setInterval(() => {
+            const now = Date.now();
+            if (now >= until) {
+                clearInterval(cooldownInterval);
+                cooldownInterval = null;
+                setToastButtonEnabled(isConnected);
+                log('🥂 Тост снова доступен!');
+            } else {
+                const sec = Math.ceil((until - now) / 1000);
+                btn.textContent = `⏳ Тост: ${sec}с`;
+            }
+        }, 1000);
+    }
+
+    async function checkToastStatus() {
+        try {
+            const res = await fetch('/api/toast/status', {
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+            if (res.ok) {
+                const status = await res.json();
+                if (status.isBusy && status.busyUntilUtc) {
+                    log(`🥂 Тост сейчас говорит ${status.currentSpeakerName}. Освободится в ${new Date(status.busyUntilUtc).toLocaleTimeString()}`);
+                    startCooldown(status.busyUntilUtc);
+                }
+            }
+        } catch (err) {
+            log('Ошибка проверки статуса тоста: ' + err);
+        }
+    }
+
     document.getElementById('connectBtn').addEventListener('click', async () => {
-        const token = document.getElementById('tokenInput').value.trim();
+        const token = getToken();
         if (!token) { alert('Введи JWT токен'); return; }
 
         connection = new signalR.HubConnectionBuilder()
@@ -53,7 +112,6 @@
             .withAutomaticReconnect()
             .build();
 
-        // Обработчики входящих событий
         connection.on('ReceiveMessage', (user, message) => {
             log(`💬 ${user}: ${message}`);
         });
@@ -62,16 +120,25 @@
             log(`📢 Broadcast: ${message}`);
         });
 
+        connection.on('ToastStarted', (data) => {
+            log(`🥂 ${data.username} говорит тост! Кнопка заблокирована.`);
+            startCooldown(data.busyUntilUtc);
+        });
+
         connection.onreconnecting(() => log('⚠️ Переподключение...'));
         connection.onreconnected(() => log('✅ Переподключено'));
         connection.onclose(() => log('❌ Соединение закрыто'));
 
         try {
             await connection.start();
+            isConnected = true;
             log('✅ Подключено к /hubs/party');
             document.getElementById('sendBtn').disabled = false;
             document.getElementById('disconnectBtn').disabled = false;
             document.getElementById('connectBtn').disabled = true;
+
+            setToastButtonEnabled(true);
+            await checkToastStatus();
         } catch (err) {
             log('❌ Ошибка подключения: ' + err);
         }
@@ -80,10 +147,35 @@
     document.getElementById('disconnectBtn').addEventListener('click', async () => {
         if (connection) {
             await connection.stop();
+            isConnected = false;
             log('Отключено вручную');
             document.getElementById('sendBtn').disabled = true;
             document.getElementById('disconnectBtn').disabled = true;
             document.getElementById('connectBtn').disabled = false;
+            setToastButtonEnabled(false);
+        }
+    });
+
+    document.getElementById('toastBtn').addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/toast/say', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                log(`✅ Тост засчитан! +${data.pointsAwarded} баллов`);
+                // Кнопку заблокирует событие ToastStarted, которое придёт всем
+            } else if (res.status === 409) {
+                const data = await res.json();
+                log(`⚠️ ${data.error}. Освободится в ${new Date(data.busyUntilUtc).toLocaleTimeString()}`);
+                startCooldown(data.busyUntilUtc);
+            } else {
+                log('❌ Ошибка: ' + res.status);
+            }
+        } catch (err) {
+            log('❌ Ошибка запроса: ' + err);
         }
     });
 

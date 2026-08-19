@@ -9,10 +9,6 @@
     <PackageReference Include="QRCoder" Version="1.8.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Persistence\Migrations\" />
-  </ItemGroup>
-
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

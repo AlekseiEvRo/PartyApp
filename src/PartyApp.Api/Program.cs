@@ -11,6 +11,7 @@ using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Auth;
 using PartyApp.Api.Modules.Auth.Services;
 using PartyApp.Api.Modules.Notifications;
+using PartyApp.Api.Modules.Toast;
 using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
 using Serilog;
@@ -34,8 +35,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     });
 });
 
-// SignalR
-builder.Services.AddSignalR();
 
 // JWT Authentication
 builder.Services.AddAuthentication(options =>
@@ -90,11 +89,13 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
 });
 
-// Auth services
+// Services
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
+builder.Services.AddSingleton<ToastService>();
+builder.Services.AddSignalR();
 
 // Swagger / OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -181,7 +182,8 @@ app.MapGet("/", () => Results.Redirect("/swagger"));
 // Health
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-// Модули
+// Endpoints
+app.MapToastEndpoints();
 app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
 

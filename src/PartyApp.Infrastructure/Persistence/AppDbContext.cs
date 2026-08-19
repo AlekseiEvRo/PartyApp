@@ -22,28 +22,4 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
     }
     
-    // Автоматический bump concurrency-токена при изменении
-    public override int SaveChanges(bool acceptAllChangesOnSuccess)
-    {
-        BumpVersions();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
-    }
-
-    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
-    {
-        BumpVersions();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-    }
-
-    private void BumpVersions()
-    {
-        foreach (var entry in ChangeTracker.Entries<IHasConcurrency>())
-        {
-            if (entry.State == EntityState.Modified)
-            {
-                entry.Entity.Version++;
-            }
-        }
-    }
-    
 }

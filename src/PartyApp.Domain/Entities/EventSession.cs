@@ -3,7 +3,7 @@ using PartyApp.Domain.Enums;
 
 namespace PartyApp.Domain.Entities;
 
-public class EventSession: BaseEntity, IHasConcurrency
+public class EventSession: BaseEntity
 {
     public Guid DefinitionId { get; set; }
     public EventDefinition Definition { get; set; } = null!;
@@ -14,8 +14,6 @@ public class EventSession: BaseEntity, IHasConcurrency
     public EventSessionState State { get; set; } = EventSessionState.Waiting;
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EndedAt { get; set; }
-
-    public int Version { get; set; }
 
     public ICollection<PlayerSubmission> Submissions { get; set; } = new List<PlayerSubmission>();
 }

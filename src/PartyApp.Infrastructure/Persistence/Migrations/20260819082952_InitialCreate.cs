@@ -36,6 +36,7 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     DisplayName = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
                     Description = table.Column<string>(type: "TEXT", nullable: true),
                     ConfigJson = table.Column<string>(type: "TEXT", nullable: false),
+                    Availability = table.Column<int>(type: "INTEGER", nullable: false),
                     IsActive = table.Column<bool>(type: "INTEGER", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
                     CreatedById = table.Column<Guid>(type: "TEXT", nullable: false)
@@ -78,8 +79,7 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     UserId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    Balance = table.Column<int>(type: "INTEGER", nullable: false),
-                    Version = table.Column<int>(type: "INTEGER", nullable: false)
+                    Balance = table.Column<int>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -101,8 +101,7 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     StartedById = table.Column<Guid>(type: "TEXT", nullable: false),
                     State = table.Column<int>(type: "INTEGER", nullable: false),
                     StartedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    EndedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
-                    Version = table.Column<int>(type: "INTEGER", nullable: false)
+                    EndedAt = table.Column<DateTime>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {

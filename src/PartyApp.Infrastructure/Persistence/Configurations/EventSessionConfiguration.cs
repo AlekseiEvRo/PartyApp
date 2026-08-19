@@ -11,8 +11,5 @@ public class EventSessionConfiguration: IEntityTypeConfiguration<EventSession>
     {
         builder.HasIndex(s => s.State);
         builder.HasIndex(s => s.DefinitionId);
-
-        // Оптимистичная конкуренция
-        builder.Property(s => s.Version).IsConcurrencyToken();
     }
 }
