@@ -1,6 +1,7 @@
 import * as signalR from '@microsoft/signalr';
 import { activeEvents, connectionState, showToast, balance } from './stores';
 import { getToken } from './api';
+import { showBrowserNotification, isNotificationSupported } from './notifications';
 
 let connection: signalR.HubConnection | null = null;
 
@@ -27,7 +28,16 @@ export async function connect(): Promise<void> {
             if (events.some((e) => e.sessionId === ev.sessionId)) return events;
             return [...events, ev];
         });
+
         showToast(`🎉 Новый ивент: ${ev.displayName}`, 'info');
+
+        // 🔔 Показываем уведомление браузера
+        if (isNotificationSupported() && Notification.permission === 'granted') {
+            showBrowserNotification(`🎉 ${ev.displayName}`, {
+                body: ev.description || 'Скорее участвуй!',
+                tag: `event-${ev.sessionId}`
+            });
+        }
     });
 
     connection.on('EventFinished', (data) => {

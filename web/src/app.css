@@ -28,9 +28,9 @@ body {
 /* Header */
 header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: #1a1a3e; border-bottom: 2px solid #f5a623; position: sticky; top: 0; z-index: 10; }
 .header-left { display: flex; align-items: center; gap: 8px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
 .logo { font-size: 22px; }
 .name { font-weight: bold; }
-.header-right { display: flex; align-items: center; gap: 12px; }
 .balance { font-size: 18px; font-weight: bold; color: #27ae60; }
 
 /* Party */
