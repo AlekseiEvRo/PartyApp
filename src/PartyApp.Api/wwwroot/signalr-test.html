@@ -29,6 +29,9 @@
         .word-rush-input { display: flex; gap: 8px; align-items: center; }
         .word-rush-input input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #eee; font-size: 16px; }
         .word-rush-input button { background: #8e44ad; color: #fff; padding: 10px 20px; font-size: 16px; }
+        .qr-input { display: flex; gap: 8px; align-items: center; }
+        .qr-input input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #eee; font-size: 16px; text-transform: uppercase; }
+        .qr-input button { background: #e67e22; color: #fff; padding: 10px 20px; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -168,6 +171,34 @@
 
             btn.onclick = submitWord;
             input.onkeydown = (e) => { if (e.key === 'Enter') submitWord(); };
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(btn);
+            actionsContainer.appendChild(wrapper);
+        }
+        else if (ev.type === 'qr_scan') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'qr-input';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = 'Введи код с QR';
+            input.maxLength = 6;
+            input.autocomplete = 'off';
+
+            const btn = document.createElement('button');
+            btn.textContent = '📷 Активировать';
+
+            const submitCode = () => {
+                const code = input.value.trim().toUpperCase();
+                if (!code) { log('⚠️ Введи код'); return; }
+                submitToEvent(sessionId, { code: code });
+                input.value = '';
+                input.focus();
+            };
+
+            btn.onclick = submitCode;
+            input.onkeydown = (e) => { if (e.key === 'Enter') submitCode(); };
 
             wrapper.appendChild(input);
             wrapper.appendChild(btn);

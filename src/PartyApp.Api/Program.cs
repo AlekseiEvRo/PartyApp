@@ -15,6 +15,7 @@ using PartyApp.Api.Modules.Events;
 using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Api.Modules.Notifications;
+using PartyApp.Api.Modules.Qr;
 using PartyApp.Api.Modules.Toast;
 using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
@@ -114,6 +115,9 @@ foreach (var handlerType in handlerTypes)
 
 // Словарь русских слов
 builder.Services.AddSingleton<RussianDictionaryService>();
+
+// QR сервис
+builder.Services.AddSingleton<IQrTokenService, QrTokenService>();
 
 // Фабрика обработчиков
 builder.Services.AddSingleton<IEventHandlerFactory, EventHandlerFactory>();
@@ -269,6 +273,21 @@ using (var scope = app.Services.CreateScope())
         });
     }
     
+    // Seed: создаём определение QR-сканирования, если его нет
+    if (!db.EventDefinitions.Any(d => d.Type == "qr_scan"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "qr_scan",
+            DisplayName = "Охота за QR-кодами",
+            Description = "Найди QR-коды, спрятанные по коттеджу, и получи баллы!",
+            ConfigJson = "{}",
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+    
     db.SaveChanges();
 }
 
@@ -311,6 +330,7 @@ app.MapToastEndpoints();
 app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
 app.MapEventsEndpoints();
+app.MapQrEndpoints();
 
 // SignalR
 app.MapHub<PartyHub>("/hubs/party");
