@@ -1,5 +1,5 @@
 import * as signalR from '@microsoft/signalr';
-import { activeEvents, connectionState, showToast, balance } from './stores';
+import { activeEvents, connectionState, showToast, balance, spyGameRole } from './stores';
 import { getToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
 
@@ -23,15 +23,14 @@ export async function connect(): Promise<void> {
         .withAutomaticReconnect([0, 1000, 3000, 5000, 10000, 30000])
         .build();
 
+    // === Ивенты ===
     connection.on('EventStarted', (ev) => {
         activeEvents.update((events) => {
             if (events.some((e) => e.sessionId === ev.sessionId)) return events;
             return [...events, ev];
         });
-
         showToast(`🎉 Новый ивент: ${ev.displayName}`, 'info');
 
-        // 🔔 Показываем уведомление браузера
         if (isNotificationSupported() && Notification.permission === 'granted') {
             showBrowserNotification(`🎉 ${ev.displayName}`, {
                 body: ev.description || 'Скорее участвуй!',
@@ -49,6 +48,28 @@ export async function connect(): Promise<void> {
         balance.set(data.balance);
     });
 
+    // === Шпионаж ===
+    connection.on('SpyGameRoleAssigned', (data: any) => {
+        console.log('SpyGameRoleAssigned received:', data);
+        spyGameRole.set(data);
+    });
+
+    connection.on('SpyGameStarted', (data: any) => {
+        showToast(`🕵 Началась игра «Шпионаж»! Игроков: ${data.playersCount}`, 'info');
+    });
+
+    connection.on('SpyGameFinished', (result: any) => {
+        spyGameRole.set(null);
+        if (result.winner === 'spies') {
+            showToast(`🕵 Шпионы победили! Слово: ${result.secretWord}`, 'info');
+        } else if (result.winner === 'town') {
+            showToast(`👤 ${result.townWinnerName} разоблачил шпионов! Слово: ${result.secretWord}`, 'info');
+        } else {
+            showToast(`Ничья. Слово было: ${result.secretWord}`, 'info');
+        }
+    });
+
+    // === Состояние соединения ===
     connection.onreconnecting(() => connectionState.set('connecting'));
     connection.onreconnected(() => connectionState.set('connected'));
     connection.onclose(() => connectionState.set('disconnected'));

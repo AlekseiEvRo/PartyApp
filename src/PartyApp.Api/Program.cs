@@ -17,6 +17,7 @@ using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Api.Modules.Notifications;
 using PartyApp.Api.Modules.Qr;
+using PartyApp.Api.Modules.SpyGame;
 using PartyApp.Api.Modules.Toast;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
@@ -102,6 +103,7 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
 builder.Services.AddSingleton<ToastService>();
+builder.Services.AddSingleton<SpyGameService>();
 builder.Services.AddSignalR();
 
 // === Конструктор ивентов ===
@@ -335,6 +337,7 @@ app.MapEventsEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
 app.MapWalletEndpoints();
+app.MapSpyGameEndpoints();
 
 // SignalR
 app.MapHub<PartyHub>("/hubs/party");

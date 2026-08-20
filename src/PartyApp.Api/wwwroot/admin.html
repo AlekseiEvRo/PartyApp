@@ -99,6 +99,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('dashboard')">📊 Дашборд</button>
             <button class="tab" onclick="switchTab('events')">🎮 Ивенты</button>
+            <button class="tab" onclick="switchTab('spy')">🕵 Шпионаж</button>
             <button class="tab" onclick="switchTab('qr')">📷 QR-коды</button>
             <button class="tab" onclick="switchTab('grant')">💰 Начисление</button>
             <button class="tab" onclick="switchTab('leaderboard')">🏆 Лидерборд</button>
@@ -160,6 +161,28 @@
                     </thead>
                     <tbody id="sessionsTable"></tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Spy game tab -->
+        <div id="tab-spy" class="tab-content">
+            <h2>🕵 Шпионаж</h2>
+
+            <div class="card">
+                <h3>Выбор участников</h3>
+                <p style="color:#aaa;font-size:13px;">Выбери минимум 4 игроков. 2 из них станут шпионами (пара).</p>
+                <button class="btn btn-primary" onclick="loadSpyPlayers()">🔄 Обновить список</button>
+                <div id="spyPlayersList" style="margin-top: 12px;"></div>
+                <div style="margin-top: 16px;">
+                    <button class="btn btn-success" onclick="startSpyGame()">🎮 Запустить игру</button>
+                    <button class="btn btn-danger" onclick="finishSpyGame()">⏹ Завершить</button>
+                    <button class="btn btn-primary" onclick="loadSpyState()">📊 Состояние</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Состояние игры</h3>
+                <div id="spyStateView"><p style="color:#666;">Игра не запущена</p></div>
             </div>
         </div>
 
@@ -327,11 +350,22 @@
 
     // === Tabs ===
 
+    let spyStateInterval = null;
+
     function switchTab(tabName) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.getElementById(`tab-${tabName}`).classList.add('active');
         event.target.classList.add('active');
+        
+        if (spyStateInterval) {
+            clearInterval(spyStateInterval);
+            spyStateInterval = null;
+        }
+        if (tabName === 'spy') {
+            loadSpyState();
+            spyStateInterval = setInterval(loadSpyState, 3000);
+        }
     }
 
     // === Dashboard ===
@@ -421,6 +455,93 @@
             await api(`/api/events/${sessionId}/finish`, 'POST');
             showToast('Ивент завершён');
             loadSessions();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    }
+
+    let spyPlayers = [];
+
+    async function loadSpyPlayers() {
+        try {
+            spyPlayers = await api('/api/admin/players');
+            const container = document.getElementById('spyPlayersList');
+            container.innerHTML = spyPlayers
+                .filter(p => p.role === 'Player')
+                .map(p => `
+                <label style="display:block;margin:4px 0;">
+                    <input type="checkbox" class="spy-player" value="${p.id}" />
+                    ${p.displayName} (⭐ ${p.balance})
+                </label>
+            `).join('');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    }
+
+
+    async function loadSpyState() {
+        try {
+            const state = await api('/api/spygame/state');
+            const view = document.getElementById('spyStateView');
+
+            if (state.phase === 'Idle') {
+                view.innerHTML = '<p style="color:#666;">Игра не запущена</p>';
+                return;
+            }
+
+            // Определяем статус победителя
+            let winnerHtml = '';
+            if (state.phase === 'Finished') {
+                if (state.winner === 'spies') {
+                    winnerHtml = '<p style="color:#e74c3c;font-size:18px;"><b>🕵 ПОБЕДА ШПИОНОВ!</b></p>';
+                } else if (state.winner === 'town') {
+                    winnerHtml = `<p style="color:#27ae60;font-size:18px;"><b>👤 ПОБЕДА ГОРОЖАНИНА: ${state.townWinnerName}</b></p>`;
+                } else if (state.winner === 'draw') {
+                    winnerHtml = '<p style="color:#f39c12;font-size:18px;"><b>🤝 НИЧЬЯ</b></p>';
+                }
+            }
+
+            view.innerHTML = `
+            <p><b>Фаза:</b> ${state.phase}</p>
+            <p><b>Секретное слово:</b> <code style="background:#0f0f23;padding:4px 8px;border-radius:4px;">${state.secretWord}</code></p>
+            ${winnerHtml}
+            <p><b>Игроки:</b></p>
+            <ul style="line-height:1.8;">
+                ${state.players.map(p => `
+                    <li>
+                        ${p.displayName} — 
+                        ${p.role === 'Spy' ? '🕵 Шпион' : '👤 Горожанин'}
+                        ${p.hasAccused ? ' <span style="color:#f39c12;">(обвинил)</span>' : ''}
+                    </li>
+                `).join('')}
+            </ul>
+        `;
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    }
+
+    async function startSpyGame() {
+        const selected = [...document.querySelectorAll('.spy-player:checked')].map(c => c.value);
+        if (selected.length < 4) {
+            showToast('Выбери минимум 4 игроков', 'error');
+            return;
+        }
+        try {
+            const result = await api('/api/spygame/start', 'POST', { playerIds: selected });
+            showToast(`Игра запущена! Слово (для тебя): ${result.secretWord}`);
+            loadSpyState();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    }
+
+    async function finishSpyGame() {
+        try {
+            await api('/api/spygame/finish', 'POST');
+            showToast('Игра завершена');
+            loadSpyState();
         } catch (e) {
             showToast(e.message, 'error');
         }

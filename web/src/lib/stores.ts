@@ -22,6 +22,7 @@ export const balance = writable<number>(0);
 export const activeEvents = writable<ActiveEvent[]>([]);
 export const connectionState = writable<'disconnected' | 'connecting' | 'connected'>('disconnected');
 export const toast = writable<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+export const spyGameRole = writable<any>(null);
 
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
     toast.set({ message, type });

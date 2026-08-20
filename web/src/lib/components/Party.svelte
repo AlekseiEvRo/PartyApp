@@ -1,11 +1,12 @@
 <script lang="ts">
-    import InstallPrompt from './InstallPrompt.svelte';
     import { onMount, onDestroy } from 'svelte';
     import { api } from '../api';
     import { connect, disconnect, reconnectIfNeeded } from '../signalr';
-    import { activeEvents, balance, user } from '../stores';
+    import { activeEvents, balance, user, spyGameRole } from '../stores';
     import Header from './Header.svelte';
     import EventCard from './EventCard.svelte';
+    import SpyGame from './SpyGame.svelte';
+    import InstallPrompt from './InstallPrompt.svelte';
 
     async function loadInitialData() {
         try {
@@ -19,16 +20,27 @@
         }
     }
 
+    async function restoreSpyGameRole() {
+        try {
+            const role = await api<any>('/api/spygame/my-role');
+            spyGameRole.set(role);
+        } catch {
+            spyGameRole.set(null);
+        }
+    }
+
     function handleVisibilityChange() {
         if (document.visibilityState === 'visible') {
-            // Пользователь вернулся на страницу — переподключаемся и обновляем данные
             reconnectIfNeeded();
             loadInitialData();
+            restoreSpyGameRole();
         }
     }
 
     onMount(async () => {
         await loadInitialData();
+        await restoreSpyGameRole();
+
         try {
             await connect();
         } catch (e) {
@@ -54,6 +66,8 @@
     <Header />
     <InstallPrompt />
     <main>
+        <SpyGame />
+        
         <h2>🎮 Активные ивенты</h2>
 
         {#if $activeEvents.length === 0}
