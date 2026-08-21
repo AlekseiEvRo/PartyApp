@@ -26,6 +26,17 @@
         displayName: data.displayName,
         role: data.role
       });
+        // Редирект в зависимости от роли и текущего URL
+        const isAdminRoute = window.location.pathname.startsWith('/admin');
+        if (data.role === 'Admin' && isAdminRoute) {
+            // Остаёмся на /admin
+            location.reload();
+        } else if (data.role === 'Admin' && !isAdminRoute) {
+            // Админ зашёл через главную — оставляем на главной
+        } else if (data.role !== 'Admin' && isAdminRoute) {
+            // Игрок пытается зайти в админку — редирект на главную
+            window.location.href = '/';
+        }
     } catch (e: any) {
       error = e.message;
     } finally {

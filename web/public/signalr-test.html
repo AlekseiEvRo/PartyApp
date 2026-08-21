@@ -1,0 +1,439 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <title>PartyApp — Вечеринка</title>
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #f5a623; }
+        input[type="text"] { width: 400px; padding: 8px; border-radius: 4px; border: 1px solid #444; background: #16213e; color: #eee; }
+        button { padding: 10px 16px; margin: 4px; font-size: 14px; border-radius: 6px; border: none; cursor: pointer; background: #0f3460; color: #fff; }
+        button:hover { background: #1a5276; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        #eventsList { margin-top: 20px; }
+        .event-card { background: #16213e; border-radius: 8px; padding: 16px; margin: 8px 0; }
+        .event-card h3 { margin: 0 0 8px 0; color: #f5a623; }
+        .event-card p { margin: 0 0 12px 0; color: #aaa; }
+        #log { border: 1px solid #333; padding: 10px; height: 200px; overflow-y: auto; list-style: none; background: #16213e; border-radius: 6px; }
+        #log li { margin: 4px 0; font-size: 13px; }
+        .toast-btn { background: #f5a623; color: #1a1a2e; font-size: 16px; padding: 12px 24px; }
+        .toast-btn:disabled { background: #666; color: #999; }
+        .quiz-question { margin: 12px 0; padding: 12px; background: #1a1a2e; border-radius: 6px; }
+        .quiz-question h4 { margin: 0 0 8px 0; color: #eee; }
+        .quiz-option { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 10px; background: #0f3460; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        .quiz-option:hover { background: #1a5276; }
+        .quiz-option:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .quiz-option.correct { background: #27ae60; }
+        .quiz-option.incorrect { background: #c0392b; }
+        .word-rush-input { display: flex; gap: 8px; align-items: center; }
+        .word-rush-input input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #eee; font-size: 16px; }
+        .word-rush-input button { background: #8e44ad; color: #fff; padding: 10px 20px; font-size: 16px; }
+        .qr-input { display: flex; gap: 8px; align-items: center; }
+        .qr-input input { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #eee; font-size: 16px; text-transform: uppercase; }
+        .qr-input button { background: #e67e22; color: #fff; padding: 10px 20px; font-size: 16px; }
+    </style>
+</head>
+<body>
+<h1>🎉 PartyApp</h1>
+
+<div>
+    <label>JWT Token:</label><br />
+    <input type="text" id="tokenInput" placeholder="Вставь accessToken" />
+    <button id="connectBtn">Подключиться</button>
+    <button id="disconnectBtn" disabled>Отключиться</button>
+</div>
+
+<hr />
+
+<h2>🎮 Активные ивенты</h2>
+<div id="eventsList">
+    <p style="color: #666;">Подключись, чтобы увидеть ивенты</p>
+</div>
+
+<hr />
+
+<h3>📋 Лог:</h3>
+<ul id="log"></ul>
+
+<script>
+    let connection = null;
+    let isConnected = false;
+    let activeEvents = {};
+    let cooldownIntervals = {};
+
+    function log(msg) {
+        const li = document.createElement('li');
+        li.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        document.getElementById('log').appendChild(li);
+    }
+
+    function getToken() {
+        return document.getElementById('tokenInput').value.trim();
+    }
+
+    function renderEvents() {
+        const container = document.getElementById('eventsList');
+        const eventIds = Object.keys(activeEvents);
+
+        if (eventIds.length === 0) {
+            container.innerHTML = '<p style="color: #666;">Нет активных ивентов. Жди, пока админ запустит что-нибудь!</p>';
+            return;
+        }
+
+        container.innerHTML = '';
+        for (const id of eventIds) {
+            const ev = activeEvents[id];
+            const card = document.createElement('div');
+            card.className = 'event-card';
+            card.id = `event-${id}`;
+            card.innerHTML = `
+                    <h3>${ev.displayName}</h3>
+                    <p>${ev.description || ''}</p>
+                    <div id="event-actions-${id}"></div>
+                `;
+            container.appendChild(card);
+
+            // Рендерим действие в зависимости от типа
+            renderEventAction(id, ev);
+        }
+    }
+
+    function renderEventAction(sessionId, ev) {
+        const actionsContainer = document.getElementById(`event-actions-${sessionId}`);
+        if (!actionsContainer) return;
+
+        if (ev.type === 'quick_checkin') {
+            const btn = document.createElement('button');
+            btn.className = 'toast-btn';
+            btn.textContent = '🥂 Сказать тост';
+            btn.onclick = () => submitToEvent(sessionId, { playerName: 'Игрок' });
+            actionsContainer.appendChild(btn);
+        }
+        else if (ev.type === 'promo_code') {
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'flex';
+            wrapper.style.gap = '8px';
+            wrapper.style.alignItems = 'center';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = 'Введи промокод';
+            input.style.flex = '1';
+            input.style.padding = '10px';
+            input.style.borderRadius = '6px';
+            input.style.border = '1px solid #444';
+            input.style.background = '#1a1a2e';
+            input.style.color = '#eee';
+            input.style.fontSize = '16px';
+
+            const btn = document.createElement('button');
+            btn.textContent = '🎁 Активировать';
+            btn.style.background = '#27ae60';
+            btn.style.color = '#fff';
+            btn.style.padding = '10px 20px';
+            btn.style.fontSize = '16px';
+
+            btn.onclick = () => {
+                const code = input.value.trim();
+                if (!code) { log('⚠️ Введи промокод'); return; }
+                submitToEvent(sessionId, { code: code });
+                input.value = '';
+            };
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(btn);
+            actionsContainer.appendChild(wrapper);
+        }
+        else if (ev.type === 'quiz') {
+            // Загружаем вопросы квиза
+            loadQuizQuestions(sessionId, actionsContainer);
+        }
+        else if (ev.type === 'word_rush') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'word-rush-input';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = 'Введи слово с буквами А и Е';
+            input.autocomplete = 'off';
+
+            const btn = document.createElement('button');
+            btn.textContent = '📝 Отправить';
+
+            const submitWord = () => {
+                const word = input.value.trim();
+                if (!word) { log('⚠️ Введи слово'); return; }
+                submitToEvent(sessionId, { word: word });
+                input.value = '';
+                input.focus();
+            };
+
+            btn.onclick = submitWord;
+            input.onkeydown = (e) => { if (e.key === 'Enter') submitWord(); };
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(btn);
+            actionsContainer.appendChild(wrapper);
+        }
+        else if (ev.type === 'qr_scan') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'qr-input';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = 'Введи код с QR';
+            input.maxLength = 6;
+            input.autocomplete = 'off';
+
+            const btn = document.createElement('button');
+            btn.textContent = '📷 Активировать';
+
+            const submitCode = () => {
+                const code = input.value.trim().toUpperCase();
+                if (!code) { log('⚠️ Введи код'); return; }
+                submitToEvent(sessionId, { code: code });
+                input.value = '';
+                input.focus();
+            };
+
+            btn.onclick = submitCode;
+            input.onkeydown = (e) => { if (e.key === 'Enter') submitCode(); };
+
+            wrapper.appendChild(input);
+            wrapper.appendChild(btn);
+            actionsContainer.appendChild(wrapper);
+        }
+        else {
+            actionsContainer.innerHTML = '<p style="color:#666;">Ивент доступен.</p>';
+        }
+    }
+
+    async function loadQuizQuestions(sessionId, container) {
+        try {
+            const res = await fetch(`/api/events/${sessionId}/data`, {
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+
+            if (!res.ok) {
+                container.innerHTML = '<p style="color:#c0392b;">Не удалось загрузить вопросы</p>';
+                return;
+            }
+
+            const data = await res.json();
+            const questions = data.config.questions || [];
+
+            if (questions.length === 0) {
+                container.innerHTML = '<p style="color:#666;">Вопросов нет</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+
+            questions.forEach((q, qIndex) => {
+                const qDiv = document.createElement('div');
+                qDiv.className = 'quiz-question';
+                qDiv.id = `quiz-q-${sessionId}-${qIndex}`;
+
+                const qTitle = document.createElement('h4');
+                qTitle.textContent = `${qIndex + 1}. ${q.text}`;
+                qDiv.appendChild(qTitle);
+
+                q.options.forEach((opt, optIndex) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'quiz-option';
+                    btn.textContent = opt;
+                    btn.onclick = () => answerQuizQuestion(sessionId, qIndex, optIndex, btn);
+                    qDiv.appendChild(btn);
+                });
+
+                container.appendChild(qDiv);
+            });
+
+        } catch (err) {
+            container.innerHTML = '<p style="color:#c0392b;">Ошибка загрузки вопросов</p>';
+        }
+    }
+
+    async function answerQuizQuestion(sessionId, questionIndex, answerIndex, clickedBtn) {
+        // Блокируем все кнопки вопроса
+        const qDiv = document.getElementById(`quiz-q-${sessionId}-${questionIndex}`);
+        if (qDiv) {
+            qDiv.querySelectorAll('.quiz-option').forEach(btn => btn.disabled = true);
+        }
+
+        try {
+            const res = await fetch(`/api/events/${sessionId}/submit`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${getToken()}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    payloadJson: JSON.stringify({ questionIndex, answerIndex })
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok || res.status === 409) {
+                if (data.data && typeof data.data.isCorrect === 'boolean') {
+                    // Подсвечиваем правильный и неправильный ответы
+                    if (qDiv) {
+                        const buttons = qDiv.querySelectorAll('.quiz-option');
+                        buttons.forEach((btn, idx) => {
+                            if (idx === data.data.correctIndex) {
+                                btn.classList.add('correct');
+                            } else if (idx === answerIndex && !data.data.isCorrect) {
+                                btn.classList.add('incorrect');
+                            }
+                        });
+                    }
+
+                    if (data.data.isCorrect) {
+                        log(`✅ Вопрос ${questionIndex + 1}: Правильно! +${data.pointsAwarded} баллов`);
+                    } else {
+                        log(`❌ Вопрос ${questionIndex + 1}: Неправильно`);
+                    }
+                } else {
+                    log(`⚠️ ${data.error || data.message}`);
+                }
+            } else {
+                log(`❌ Ошибка: ${data.error || res.status}`);
+            }
+        } catch (err) {
+            log('❌ Ошибка запроса: ' + err);
+        }
+    }
+
+    async function loadAvailableEvents() {
+        try {
+            const res = await fetch('/api/events/available', {
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+            if (res.ok) {
+                const events = await res.json();
+                activeEvents = {};
+                events.forEach(ev => { activeEvents[ev.sessionId] = ev; });
+                renderEvents();
+                log(`📋 Загружено активных ивентов: ${events.length}`);
+            }
+        } catch (err) {
+            log('❌ Ошибка загрузки ивентов: ' + err);
+        }
+    }
+
+    async function submitToEvent(sessionId, payload) {
+        try {
+            const res = await fetch(`/api/events/${sessionId}/submit`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${getToken()}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ payloadJson: JSON.stringify(payload) })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                log(`✅ ${data.message} (+${data.pointsAwarded} баллов)`);
+
+                // Если есть cooldown, блокируем кнопку
+                if (data.data && data.data.busyUntilUtc) {
+                    startCooldown(sessionId, data.data.busyUntilUtc, data.data.playerName);
+                }
+            } else if (res.status === 409) {
+                log(`⚠️ ${data.error}`);
+                if (data.data && data.data.busyUntilUtc) {
+                    startCooldown(sessionId, data.data.busyUntilUtc, data.data.busyByName);
+                }
+            } else {
+                log(`❌ Ошибка: ${data.error || res.status}`);
+            }
+        } catch (err) {
+            log('❌ Ошибка запроса: ' + err);
+        }
+    }
+
+    function startCooldown(sessionId, busyUntilUtc, playerName) {
+        const card = document.getElementById(`event-${sessionId}`);
+        if (!card) return;
+
+        const btn = card.querySelector('.toast-btn');
+        if (btn) {
+            btn.disabled = true;
+            const until = new Date(busyUntilUtc).getTime();
+
+            if (cooldownIntervals[sessionId]) clearInterval(cooldownIntervals[sessionId]);
+
+            cooldownIntervals[sessionId] = setInterval(() => {
+                const now = Date.now();
+                if (now >= until) {
+                    clearInterval(cooldownIntervals[sessionId]);
+                    cooldownIntervals[sessionId] = null;
+                    btn.disabled = false;
+                    btn.textContent = '🥂 Сказать тост';
+                    log('🥂 Тост снова доступен!');
+                } else {
+                    const sec = Math.ceil((until - now) / 1000);
+                    btn.textContent = `⏳ ${playerName || 'Кто-то'} говорит тост: ${sec}с`;
+                }
+            }, 1000);
+        }
+    }
+
+    // === Подключение ===
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+        const token = getToken();
+        if (!token) { alert('Введи JWT токен'); return; }
+
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl('/hubs/party', { accessTokenFactory: () => token })
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on('EventStarted', (data) => {
+            log(`🎉 Новый ивент: ${data.displayName}`);
+            activeEvents[data.sessionId] = data;
+            renderEvents();
+        });
+
+        connection.on('EventFinished', (data) => {
+            log(`🏁 Ивент завершён`);
+            delete activeEvents[data.sessionId];
+            renderEvents();
+        });
+
+        connection.onreconnecting(() => log('⚠️ Переподключение...'));
+        connection.onreconnected(() => log('✅ Переподключено'));
+        connection.onclose(() => log('❌ Соединение закрыто'));
+
+        try {
+            await connection.start();
+            isConnected = true;
+            log('✅ Подключено к вечеринке');
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('disconnectBtn').disabled = false;
+
+            await loadAvailableEvents();
+        } catch (err) {
+            log('❌ Ошибка подключения: ' + err);
+        }
+    });
+
+    document.getElementById('disconnectBtn').addEventListener('click', async () => {
+        if (connection) {
+            await connection.stop();
+            isConnected = false;
+            activeEvents = {};
+            renderEvents();
+            log('Отключено');
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+        }
+    });
+</script>
+</body>
+</html>

@@ -310,6 +310,7 @@ app.UseCors("Web");
 // Статические файлы (для тестовой страницы SignalR)
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapFallbackToFile("index.html");
 
 app.UseAuthentication();
 app.UseAuthorization();

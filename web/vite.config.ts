@@ -3,6 +3,10 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+    build: {
+        outDir: '../src/PartyApp.Api/wwwroot',
+        emptyOutDir: true
+    },
     plugins: [
         svelte(),
         VitePWA({
@@ -62,6 +66,7 @@ export default defineConfig({
         })
     ],
     server: {
+        allowedHosts: ['party-app.online'],
         host: true,
         port: 5173,
         proxy: {
