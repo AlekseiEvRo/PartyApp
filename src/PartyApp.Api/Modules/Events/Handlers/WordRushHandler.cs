@@ -1,8 +1,8 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Modules.Events.Services;
+using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
-using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Persistence;
 
 namespace PartyApp.Api.Modules.Events.Handlers;
@@ -16,15 +16,18 @@ public class WordRushHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly RussianDictionaryService _dictionary;
+    private readonly PointsAwardService _pointsAward;
     private readonly ILogger<WordRushHandler> _logger;
 
     public WordRushHandler(
         IServiceScopeFactory scopeFactory,
         RussianDictionaryService dictionary,
+        PointsAwardService pointsAward,
         ILogger<WordRushHandler> logger)
     {
         _scopeFactory = scopeFactory;
         _dictionary = dictionary;
+        _pointsAward = pointsAward;
         _logger = logger;
     }
 
@@ -90,7 +93,12 @@ public class WordRushHandler : IEventHandler
         }
 
         // Начисляем баллы
-        await AwardPointsAsync(playerId, pointsPerWord, session.Id, $"Слово: {submittedWord}", ct);
+        await _pointsAward.AwardAsync(
+            playerId,
+            pointsPerWord,
+            $"Слово: {submittedWord}",
+            sessionId: session.Id,
+            ct: ct);
 
         _logger.LogInformation(
             "Player {PlayerId} submitted word {Word} in session {SessionId}",
@@ -126,38 +134,6 @@ public class WordRushHandler : IEventHandler
         }
 
         return false;
-    }
-
-    private async Task AwardPointsAsync(Guid userId, int points, Guid? sessionId, string description, CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == userId, ct);
-
-        if (wallet is null)
-        {
-            wallet = new Domain.Entities.Wallet { UserId = userId, Balance = points };
-            db.Wallets.Add(wallet);
-            await db.SaveChangesAsync(ct);
-        }
-        else
-        {
-            wallet.Balance += points;
-            await db.SaveChangesAsync(ct);
-        }
-
-        var transaction = new WalletTransaction
-        {
-            WalletId = wallet.Id,
-            Amount = points,
-            Type = WalletTransactionType.EventReward,
-            Description = description,
-            RelatedSessionId = sessionId
-        };
-
-        db.WalletTransactions.Add(transaction);
-        await db.SaveChangesAsync(ct);
     }
 
     private class WordRushConfig

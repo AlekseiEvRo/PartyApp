@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Events.Handlers;
+using PartyApp.Api.Modules.Push;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Persistence;
@@ -15,17 +16,20 @@ public class EventService : IEventService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IEventHandlerFactory _handlerFactory;
     private readonly IHubContext<PartyHub> _hubContext;
+    private readonly IPushNotificationService _push;
     private readonly ILogger<EventService> _logger;
 
     public EventService(
         IServiceScopeFactory scopeFactory,
         IEventHandlerFactory handlerFactory,
         IHubContext<PartyHub> hubContext,
+        IPushNotificationService push,
         ILogger<EventService> logger)
     {
         _scopeFactory = scopeFactory;
         _handlerFactory = handlerFactory;
         _hubContext = hubContext;
+        _push = push;
         _logger = logger;
     }
 
@@ -105,6 +109,15 @@ public class EventService : IEventService
             startedAt = session.StartedAt
         }, ct);
 
+        // Push тем, у кого приложение закрыто
+        await _push.SendToAllAsync(
+            new PushMessage(
+                Title: $"🎉 {definition.DisplayName}",
+                Body: definition.Description ?? "Скорее участвуй!",
+                Url: "/",
+                Tag: $"event-{session.Id}"),
+            ct: ct);
+
         _logger.LogInformation(
             "Event started: {DisplayName} (type={Type}, session={SessionId})",
             definition.DisplayName, definition.Type, session.Id);
@@ -178,25 +191,9 @@ public class EventService : IEventService
         db.PlayerSubmissions.Add(submission);
         await db.SaveChangesAsync(ct);
 
-        if (result.Success && result.PointsAwarded > 0)
-        {
-            var newBalance = await GetPlayerBalanceAsync(playerId, ct);
-            await _hubContext.Clients.User(playerId.ToString()).SendAsync("BalanceUpdated", new
-            {
-                balance = newBalance
-            }, ct);
-        }
-
         return new SubmissionOutcome(result.Success, result.PointsAwarded, result.Message, result.Data);
     }
-    
-    private async Task<int> GetPlayerBalanceAsync(Guid playerId, CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var wallet = await db.Wallets.AsNoTracking().SingleOrDefaultAsync(w => w.UserId == playerId, ct);
-        return wallet?.Balance ?? 0;
-    }
+
     public async Task<object?> GetEventDataAsync(Guid sessionId, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();

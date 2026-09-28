@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Persistence;
@@ -14,11 +15,16 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 public class QrScanHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly PointsAwardService _pointsAward;
     private readonly ILogger<QrScanHandler> _logger;
 
-    public QrScanHandler(IServiceScopeFactory scopeFactory, ILogger<QrScanHandler> logger)
+    public QrScanHandler(
+        IServiceScopeFactory scopeFactory,
+        PointsAwardService pointsAward,
+        ILogger<QrScanHandler> logger)
     {
         _scopeFactory = scopeFactory;
+        _pointsAward = pointsAward;
         _logger = logger;
     }
 
@@ -92,6 +98,13 @@ public class QrScanHandler : IEventHandler
         token.RedeemedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
+
+        await _pointsAward.NotifyBalanceChangedAsync(
+            playerId,
+            wallet.Balance,
+            points,
+            $"QR-код: {submittedCode}",
+            ct);
 
         _logger.LogInformation(
             "Player {PlayerId} redeemed QR token {Code} for {Points} points",

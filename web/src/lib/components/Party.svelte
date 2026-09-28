@@ -7,6 +7,7 @@
     import EventCard from './EventCard.svelte';
     import SpyGame from './SpyGame.svelte';
     import InstallPrompt from './InstallPrompt.svelte';
+    import { syncPushSubscription } from '../push';
 
     async function loadInitialData() {
         try {
@@ -48,6 +49,9 @@
         }
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // Подписка устройства привязывается к тому, кто сейчас вошёл
+        await syncPushSubscription();
     });
 
     onDestroy(() => {

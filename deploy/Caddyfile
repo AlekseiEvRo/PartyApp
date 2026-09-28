@@ -1,0 +1,17 @@
+# PartyApp: HTTPS через Caddy (Windows)
+#
+# Caddy сам получает и продлевает сертификат Let's Encrypt и проксирует
+# приложение (включая WebSocket для SignalR) на Kestrel.
+#
+# Запуск: caddy run --config Caddyfile
+#
+# Требования:
+#   - порты 80 и 443 проброшены на этот ПК;
+#   - DNS A-запись party-app.online указывает на белый IP;
+#   - в Cloudflare прокси (оранжевая туча) выключен — DNS only;
+#   - приложение слушает http://localhost:5000.
+
+party-app.online {
+	encode gzip
+	reverse_proxy localhost:5000
+}
