@@ -24,6 +24,17 @@ export const connectionState = writable<'disconnected' | 'connecting' | 'connect
 export const toast = writable<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 export const spyGameRole = writable<any>(null);
 
+// Инкрементируются при живых событиях SignalR, чтобы лента и стенка обновились
+export const photosVersion = writable(0);
+export const wishesVersion = writable(0);
+
+// ID удалённых элементов, чтобы убрать их из открытых списков без перезагрузки
+export const photoRemovedId = writable<string | null>(null);
+export const wishRemovedId = writable<string | null>(null);
+
+// Инкрементируется у админов, когда появляется контент на модерации
+export const moderationVersion = writable(0);
+
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
     toast.set({ message, type });
     setTimeout(() => toast.set(null), 3000);

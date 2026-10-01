@@ -18,7 +18,8 @@ public static class AuthEndpoints
         {
             var response = await authService.RegisterAsync(request, ct);
             return Results.Ok(response);
-        });
+        })
+        .RequireRateLimiting("auth");
 
         group.MapPost("/login", async (
             LoginRequest request,
@@ -27,7 +28,8 @@ public static class AuthEndpoints
         {
             var response = await authService.LoginAsync(request, ct);
             return Results.Ok(response);
-        });
+        })
+        .RequireRateLimiting("auth");
 
         group.MapGet("/me", (ClaimsPrincipal user) =>
             {

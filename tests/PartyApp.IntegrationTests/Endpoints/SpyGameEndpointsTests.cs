@@ -94,10 +94,8 @@ public class SpyGameEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task Start_WithThreePlayers_ReturnsServerError()
+    public async Task Start_WithThreePlayers_ReturnsBadRequest()
     {
-        // Известное ограничение: InvalidOperationException из сервиса
-        // не обрабатывается эндпоинтом и превращается в 500.
         TestUser admin = await _api.CreateAdminAsync();
         List<(TestUser User, PartyAppApi Api)> players = await CreatePlayersAsync(3);
 
@@ -105,7 +103,43 @@ public class SpyGameEndpointsTests : IDisposable
         HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
             "/api/spygame/start", new { playerIds = players.Select(p => p.User.Id).ToList() });
 
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await PartyAppApi.ReadJsonAsync(response)).GetProperty("error").GetString()
+            .Should().Be("Нужно минимум 4 игрока");
+    }
+
+    [Fact]
+    public async Task Start_WithDuplicatePlayers_ReturnsBadRequest()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        List<(TestUser User, PartyAppApi Api)> players = await CreatePlayersAsync(2);
+
+        List<Guid> ids = players.Select(p => p.User.Id).ToList();
+        ids.AddRange(ids); // 4 записи, но только 2 уникальных
+
+        _api.Authorize(admin);
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/spygame/start", new { playerIds = ids });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await PartyAppApi.ReadJsonAsync(response)).GetProperty("error").GetString()
+            .Should().Be("Игроки не должны повторяться");
+    }
+
+    [Fact]
+    public async Task Start_WhenAlreadyRunning_ReturnsConflict()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        List<(TestUser User, PartyAppApi Api)> players = await CreatePlayersAsync(4);
+        await StartGameAsync(admin, players.Select(p => p.User));
+
+        _api.Authorize(admin);
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/spygame/start", new { playerIds = players.Select(p => p.User.Id).ToList() });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await PartyAppApi.ReadJsonAsync(response)).GetProperty("error").GetString()
+            .Should().Be("Игра уже запущена");
     }
 
     [Fact]

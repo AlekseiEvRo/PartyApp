@@ -21,6 +21,12 @@ public static class QrEndpoints
             IQrTokenService qrService,
             CancellationToken ct) =>
         {
+            if (request.Count < 1 || request.Count > 100)
+                return Results.BadRequest(new { error = "Количество токенов должно быть от 1 до 100" });
+
+            if (request.Points <= 0)
+                return Results.BadRequest(new { error = "Количество баллов должно быть больше 0" });
+
             var tokens = await qrService.GenerateTokensAsync(request.Count, request.Points, ct);
             return Results.Ok(new { generated = tokens.Count, tokens });
         });

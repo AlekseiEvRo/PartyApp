@@ -5,6 +5,8 @@
     import GrantTab from './GrantTab.svelte';
     import LeaderboardTab from './LeaderboardTab.svelte';
     import SpyGameTab from './SpyGameTab.svelte';
+    import PhotosTab from './PhotosTab.svelte';
+    import WishesTab from './WishesTab.svelte';
     import { user } from '../../stores';
 
     let activeTab = 'dashboard';
@@ -15,7 +17,9 @@
         { id: 'qr', label: '📷 QR-коды' },
         { id: 'grant', label: '💰 Начисление' },
         { id: 'leaderboard', label: '🏆 Лидерборд' },
-        { id: 'spy', label: '🕵 Шпионаж' }
+        { id: 'spy', label: '🕵 Шпионаж' },
+        { id: 'photos', label: '📸 Фото' },
+        { id: 'wishes', label: '💌 Пожелания' }
     ];
 
     function logout() {
@@ -59,6 +63,10 @@
             <LeaderboardTab />
         {:else if activeTab === 'spy'}
             <SpyGameTab />
+        {:else if activeTab === 'photos'}
+            <PhotosTab />
+        {:else if activeTab === 'wishes'}
+            <WishesTab />
         {/if}
     </div>
 </div>

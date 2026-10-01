@@ -44,13 +44,20 @@ public class PartyAppFactory : WebApplicationFactory<Program>
 
     public string DatabasePath => _databasePath;
 
+    /// <summary>
+    /// Дополнительные настройки конфигурации для конкретного теста
+    /// (например, включение rate limiting с маленьким лимитом).
+    /// Задавать до первого CreateClient — конфигурация читается при старте приложения.
+    /// </summary>
+    public Action<Dictionary<string, string?>>? ConfigureOverrides { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
 
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            Dictionary<string, string?> settings = new()
             {
                 ["ConnectionStrings:DefaultConnection"] = $"Data Source={_databasePath};Cache=Shared;Foreign Keys=True",
                 ["Jwt:SigningKey"] = TestJwt.SigningKey,
@@ -59,10 +66,16 @@ public class PartyAppFactory : WebApplicationFactory<Program>
                 ["Party:WelcomeBonus"] = "100",
                 ["Dictionary:FilePath"] = _dictionaryPath,
                 ["Push:KeysFile"] = Path.Combine(_directory, "vapid.json"),
+                ["Files:UploadRoot"] = Path.Combine(_directory, "uploads"),
+                ["Wishes:RequireModeration"] = "true",
                 ["Toast:CooldownSeconds"] = "30",
                 ["Toast:Points"] = "1",
+                ["RateLimiting:Enabled"] = "false",
                 ["Serilog:MinimumLevel:Default"] = "Warning"
-            });
+            };
+
+            ConfigureOverrides?.Invoke(settings);
+            configuration.AddInMemoryCollection(settings);
         });
 
         builder.ConfigureTestServices(services =>

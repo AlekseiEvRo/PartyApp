@@ -6,6 +6,9 @@ namespace PartyApp.Api.Hubs;
 [Authorize]
 public class PartyHub : Hub
 {
+    /// <summary>Группа SignalR для админов: туда уходят события модерации.</summary>
+    public const string AdminsGroup = "admins";
+
     private readonly ILogger<PartyHub> _logger;
 
     public PartyHub(ILogger<PartyHub> logger)
@@ -17,6 +20,12 @@ public class PartyHub : Hub
     {
         var userId = Context.User?.FindFirst("sub")?.Value;
         var username = Context.User?.FindFirst("name")?.Value;
+
+        // Админ подписывается на уведомления о новом контенте на модерации
+        if (Context.User?.IsInRole("Admin") == true)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, AdminsGroup);
+        }
 
         _logger.LogInformation(
             "User {Username} ({UserId}) connected. ConnectionId: {ConnectionId}",

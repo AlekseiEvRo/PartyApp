@@ -16,6 +16,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PlayerSubmission> PlayerSubmissions => Set<PlayerSubmission>();
     public DbSet<QrToken> QrTokens => Set<QrToken>();
     public DbSet<PartyPhoto> PartyPhotos => Set<PartyPhoto>();
+    public DbSet<PhotoLike> PhotoLikes => Set<PhotoLike>();
+    public DbSet<Wish> Wishes => Set<Wish>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)

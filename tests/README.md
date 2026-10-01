@@ -4,8 +4,8 @@
 
 | Проект | Что проверяет | Тестов |
 |---|---|---|
-| `PartyApp.UnitTests` | Сервисы, обработчики ивентов, middleware, EF-конфигурации — без HTTP | 229 |
-| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 116 |
+| `PartyApp.UnitTests` | Сервисы, обработчики ивентов, middleware, EF-конфигурации — без HTTP | 238 |
+| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 149 |
 
 Общий запуск из корня репозитория:
 
@@ -58,6 +58,8 @@ in-memory и записывающие фейки вместо инфрастру
 - **Toast/SpyGame**: кулдауны и тайминги через `FakeTimeProvider`,
   роли рассказчик/угадчик, обвинения, победы, ничья.
 - **Push**: VAPID из конфига/файла, автогенерация и переиспользование ключей.
+- **Файлы**: `LocalFileStorage` — сохранение/чтение/удаление, уникальные пути,
+  валидация расширений, защита от path traversal.
 - **Инфраструктура**: `ExceptionHandlingMiddleware` (400/500), EF-конфигурации
   (уникальные индексы, каскады, конвертер дат в UTC), `SubClaimUserIdProvider`.
 
@@ -71,13 +73,27 @@ in-memory и записывающие фейки вместо инфрастру
 ### Что покрыто
 
 - **Auth/Wallet/Admin**: регистрация/логин/`me`, приветственный бонус,
-  403 для игроков, лидерборд, ручные начисления и списания.
+  403 для игроков, лидерборд, ручные начисления и списания, история транзакций
+  кошелька с пагинацией.
+- **Rate limiting**: при превышении лимита `/api/auth` возвращает **429**
+  с JSON-ошибкой; при `RateLimiting:Enabled=false` лимиты не действуют.
 - **Events**: полный E2E-сценарий «админ стартует квиз → игрок отвечает →
   баланс растёт → повтор отклоняется → админ завершает», `available`,
   `data`, определения и CRUD (`POST/PUT/DELETE /api/events/definitions`,
   `GET /types`), конфликты старта/финиша.
 - **Toast/QR/Push/Notifications**: реальный кулдаун тостов, одноразовые
-  QR-коды, защита от SSRF в подписке на push, рассылка сообщений ведущего.
+  QR-коды (некорректные count/points — 400), защита от SSRF в подписке
+  на push, рассылка сообщений ведущего.
+- **Фото/Пожелания**: загрузка с проверкой сигнатуры и лимита размера, лента,
+  лайки-переключатели, модерация (скрыто до одобрения), права на удаление;
+  стенка пожеланий с премодерацией и видимостью только одобренного. Удаление
+  и отзыв одобрения рассылаются по SignalR (`PhotoRemoved`/`WishRemoved`),
+  чтобы элементы исчезали у всех без перезагрузки. О новом контенте на
+  модерации админам приходят `ModerationPending` (только в группу `admins`)
+  и push с тегом `moderation`.
+- **SignalR**: настоящий `HubConnection` через `TestServer` — отказ без токена,
+  `BalanceUpdated`, `EventStarted`, `ReceiveBroadcast`, `SpyGameRoleAssigned`,
+  `PhotoRemoved`, `WishRemoved`, `ModerationPending` (админам и никому другому).
 - **SignalR**: настоящий `HubConnection` через `TestServer` — отказ без токена,
   `BalanceUpdated`, `EventStarted`, `ReceiveBroadcast`, `SpyGameRoleAssigned`.
 
@@ -85,10 +101,6 @@ in-memory и записывающие фейки вместо инфрастру
 
 Это не баги тестов, а текущее поведение приложения:
 
-- `QrTokenService.GenerateTokensAsync` при `count` вне 1..100 бросает
-  `InvalidOperationException` → клиент получает **500**, а не 400.
-- `SpyGameService.StartGameAsync` при невалидном составе игроков тоже даёт
-  **500** (исключение не обрабатывается эндпоинтом).
 - В `PlayerSubmissions` сохраняются и отклонённые попытки (например, повторный
   ответ на вопрос квиза) — со `Score = 0`.
 - `TryGetProperty` в обработчиках чувствителен к регистру ключей payload,
