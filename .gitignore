@@ -7,10 +7,16 @@
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
 
 # Local app data / uploads
-src/PartyApp.Api/App_Data/
+App_Data/
 uploads/
+
+# Frontend build output (web -> npm run build -> wwwroot)
+src/PartyApp.Api/wwwroot/*
+!src/PartyApp.Api/wwwroot/admin.html
+!src/PartyApp.Api/wwwroot/signalr-test.html
 
 # dotenv files
 .env
