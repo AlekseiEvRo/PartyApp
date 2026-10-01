@@ -220,16 +220,19 @@
         justify-content: center;
         z-index: 100;
         padding: 20px;
+        padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     }
 
     .modal {
-        background: #1a1a3e;
+        background: var(--card, #1a1a3e);
         border-radius: 16px;
         padding: 20px 24px;
         width: 100%;
         max-width: 380px;
         max-height: 85vh;
+        max-height: calc(100dvh - 40px);
         overflow-y: auto;
+        overscroll-behavior: contain;
     }
 
     .modal-header {
@@ -258,7 +261,7 @@
         display: flex;
         flex-direction: column;
         gap: 10px;
-        background: #12122e;
+        background: var(--bg-soft, #12122e);
         border-radius: 10px;
         padding: 12px 14px;
     }
@@ -326,10 +329,11 @@
     }
 
     .hint {
-        color: #aaa;
+        color: var(--muted, #aaa);
         font-size: 13px;
         line-height: 1.5;
         margin-top: 12px;
+        overflow-wrap: anywhere;
     }
 
     .message {
@@ -338,6 +342,7 @@
         border-radius: 8px;
         font-size: 14px;
         line-height: 1.4;
+        overflow-wrap: anywhere;
     }
 
     .message.info { background: #23324d; color: #cfe1ff; }

@@ -35,12 +35,13 @@
     .leaderboard-item {
         display: flex;
         align-items: center;
+        gap: 8px;
         padding: 14px;
-        border-bottom: 1px solid #333;
+        border-bottom: 1px solid var(--border, #333);
     }
-    .rank { width: 50px; font-size: 22px; font-weight: bold; color: #f5a623; }
-    .name { flex: 1; font-size: 16px; }
-    .score { font-size: 18px; font-weight: bold; color: #27ae60; }
+    .rank { width: 44px; flex-shrink: 0; font-size: 22px; font-weight: bold; color: var(--accent, #f5a623); }
+    .name { flex: 1; min-width: 0; font-size: 16px; overflow-wrap: anywhere; }
+    .score { font-size: 18px; font-weight: bold; color: var(--green, #27ae60); white-space: nowrap; }
     .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; }
-    .btn-primary { background: #3498db; color: #fff; margin-top: 12px; }
+    .btn-primary { background: var(--blue, #3498db); color: #fff; margin-top: 12px; }
 </style>

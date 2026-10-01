@@ -124,20 +124,20 @@
 </div>
 
 <style>
-    .card { background: #0f0f23; border-radius: 8px; padding: 16px; margin: 16px 0; }
-    .hint { color: #aaa; font-size: 13px; margin: 8px 0; }
+    .card { background: var(--bg, #0f0f23); border-radius: 8px; padding: 16px; margin: 16px 0; overflow-wrap: anywhere; }
+    .hint { color: var(--muted, #aaa); font-size: 13px; margin: 8px 0; }
     .players-list { margin: 12px 0; }
-    .player-item { display: block; margin: 6px 0; cursor: pointer; }
-    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    .player-item { display: block; margin: 6px 0; cursor: pointer; overflow-wrap: anywhere; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .btn { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
-    .btn-primary { background: #3498db; color: #fff; }
-    .btn-success { background: #27ae60; color: #fff; }
-    .btn-danger { background: #e74c3c; color: #fff; }
-    .word { background: #0f0f23; padding: 4px 8px; border-radius: 4px; }
+    .btn-primary { background: var(--blue, #3498db); color: #fff; }
+    .btn-success { background: var(--green, #27ae60); color: #fff; }
+    .btn-danger { background: var(--red, #e74c3c); color: #fff; }
+    .word { background: var(--bg, #0f0f23); padding: 4px 8px; border-radius: 4px; overflow-wrap: anywhere; }
     .winner { font-size: 18px; font-weight: bold; margin: 12px 0; }
-    .winner.spies { color: #e74c3c; }
-    .winner.town { color: #27ae60; }
-    .winner.draw { color: #f39c12; }
-    .accused { color: #f39c12; }
+    .winner.spies { color: var(--red, #e74c3c); }
+    .winner.town { color: var(--green, #27ae60); }
+    .winner.draw { color: var(--orange, #f39c12); }
+    .accused { color: var(--orange, #f39c12); }
     ul { line-height: 1.8; padding-left: 20px; }
 </style>

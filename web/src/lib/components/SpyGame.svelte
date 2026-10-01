@@ -95,15 +95,21 @@
 {/if}
 
 <style>
-    .spy-game { background: #1a1a3e; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 2px solid #f5a623; }
-    .spy-role, .town-role { background: #0f0f23; padding: 16px; border-radius: 8px; }
-    .secret { color: #f5a623; font-size: 20px; letter-spacing: 1px; }
-    .hint { color: #aaa; font-size: 13px; margin: 10px 0; line-height: 1.5; }
-    .wait { color: #3498db; font-style: italic; margin-top: 12px; }
-    .row { display: flex; gap: 8px; margin-top: 12px; }
-    .row input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #1a1a3e; color: #fff; font-size: 16px; }
-    .btn { padding: 12px 18px; border: none; border-radius: 8px; background: #3498db; color: #fff; font-size: 15px; cursor: pointer; }
-    .btn-danger { background: #e74c3c; color: #fff; width: 100%; margin-top: 8px; }
+    .spy-game { background: var(--card, #1a1a3e); border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 2px solid var(--accent, #f5a623); overflow-wrap: anywhere; }
+    .spy-role, .town-role { background: var(--bg, #0f0f23); padding: 16px; border-radius: 8px; }
+    .secret { color: var(--accent, #f5a623); font-size: 20px; letter-spacing: 1px; }
+    .hint { color: var(--muted, #aaa); font-size: 13px; margin: 10px 0; line-height: 1.5; }
+    .wait { color: var(--blue, #3498db); font-style: italic; margin-top: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .row input { flex: 1 1 160px; min-width: 0; padding: 12px; border-radius: 8px; border: 1px solid var(--border, #333); background: var(--card, #1a1a3e); color: #fff; font-size: 16px; }
+    .btn { padding: 12px 18px; border: none; border-radius: 8px; background: var(--blue, #3498db); color: #fff; font-size: 15px; cursor: pointer; }
+    .btn-danger { background: var(--red, #e74c3c); color: #fff; width: 100%; margin-top: 8px; }
     .btn:disabled { background: #444; cursor: not-allowed; }
-    select { width: 100%; padding: 12px; border-radius: 8px; background: #1a1a3e; color: #fff; border: 1px solid #333; margin: 8px 0; font-size: 15px; }
+    select { width: 100%; padding: 12px; border-radius: 8px; background: var(--card, #1a1a3e); color: #fff; border: 1px solid var(--border, #333); margin: 8px 0; font-size: 15px; }
+
+    @media (max-width: 480px) {
+        .spy-game { padding: 16px; }
+        .spy-role, .town-role { padding: 12px; }
+        .row .btn { flex: 1 1 100%; }
+    }
 </style>

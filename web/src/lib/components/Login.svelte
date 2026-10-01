@@ -2,6 +2,9 @@
   import { api, setToken } from '../api';
   import { user } from '../stores';
 
+  /** Встроенный режим: без собственного полноэкранного центрирования */
+  export let embedded = false;
+
   let username = '';
   let displayName = '';
   let password = '';
@@ -45,7 +48,7 @@
   }
 </script>
 
-<div class="login-wrap">
+<div class="login-wrap" class:embedded>
   <div class="login-card">
     <h1>🎉 PartyApp</h1>
     <p class="subtitle">{isRegister ? 'Регистрация' : 'Вход на вечеринку'}</p>
