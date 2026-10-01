@@ -35,6 +35,9 @@ export const wishRemovedId = writable<string | null>(null);
 // Инкрементируется у админов, когда появляется контент на модерации
 export const moderationVersion = writable(0);
 
+// Магазин: товары, покупки и лоты — открытые экраны обновляются без перезагрузки
+export const shopVersion = writable(0);
+
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
     toast.set({ message, type });
     setTimeout(() => toast.set(null), 3000);

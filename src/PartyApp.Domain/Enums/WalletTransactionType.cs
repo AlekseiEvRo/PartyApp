@@ -7,5 +7,8 @@ public enum WalletTransactionType
     AdminGrant = 20,
     AdminDeduct = 30,
     TransferIn = 40,
-    TransferOut = 50
+    TransferOut = 50,
+    ShopPurchase = 60,
+    AuctionBid = 70,
+    Refund = 80
 }

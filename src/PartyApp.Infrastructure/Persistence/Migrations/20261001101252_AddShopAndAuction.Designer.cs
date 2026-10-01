@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PartyApp.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using PartyApp.Infrastructure.Persistence;
 namespace PartyApp.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261001101252_AddShopAndAuction")]
+    partial class AddShopAndAuction
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.19");
@@ -374,29 +377,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.HasIndex("RedeemedById");
 
                     b.ToTable("QrTokens");
-                });
-
-            modelBuilder.Entity("PartyApp.Domain.Entities.ScreenSettings", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("LeaderboardSeconds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("PhotoSeconds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ShopSeconds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ScreenSettings");
                 });
 
             modelBuilder.Entity("PartyApp.Domain.Entities.ShopItem", b =>

@@ -35,6 +35,21 @@
         live?: { speakerName?: string | null; busyUntilUtc?: string | null } | null;
     }
 
+    interface ShopItem {
+        id: string;
+        name: string;
+        description: string | null;
+        price: number;
+        stock: number | null;
+        isActive: boolean;
+    }
+
+    interface ScreenSettings {
+        photoSeconds: number;
+        leaderboardSeconds: number;
+        shopSeconds: number;
+    }
+
     interface Photo {
         id: string;
         uploadedByName: string;
@@ -105,6 +120,13 @@
     let confetti: ConfettiPiece[] = [];
     let reactions: FloatingReaction[] = [];
     let reactionTimers: ReturnType<typeof setTimeout>[] = [];
+    let shopItems: ShopItem[] = [];
+
+    // Настройки ротации секций (таймауты задаются в админке)
+    let settings: ScreenSettings = { photoSeconds: 8, leaderboardSeconds: 60, shopSeconds: 60 };
+    let rotationPhase = 'photos';
+    let rotationPhaseStartedAt = 0;
+    let rotationActive = false;
 
     let clockTimer: ReturnType<typeof setInterval>;
     let refreshTimer: ReturnType<typeof setInterval>;
@@ -113,6 +135,7 @@
 
     $: displayMode = forced?.mode ?? state.mode;
     $: displaySessionId = forced?.sessionId ?? state.sessionId;
+    $: currentView = displayMode === 'rotation' ? rotationPhase : displayMode;
     $: remainingSeconds = computeRemaining(now);
     $: toastRemaining = computeToastRemaining(now);
     $: currentSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
@@ -126,6 +149,25 @@
     $: if (displayMode === 'photos' && slides.length > 1 && now - lastSlideAt >= slideIntervalMs) {
         lastSlideAt = now;
         slideIndex = (slideIndex + 1) % slides.length;
+    }
+
+    // === Ротация секций: фото → лидерборд → магазин → ... ===
+    $: if (displayMode === 'rotation' && !rotationActive) {
+        startRotation();
+    }
+
+    $: if (displayMode !== 'rotation' && rotationActive) {
+        rotationActive = false;
+    }
+
+    $: if (rotationActive && now - rotationPhaseStartedAt >= rotationPhaseDurationMs()) {
+        advanceRotation();
+    }
+
+    // В фазе фото листаем их по таймауту из настроек
+    $: if (rotationActive && rotationPhase === 'photos' && slides.length > 0) {
+        const secondsIntoPhase = Math.floor((now - rotationPhaseStartedAt) / 1000);
+        slideIndex = Math.floor(secondsIntoPhase / Math.max(1, settings.photoSeconds)) % slides.length;
     }
 
     onMount(async () => {
@@ -143,6 +185,7 @@
             connection.on('EventStarted', onEventStarted);
             connection.on('EventFinished', onEventFinished);
             connection.on('EventLiveUpdated', onEventLiveUpdated);
+            connection.on('ScreenSettingsUpdated', onScreenSettingsUpdated);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -155,6 +198,7 @@
 
         try {
             await loadState();
+            await loadSettings();
         } catch (e) {
             console.error('Screen: не удалось получить состояние', e);
         }
@@ -174,6 +218,7 @@
             connection.off('EventStarted', onEventStarted);
             connection.off('EventFinished', onEventFinished);
             connection.off('EventLiveUpdated', onEventLiveUpdated);
+            connection.off('ScreenSettingsUpdated', onScreenSettingsUpdated);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
 
@@ -237,9 +282,10 @@
         try {
             if (checkConnection) await reconnectIfNeeded();
 
-            if (displayMode === 'leaderboard') await loadLeaderboard();
-            else if (displayMode === 'event') await loadEvent();
-            else if (displayMode === 'photos') await loadPhotos();
+            if (currentView === 'leaderboard') await loadLeaderboard();
+            else if (currentView === 'event') await loadEvent();
+            else if (currentView === 'photos') await loadPhotos();
+            else if (currentView === 'shop') await loadShopItems();
         } catch (e) {
             console.error('Screen: не удалось обновить содержимое', e);
         }
@@ -282,6 +328,46 @@
 
         slides = next;
         if (slideIndex >= slides.length) slideIndex = 0;
+    }
+
+    async function loadShopItems() {
+        shopItems = await api<ShopItem[]>('/api/shop/items');
+    }
+
+    async function loadSettings() {
+        settings = await api<ScreenSettings>('/api/screen/settings');
+    }
+
+    function onScreenSettingsUpdated(updated: ScreenSettings) {
+        settings = updated;
+    }
+
+    function startRotation() {
+        rotationActive = true;
+        rotationPhase = 'photos';
+        rotationPhaseStartedAt = Date.now();
+        void refreshContent();
+    }
+
+    function advanceRotation() {
+        rotationPhase = rotationPhase === 'photos'
+            ? 'leaderboard'
+            : rotationPhase === 'leaderboard' ? 'shop' : 'photos';
+        rotationPhaseStartedAt = Date.now();
+        void refreshContent();
+    }
+
+    function rotationPhaseDurationMs(): number {
+        if (rotationPhase === 'photos') {
+            // Минимум один интервал — даём фотографиям время загрузиться
+            return Math.max(slides.length, 1) * Math.max(1, settings.photoSeconds) * 1000;
+        }
+
+        if (rotationPhase === 'leaderboard') {
+            return Math.max(5, settings.leaderboardSeconds) * 1000;
+        }
+
+        return Math.max(5, settings.shopSeconds) * 1000;
     }
 
     function onConfetti() {
@@ -368,13 +454,13 @@
         <span class="clock">{formatClock(now)}</span>
     </header>
 
-    {#if displayMode === 'idle'}
+    {#if currentView === 'idle'}
         <main class="center">
             <div class="idle-emoji">🎉</div>
             <h1>Скоро начнём!</h1>
             <p class="muted">Следи за приложением — ивенты появятся здесь</p>
         </main>
-    {:else if displayMode === 'leaderboard'}
+    {:else if currentView === 'leaderboard'}
         <main class="leaderboard">
             <h1>🏆 Лидерборд</h1>
 
@@ -392,7 +478,7 @@
                 </ol>
             {/if}
         </main>
-    {:else if displayMode === 'event'}
+    {:else if currentView === 'event'}
         <main class="event">
             <h1>{eventData?.displayName ?? eventInfo?.displayName ?? 'Ивент'}</h1>
 
@@ -437,7 +523,7 @@
                 {/if}
             {/if}
         </main>
-    {:else if displayMode === 'photos'}
+    {:else if currentView === 'photos'}
         <main class="photos">
             {#if currentSlide}
                 {#each asList(currentSlide) as slide (slide.id)}
@@ -454,7 +540,27 @@
                 <p class="muted">Пока нет одобренных фото</p>
             {/if}
         </main>
-    {:else if displayMode === 'message'}
+    {:else if currentView === 'shop'}
+        <main class="shop">
+            <h1>🛍 Призы</h1>
+
+            {#if shopItems.length === 0}
+                <p class="muted">Пока нет призов</p>
+            {:else}
+                <ul>
+                    {#each shopItems as item (item.id)}
+                        <li class:sold-out={item.stock === 0}>
+                            <span class="item-name">{item.name}</span>
+                            <span class="item-price">⭐ {item.price}</span>
+                            <span class="item-stock">
+                                {item.stock === null ? '∞' : item.stock === 0 ? 'нет в наличии' : `осталось ${item.stock}`}
+                            </span>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+        </main>
+    {:else if currentView === 'message'}
         <main class="center">
             <p class="big-message">{state.message}</p>
         </main>
@@ -664,6 +770,37 @@
         font-weight: bold;
         color: #27ae60;
         font-variant-numeric: tabular-nums;
+    }
+
+    /* Призы */
+    .shop ul {
+        list-style: none;
+        width: min(1000px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1.2vh;
+    }
+
+    .shop li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.4vh 2vw;
+        font-size: clamp(18px, 2vw, 34px);
+    }
+
+    .shop li.sold-out { opacity: 0.45; }
+
+    .item-name { flex: 1; text-align: left; }
+
+    .item-price { color: #f5a623; font-weight: bold; white-space: nowrap; }
+
+    .item-stock {
+        color: var(--muted, #aaa);
+        font-size: clamp(13px, 1.3vw, 22px);
+        white-space: nowrap;
     }
 
     /* Фото */

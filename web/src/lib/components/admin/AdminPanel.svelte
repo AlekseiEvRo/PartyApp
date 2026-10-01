@@ -8,6 +8,7 @@
     import PhotosTab from './PhotosTab.svelte';
     import WishesTab from './WishesTab.svelte';
     import ScreenTab from './ScreenTab.svelte';
+    import ShopTab from './ShopTab.svelte';
     import { user } from '../../stores';
     import { forceRefreshApp } from '../../pwa';
 
@@ -22,6 +23,7 @@
         { id: 'spy', label: '🕵 Шпионаж' },
         { id: 'photos', label: '📸 Фото' },
         { id: 'wishes', label: '💌 Пожелания' },
+        { id: 'shop', label: '🛍 Магазин' },
         { id: 'screen', label: '🖥 Экран' }
     ];
 
@@ -84,6 +86,8 @@
             <PhotosTab />
         {:else if activeTab === 'wishes'}
             <WishesTab />
+        {:else if activeTab === 'shop'}
+            <ShopTab />
         {:else if activeTab === 'screen'}
             <ScreenTab />
         {/if}

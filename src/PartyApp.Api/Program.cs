@@ -24,6 +24,7 @@ using PartyApp.Api.Modules.Photos;
 using PartyApp.Api.Modules.Push;
 using PartyApp.Api.Modules.Qr;
 using PartyApp.Api.Modules.Screen;
+using PartyApp.Api.Modules.Shop;
 using PartyApp.Api.Modules.SpyGame;
 using PartyApp.Api.Modules.Submissions;
 using PartyApp.Api.Modules.Toast;
@@ -176,6 +177,8 @@ builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>
 builder.Services.AddSingleton<IPointsAwardService, PointsAwardService>();
 builder.Services.AddScoped<ModerationNotifier>();
 builder.Services.AddSingleton<ScreenService>();
+builder.Services.AddSingleton<AuctionService>();
+builder.Services.AddHostedService<AuctionClosingService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 
@@ -426,6 +429,8 @@ app.MapSpyGameEndpoints();
 app.MapPhotoEndpoints();
 app.MapSubmissionEndpoints();
 app.MapScreenEndpoints();
+app.MapShopEndpoints();
+app.MapAuctionEndpoints();
 
 // SignalR
 app.MapHub<PartyHub>("/hubs/party");

@@ -373,4 +373,89 @@ public class SignalRTests : IDisposable
         payload.GetProperty("text").GetString().Should().Be("Давай!");
         payload.GetProperty("authorName").GetString().Should().Be(author.DisplayName);
     }
+
+    [Fact]
+    public async Task ShopUpdated_IsBroadcastWhenAdminCreatesItem()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+        await using HubConnection connection = await ConnectAsync(player);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ShopUpdated");
+
+        _api.Authorize(admin);
+        HttpResponseMessage created = await _api.Client.PostAsJsonAsync(
+            "/api/shop/items",
+            new { name = "Коктейль", description = (string?)null, price = 30, stock = (int?)null, isActive = true });
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        JsonElement payload = await message;
+        payload.GetProperty("itemId").GetGuid().Should()
+            .Be((await PartyAppApi.ReadJsonAsync(created)).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task PurchaseUpdated_IsBroadcastWhenPrizeIsFulfilled()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+
+        _api.Authorize(admin);
+        HttpResponseMessage created = await _api.Client.PostAsJsonAsync(
+            "/api/shop/items",
+            new { name = "Шампанское", description = (string?)null, price = 10, stock = (int?)null, isActive = true });
+        Guid itemId = (await PartyAppApi.ReadJsonAsync(created)).GetProperty("id").GetGuid();
+
+        _api.Authorize(player);
+        await using HubConnection connection = await ConnectAsync(player);
+
+        HttpResponseMessage buy = await _api.Client.PostAsync($"/api/shop/items/{itemId}/buy", null);
+        Guid purchaseId = (await PartyAppApi.ReadJsonAsync(buy)).GetProperty("purchaseId").GetGuid();
+
+        Task<JsonElement> message = WaitForAsync(connection, "PurchaseUpdated");
+
+        _api.Authorize(admin);
+        (await _api.Client.PostAsync($"/api/shop/purchases/{purchaseId}/fulfill", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("purchaseId").GetGuid().Should().Be(purchaseId);
+        payload.GetProperty("isFulfilled").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task LotFinished_IsBroadcastWithWinner()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+
+        _api.Authorize(admin);
+        HttpResponseMessage created = await _api.Client.PostAsJsonAsync(
+            "/api/shop/lots",
+            new
+            {
+                name = "Торт",
+                description = (string?)null,
+                minBid = 10,
+                endsAt = DateTime.UtcNow.AddMinutes(30)
+            });
+        Guid lotId = (await PartyAppApi.ReadJsonAsync(created)).GetProperty("id").GetGuid();
+
+        _api.Authorize(player);
+        await using HubConnection connection = await ConnectAsync(player);
+
+        (await _api.Client.PostAsJsonAsync($"/api/shop/lots/{lotId}/bids", new { amount = 25 }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        Task<JsonElement> message = WaitForAsync(connection, "LotFinished");
+
+        _api.Authorize(admin);
+        (await _api.Client.PostAsync($"/api/shop/lots/{lotId}/close", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("lotId").GetGuid().Should().Be(lotId);
+        payload.GetProperty("winnerName").GetString().Should().Be(player.DisplayName);
+        payload.GetProperty("winningBid").GetInt32().Should().Be(25);
+    }
 }

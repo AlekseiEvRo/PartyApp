@@ -191,4 +191,65 @@ public class PointsAwardServiceTests : IDisposable
         _hub.SingleCall("BalanceUpdated").Should().NotBeNull();
         _push.Calls.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task TrySpendAsync_WithEnoughPoints_DeductsAndWritesTransaction()
+    {
+        User user = await SeedUserAsync(walletBalance: 50);
+
+        int? newBalance = await _service.TrySpendAsync(user.Id, 30, "Покупка: торт");
+
+        newBalance.Should().Be(20);
+        (await _host.DbAsync(db => db.Wallets.AsNoTracking().SingleAsync(w => w.UserId == user.Id))).Balance
+            .Should().Be(20);
+
+        WalletTransaction transaction = await _host.DbAsync(db => db.WalletTransactions.AsNoTracking().SingleAsync());
+        transaction.Amount.Should().Be(-30);
+        transaction.Type.Should().Be(WalletTransactionType.ShopPurchase);
+        transaction.Description.Should().Be("Покупка: торт");
+
+        BalanceFrom(_hub.SingleCall("BalanceUpdated")).Should().Be(20);
+    }
+
+    [Fact]
+    public async Task TrySpendAsync_WithExactBalance_LeavesZero()
+    {
+        User user = await SeedUserAsync(walletBalance: 25);
+
+        int? newBalance = await _service.TrySpendAsync(user.Id, 25, "Покупка");
+
+        newBalance.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TrySpendAsync_WithoutEnoughPoints_ReturnsNullAndKeepsBalance()
+    {
+        User user = await SeedUserAsync(walletBalance: 10);
+
+        int? newBalance = await _service.TrySpendAsync(user.Id, 11, "Покупка");
+
+        newBalance.Should().BeNull();
+        (await _host.Db.Wallets.SingleAsync(w => w.UserId == user.Id)).Balance.Should().Be(10);
+        (await _host.Db.WalletTransactions.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TrySpendAsync_WithoutWallet_ReturnsNull()
+    {
+        User user = await SeedUserAsync();
+
+        int? newBalance = await _service.TrySpendAsync(user.Id, 5, "Покупка");
+
+        newBalance.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TrySpendAsync_WithNonPositiveAmount_Throws()
+    {
+        User user = await SeedUserAsync(walletBalance: 10);
+
+        Func<Task> act = () => _service.TrySpendAsync(user.Id, 0, "Покупка");
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
 }

@@ -8,6 +8,7 @@
     import SpyGame from './SpyGame.svelte';
     import PhotoGallery from './PhotoGallery.svelte';
     import WishesWall from './WishesWall.svelte';
+    import ShopPanel from './ShopPanel.svelte';
     import ScreenReactions from './ScreenReactions.svelte';
     import InstallPrompt from './InstallPrompt.svelte';
     import { syncPushSubscription } from '../push';
@@ -81,6 +82,7 @@
             {/each}
         {/if}
 
+        <ShopPanel />
         <PhotoGallery />
         <WishesWall />
     </main>

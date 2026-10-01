@@ -16,11 +16,19 @@
         displayName: string;
     }
 
+    interface ScreenSettings {
+        photoSeconds: number;
+        leaderboardSeconds: number;
+        shopSeconds: number;
+    }
+
     let state: ScreenState | null = null;
     let events: AvailableEvent[] = [];
+    let settings: ScreenSettings = { photoSeconds: 8, leaderboardSeconds: 60, shopSeconds: 60 };
     let selectedSessionId = '';
     let message = '';
     let busy = false;
+    let savingSettings = false;
     let error = '';
 
     onMount(load);
@@ -30,6 +38,7 @@
 
         try {
             state = await api<ScreenState>('/api/screen/state');
+            settings = await api<ScreenSettings>('/api/screen/settings');
             events = await api<AvailableEvent[]>('/api/events/available');
 
             if (!selectedSessionId && events.length > 0) {
@@ -78,6 +87,23 @@
         }
     }
 
+    async function saveSettings() {
+        savingSettings = true;
+
+        try {
+            settings = await api<ScreenSettings>('/api/screen/settings', 'PUT', {
+                photoSeconds: Number(settings.photoSeconds),
+                leaderboardSeconds: Number(settings.leaderboardSeconds),
+                shopSeconds: Number(settings.shopSeconds)
+            });
+            showToast('Настройки ротации сохранены');
+        } catch (e) {
+            showToast(e instanceof Error ? e.message : 'Не удалось сохранить настройки', 'error');
+        } finally {
+            savingSettings = false;
+        }
+    }
+
     function modeLabel(mode: string): string {
         switch (mode) {
             case 'leaderboard':
@@ -86,6 +112,10 @@
                 return 'ивент';
             case 'photos':
                 return 'слайдшоу';
+            case 'shop':
+                return 'призы';
+            case 'rotation':
+                return 'ротация';
             case 'message':
                 return 'сообщение';
             default:
@@ -116,7 +146,30 @@
         <button class="btn" on:click={() => setMode('idle')} disabled={busy}>Ожидание</button>
         <button class="btn" on:click={() => setMode('leaderboard')} disabled={busy}>🏆 Лидерборд</button>
         <button class="btn" on:click={() => setMode('photos')} disabled={busy}>📸 Слайдшоу</button>
+        <button class="btn" on:click={() => setMode('shop')} disabled={busy}>🛍 Призы</button>
+        <button class="btn accent" on:click={() => setMode('rotation')} disabled={busy}>🔁 Ротация</button>
         <button class="btn accent" on:click={fireConfetti} disabled={busy}>🎉 Конфетти</button>
+    </div>
+
+    <div class="block settings">
+        <p class="group-label">Ротация: фото → лидерборд → призы</p>
+        <div class="inline">
+            <label class="field">
+                Секунд на фото
+                <input type="number" min="3" max="600" bind:value={settings.photoSeconds} />
+            </label>
+            <label class="field">
+                Лидерборд, сек
+                <input type="number" min="5" max="3600" bind:value={settings.leaderboardSeconds} />
+            </label>
+            <label class="field">
+                Призы, сек
+                <input type="number" min="5" max="3600" bind:value={settings.shopSeconds} />
+            </label>
+            <button class="btn accent" on:click={saveSettings} disabled={savingSettings}>
+                {savingSettings ? 'Сохраняем…' : 'Сохранить'}
+            </button>
+        </div>
     </div>
 
     <div class="block">
@@ -189,11 +242,29 @@
 
     .block { margin-bottom: 16px; }
 
-    .block label {
+    .block label,
+    .group-label {
         display: block;
         font-size: 13px;
         color: var(--muted, #aaa);
         margin-bottom: 6px;
+    }
+
+    .settings .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 0;
+    }
+
+    .settings .field input {
+        width: 120px;
+        background: var(--bg-soft, #12122e);
+        border: 1px solid #2a2a5e;
+        border-radius: 8px;
+        color: inherit;
+        padding: 9px 12px;
+        font-size: 14px;
     }
 
     .inline {

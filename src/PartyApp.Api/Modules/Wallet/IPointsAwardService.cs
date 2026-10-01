@@ -20,6 +20,19 @@ public interface IPointsAwardService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Атомарно списывает баллы, только если их хватает. Возвращает новый баланс
+    /// или null, если кошелька нет или на счету меньше нужной суммы. Защищает
+    /// от гонки при одновременных покупках.
+    /// </summary>
+    Task<int?> TrySpendAsync(
+        Guid userId,
+        int amount,
+        string description,
+        WalletTransactionType type = WalletTransactionType.ShopPurchase,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Сообщает клиенту и push-ом, что баланс изменился.
     /// Вызывается отдельно, если кошелёк сохранён в общем DbContext вызывающего кода.
     /// </summary>
