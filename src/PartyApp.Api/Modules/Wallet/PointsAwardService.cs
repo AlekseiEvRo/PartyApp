@@ -78,6 +78,58 @@ public class PointsAwardService : IPointsAwardService
     }
 
     /// <summary>
+    /// Атомарно списывает баллы условным UPDATE: уйти в минус при параллельных
+    /// покупках невозможно.
+    /// </summary>
+    public async Task<int?> TrySpendAsync(
+        Guid userId,
+        int amount,
+        string description,
+        WalletTransactionType type = WalletTransactionType.ShopPurchase,
+        Guid? sessionId = null,
+        CancellationToken ct = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Списываемая сумма должна быть больше 0");
+
+        using var scope = _scopeFactory.CreateScope();
+        AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        Domain.Entities.Wallet? wallet = await db.Wallets.AsNoTracking()
+            .SingleOrDefaultAsync(w => w.UserId == userId, ct);
+
+        if (wallet is null)
+            return null;
+
+        int updated = await db.Wallets
+            .Where(w => w.Id == wallet.Id && w.Balance >= amount)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(w => w.Balance, w => w.Balance - amount), ct);
+
+        if (updated == 0)
+            return null;
+
+        db.WalletTransactions.Add(new WalletTransaction
+        {
+            WalletId = wallet.Id,
+            Amount = -amount,
+            Type = type,
+            Description = description,
+            RelatedSessionId = sessionId
+        });
+        await db.SaveChangesAsync(ct);
+
+        int newBalance = await db.Wallets.AsNoTracking()
+            .Where(w => w.Id == wallet.Id)
+            .Select(w => w.Balance)
+            .SingleAsync(ct);
+
+        await NotifyBalanceChangedAsync(userId, newBalance, -amount, description, ct);
+
+        return newBalance;
+    }
+
+    /// <summary>
     /// Сообщает клиенту и push-ом, что баланс изменился.
     /// Вызывается отдельно, если кошелёк сохранён в общем DbContext вызывающего кода.
     /// </summary>

@@ -18,6 +18,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PartyPhoto> PartyPhotos => Set<PartyPhoto>();
     public DbSet<PhotoLike> PhotoLikes => Set<PhotoLike>();
     public DbSet<Wish> Wishes => Set<Wish>();
+    public DbSet<ShopItem> ShopItems => Set<ShopItem>();
+    public DbSet<Purchase> Purchases => Set<Purchase>();
+    public DbSet<Lot> Lots => Set<Lot>();
+    public DbSet<Bid> Bids => Set<Bid>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
