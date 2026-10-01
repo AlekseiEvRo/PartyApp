@@ -317,4 +317,40 @@ public class SignalRTests : IDisposable
 
         finished.Should().NotBe(completion.Task, "игрок не должен получать события модерации");
     }
+
+    [Fact]
+    public async Task ScreenUpdated_IsBroadcastToAllClients()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+        await using HubConnection connection = await ConnectAsync(player);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ScreenUpdated");
+
+        _api.Authorize(admin);
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/screen/state", new { mode = "leaderboard" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("mode").GetString().Should().Be("leaderboard");
+        payload.GetProperty("version").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ScreenConfetti_IsBroadcastToAllClients()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+        await using HubConnection connection = await ConnectAsync(player);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ScreenConfetti");
+
+        _api.Authorize(admin);
+        HttpResponseMessage response = await _api.Client.PostAsync("/api/screen/confetti", null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("version").GetInt32().Should().Be(1);
+    }
 }

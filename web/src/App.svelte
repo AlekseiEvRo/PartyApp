@@ -3,11 +3,13 @@
     import Login from './lib/components/Login.svelte';
     import Party from './lib/components/Party.svelte';
     import AdminPanel from './lib/components/admin/AdminPanel.svelte';
+    import Screen from './lib/components/Screen.svelte';
     import { setToken } from './lib/api';
     import { onMount } from 'svelte';
 
     let loading = true;
     let isAdminRoute = window.location.pathname.startsWith('/admin');
+    let isScreenRoute = window.location.pathname.startsWith('/screen');
 
     function isTokenExpired(token: string): boolean {
         try {
@@ -78,6 +80,18 @@
             <div class="admin-login-card">
                 <h2>🔐 Вход в админку</h2>
                 <p>Требуется роль администратора</p>
+                <Login embedded />
+            </div>
+        </div>
+    {/if}
+{:else if isScreenRoute}
+    {#if $user && $user.role === 'Admin'}
+        <Screen />
+    {:else}
+        <div class="admin-login">
+            <div class="admin-login-card">
+                <h2>🖥 Вход для экрана</h2>
+                <p>Экран доступен администратору</p>
                 <Login embedded />
             </div>
         </div>

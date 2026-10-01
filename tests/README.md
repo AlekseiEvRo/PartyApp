@@ -4,8 +4,8 @@
 
 | Проект | Что проверяет | Тестов |
 |---|---|---|
-| `PartyApp.UnitTests` | Сервисы, обработчики ивентов, middleware, EF-конфигурации — без HTTP | 238 |
-| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 149 |
+| `PartyApp.UnitTests` | Сервисы, обработчики ивентов, middleware, EF-конфигурации — без HTTP | 245 |
+| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 157 |
 
 Общий запуск из корня репозитория:
 
@@ -91,11 +91,13 @@ in-memory и записывающие фейки вместо инфрастру
   чтобы элементы исчезали у всех без перезагрузки. О новом контенте на
   модерации админам приходят `ModerationPending` (только в группу `admins`)
   и push с тегом `moderation`.
+- **Экран**: `ScreenService` — режимы, версии состояния и конфетти; API
+  `/api/screen/*` с валидацией (режим, sessionId, сообщение) и правами,
+  рассылки `ScreenUpdated` и `ScreenConfetti`.
 - **SignalR**: настоящий `HubConnection` через `TestServer` — отказ без токена,
   `BalanceUpdated`, `EventStarted`, `ReceiveBroadcast`, `SpyGameRoleAssigned`,
-  `PhotoRemoved`, `WishRemoved`, `ModerationPending` (админам и никому другому).
-- **SignalR**: настоящий `HubConnection` через `TestServer` — отказ без токена,
-  `BalanceUpdated`, `EventStarted`, `ReceiveBroadcast`, `SpyGameRoleAssigned`.
+  `PhotoRemoved`, `WishRemoved`, `ModerationPending` (админам и никому другому),
+  `ScreenUpdated` и `ScreenConfetti`.
 
 ## Известные ограничения, зафиксированные тестами
 
