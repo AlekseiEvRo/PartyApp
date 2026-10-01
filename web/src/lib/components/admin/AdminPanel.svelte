@@ -29,6 +29,14 @@
         localStorage.removeItem('party_token');
         location.href = '/admin';
     }
+
+    // Видно, какая версия фронтенда загружена — помогает ловить «залипший» кэш
+    const buildLabel = new Date(__APP_BUILD__).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
 </script>
 
 <div class="admin">
@@ -42,6 +50,7 @@
                 title="Сбросить кэш приложения и загрузить свежую версию"
             >↻ Обновить</button>
             <span class="admin-name">{$user?.displayName}</span>
+            <span class="build" title="Версия сборки приложения">сборка {buildLabel}</span>
             <button class="logout-btn" on:click={logout}>Выйти</button>
         </div>
     </header>
@@ -128,6 +137,7 @@
     }
     .refresh-btn:hover { background: #ffb84d; }
     .admin-name { color: var(--muted, #aaa); font-size: 14px; overflow-wrap: anywhere; }
+    .build { color: #666; font-size: 11px; white-space: nowrap; }
     .logout-btn {
         background: var(--red, #e74c3c);
         color: #fff;

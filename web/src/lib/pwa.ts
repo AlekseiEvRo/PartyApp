@@ -1,46 +1,36 @@
-import { writable } from 'svelte/store';
 import { registerSW } from 'virtual:pwa-register';
 
-/** Стала доступна новая версия приложения — показываем баннер. */
-export const needRefresh = writable(false);
-
-let updateServiceWorker: ((reloadPage?: boolean) => Promise<void>) | null = null;
+let reloading = false;
 
 /**
  * Регистрирует service worker и следит за обновлениями.
- * Раз в минуту просит браузер проверить новую версию, а когда она найдена —
- * поднимает флаг needRefresh (баннер предложит обновиться).
+ * Обновления применяются автоматически: новый SW активируется, страница
+ * перезагружается. Проверка запускается при старте и далее раз в минуту,
+ * так что открытая админка подтягивает новую версию сама.
  */
 export function initPwa(): void {
     if (!import.meta.env.PROD) return;
 
-    updateServiceWorker = registerSW({
+    const hadController = 'serviceWorker' in navigator && navigator.serviceWorker.controller !== null;
+
+    registerSW({
         immediate: true,
-        onNeedRefresh() {
-            needRefresh.set(true);
-        },
         onRegisteredSW(_swUrl, registration) {
             if (!registration) return;
 
+            void registration.update();
             setInterval(() => void registration.update(), 60_000);
         }
     });
-}
 
-/** Плавное обновление: новый SW вступает в силу, страница перезагружается. */
-export async function updateApp(): Promise<void> {
-    needRefresh.set(false);
+    // Страховка: если управление перешло новому SW, а Workbox не перезагрузил —
+    // перезагружаемся сами (один раз, без цикла). На первом запуске не трогаем.
+    navigator.serviceWorker?.addEventListener('controllerchange', () => {
+        if (!hadController || reloading) return;
 
-    if (updateServiceWorker) {
-        await updateServiceWorker(true);
-        return;
-    }
-
-    await forceRefreshApp();
-}
-
-export function dismissUpdate(): void {
-    needRefresh.set(false);
+        reloading = true;
+        window.location.reload();
+    });
 }
 
 /**

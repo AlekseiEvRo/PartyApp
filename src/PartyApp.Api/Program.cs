@@ -386,10 +386,10 @@ if (app.Environment.IsDevelopment())
 app.UseCors("Web");
 
 // Статические файлы (для тестовой страницы SignalR).
-// index.html не кэшируем: после деплоя новая версия SPA должна подхватываться сразу
+// HTML не кэшируем: после деплоя новая версия SPA должна подхватываться сразу
 void DisableHtmlCache(StaticFileResponseContext context)
 {
-    if (context.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
+    if (context.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
         context.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
 }
 

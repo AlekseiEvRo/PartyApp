@@ -4,7 +4,6 @@
     import Party from './lib/components/Party.svelte';
     import AdminPanel from './lib/components/admin/AdminPanel.svelte';
     import Screen from './lib/components/Screen.svelte';
-    import UpdateBanner from './lib/components/UpdateBanner.svelte';
     import { setToken } from './lib/api';
     import { onMount } from 'svelte';
 
@@ -106,8 +105,6 @@
 {#if $toast}
     <div class="toast toast-{$toast.type}">{$toast.message}</div>
 {/if}
-
-<UpdateBanner />
 
 <style>
     .loading {

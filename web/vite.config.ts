@@ -3,6 +3,10 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+    define: {
+        // Штамп сборки: видно в админке, чтобы понимать, какая версия загружена
+        __APP_BUILD__: JSON.stringify(new Date().toISOString())
+    },
     build: {
         outDir: '../src/PartyApp.Api/wwwroot',
         emptyOutDir: true
@@ -10,9 +14,10 @@ export default defineConfig({
     plugins: [
         svelte(),
         VitePWA({
-            // 'prompt': новая версия ждёт, показываем баннер и обновляемся по кнопке.
-            // Регистрируем SW сами (web/src/lib/pwa.ts), чтобы управлять этим процессом
-            registerType: 'prompt',
+            // Новый SW вступает в силу сам (skipWaiting) — обновления приходят
+            // без клика, старые клиенты перезагружаются автоматически
+            registerType: 'autoUpdate',
+            // Регистрируем SW сами (web/src/lib/pwa.ts): проверка обновлений + страховка
             injectRegister: false,
             includeAssets: ['favicon.ico'],
             manifest: {
@@ -46,11 +51,28 @@ export default defineConfig({
                 ]
             },
             workbox: {
-                // Кэшируем статику для офлайн-работы
-                globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+                // HTML НЕ прекешируем: навигации уходят в сеть и всегда отдают
+                // свежую оболочку, даже если service worker ещё не обновился.
+                // Ассеты с хэшами в имени прекешируются для скорости.
+                globPatterns: ['**/*.{js,css,ico,png,svg,webmanifest}'],
+                navigateFallback: null,
+                cleanupOutdatedCaches: true,
                 // Обработчик push-уведомлений добавляется в сгенерированный service worker
                 importScripts: ['/push-sw.js'],
                 runtimeCaching: [
+                    {
+                        // Страницы: сеть в приоритете, кэш — только офлайн
+                        urlPattern: ({ request }) => request.mode === 'navigate',
+                        handler: 'NetworkFirst',
+                        options: {
+                            cacheName: 'pages',
+                            networkTimeoutSeconds: 5,
+                            expiration: {
+                                maxEntries: 10,
+                                maxAgeSeconds: 60 * 60 * 24
+                            }
+                        }
+                    },
                     {
                         // API запросы — сначала сеть, потом кэш
                         urlPattern: /^\/api\/.*/i,
