@@ -26,35 +26,38 @@
 {#if loading}
     <p style="color:#666;">Загрузка...</p>
 {:else}
-    <table>
-        <thead>
-        <tr>
-            <th>Имя</th>
-            <th>Логин</th>
-            <th>Роль</th>
-            <th>Баланс</th>
-            <th>Зарегистрирован</th>
-        </tr>
-        </thead>
-        <tbody>
-        {#each players as p}
+    <div class="table-wrap">
+        <table>
+            <thead>
             <tr>
-                <td>{p.displayName}</td>
-                <td>{p.username}</td>
-                <td>{p.role === 'Admin' ? '👑 Админ' : '🎮 Игрок'}</td>
-                <td><strong>{p.balance}</strong></td>
-                <td>{new Date(p.createdAt).toLocaleDateString()}</td>
+                <th>Имя</th>
+                <th>Логин</th>
+                <th>Роль</th>
+                <th>Баланс</th>
+                <th>Зарегистрирован</th>
             </tr>
-        {/each}
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+            {#each players as p}
+                <tr>
+                    <td>{p.displayName}</td>
+                    <td>{p.username}</td>
+                    <td>{p.role === 'Admin' ? '👑 Админ' : '🎮 Игрок'}</td>
+                    <td><strong>{p.balance}</strong></td>
+                    <td>{new Date(p.createdAt).toLocaleDateString()}</td>
+                </tr>
+            {/each}
+            </tbody>
+        </table>
+    </div>
 {/if}
 
 <style>
-    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #333; }
-    th { color: #f5a623; font-weight: 600; }
-    tr:hover { background: #2a2a5e; }
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border, #333); white-space: nowrap; }
+    th { color: var(--accent, #f5a623); font-weight: 600; }
+    tr:hover { background: var(--card-soft, #2a2a5e); }
     .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 12px; }
-    .btn-primary { background: #3498db; color: #fff; }
+    .btn-primary { background: var(--blue, #3498db); color: #fff; }
 </style>

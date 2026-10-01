@@ -75,7 +75,8 @@
         bottom: calc(80px + env(safe-area-inset-bottom, 0px));
         left: 50%;
         transform: translateX(-50%);
-        background: #27ae60;
+        max-width: calc(100vw - 32px);
+        background: var(--green, #27ae60);
         color: #fff;
         border: none;
         padding: 12px 24px;
@@ -96,14 +97,18 @@
         justify-content: center;
         z-index: 100;
         padding: 20px;
+        padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     }
 
     .ios-content {
-        background: #1a1a3e;
+        background: var(--card, #1a1a3e);
         border-radius: 16px;
         padding: 24px;
         max-width: 340px;
         width: 100%;
+        max-height: calc(100dvh - 40px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
 
     .ios-content h3 {

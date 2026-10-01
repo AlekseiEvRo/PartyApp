@@ -78,7 +78,7 @@
             <div class="admin-login-card">
                 <h2>🔐 Вход в админку</h2>
                 <p>Требуется роль администратора</p>
-                <Login />
+                <Login embedded />
             </div>
         </div>
     {/if}
@@ -98,24 +98,34 @@
         align-items: center;
         justify-content: center;
         min-height: 100vh;
+        min-height: 100dvh;
         color: #aaa;
         font-size: 18px;
     }
     .admin-login {
         display: flex;
-        align-items: center;
-        justify-content: center;
         min-height: 100vh;
+        min-height: 100dvh;
         padding: 20px;
+        padding-top: calc(20px + env(safe-area-inset-top, 0px));
+        padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+        padding-left: calc(20px + env(safe-area-inset-left, 0px));
+        padding-right: calc(20px + env(safe-area-inset-right, 0px));
     }
     .admin-login-card {
-        background: #1a1a3e;
+        background: var(--card, #1a1a3e);
         padding: 32px;
         border-radius: 16px;
         width: 100%;
         max-width: 420px;
         text-align: center;
+        /* margin:auto центрирует и не обрезает верх, если карточка выше экрана */
+        margin: auto;
     }
-    .admin-login-card h2 { color: #f5a623; margin-bottom: 8px; }
-    .admin-login-card p { color: #aaa; margin-bottom: 20px; }
+    .admin-login-card h2 { color: var(--accent, #f5a623); margin-bottom: 8px; }
+    .admin-login-card p { color: var(--muted, #aaa); margin-bottom: 20px; }
+
+    @media (max-width: 480px) {
+        .admin-login-card { padding: 24px 18px; }
+    }
 </style>

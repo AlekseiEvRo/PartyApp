@@ -1,8 +1,8 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { api } from '../api';
-    import { connect, disconnect, reconnectIfNeeded } from '../signalr';
-    import { activeEvents, balance, user, spyGameRole } from '../stores';
+    import { connect, reconnectIfNeeded } from '../signalr';
+    import { activeEvents, balance, spyGameRole } from '../stores';
     import Header from './Header.svelte';
     import EventCard from './EventCard.svelte';
     import SpyGame from './SpyGame.svelte';
@@ -57,13 +57,6 @@
     onDestroy(() => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
     });
-
-    function logout() {
-        disconnect();
-        user.set(null);
-        localStorage.removeItem('party_token');
-        location.reload();
-    }
 </script>
 
 <div class="party">
@@ -85,6 +78,4 @@
             {/each}
         {/if}
     </main>
-
-    <button class="logout" on:click={logout}>Выйти</button>
 </div>

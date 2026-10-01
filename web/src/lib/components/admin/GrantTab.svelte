@@ -115,15 +115,19 @@
 </div>
 
 <style>
-    .card { background: #0f0f23; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    .card { background: var(--bg, #0f0f23); border-radius: 8px; padding: 16px; margin: 16px 0; }
     .form-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
     .form-group { flex: 1; min-width: 200px; }
-    .form-group label { display: block; margin-bottom: 6px; color: #aaa; font-size: 14px; }
+    .form-group label { display: block; margin-bottom: 6px; color: var(--muted, #aaa); font-size: 14px; }
     .form-group input, .form-group select {
         width: 100%; padding: 10px; border-radius: 6px;
-        border: 1px solid #333; background: #0f0f23; color: #fff;
+        border: 1px solid var(--border, #333); background: var(--bg, #0f0f23); color: #fff;
     }
     .btn { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
-    .btn-success { background: #27ae60; color: #fff; }
-    .btn-warning { background: #f39c12; color: #fff; }
+    .btn-success { background: var(--green, #27ae60); color: #fff; }
+    .btn-warning { background: var(--orange, #f39c12); color: #fff; }
+
+    @media (max-width: 480px) {
+        .form-group { min-width: 100%; }
+    }
 </style>
