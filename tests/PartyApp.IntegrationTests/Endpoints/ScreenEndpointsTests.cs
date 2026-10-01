@@ -138,22 +138,62 @@ public class ScreenEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task Confetti_AsAdmin_IncrementsVersion_AsPlayerForbidden()
+    public async Task Confetti_IsAllowedForPlayersAndIncrementsVersion()
     {
         TestUser player = await _api.RegisterAsync();
         TestUser admin = await _api.CreateAdminAsync();
 
+        // Теперь конфетти может запустить любой игрок
         _api.Authorize(player);
-        HttpResponseMessage forbidden = await _api.Client.PostAsync("/api/screen/confetti", null);
-        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        HttpResponseMessage playerResponse = await _api.Client.PostAsync("/api/screen/confetti", null);
+        playerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         _api.Authorize(admin);
-        HttpResponseMessage first = await _api.Client.PostAsync("/api/screen/confetti", null);
-        first.StatusCode.Should().Be(HttpStatusCode.OK);
-        HttpResponseMessage second = await _api.Client.PostAsync("/api/screen/confetti", null);
-        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        HttpResponseMessage adminResponse = await _api.Client.PostAsync("/api/screen/confetti", null);
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        (await PartyAppApi.ReadJsonAsync(first)).GetProperty("version").GetInt32().Should().Be(1);
-        (await PartyAppApi.ReadJsonAsync(second)).GetProperty("version").GetInt32().Should().Be(2);
+        (await PartyAppApi.ReadJsonAsync(playerResponse)).GetProperty("version").GetInt32().Should().Be(1);
+        (await PartyAppApi.ReadJsonAsync(adminResponse)).GetProperty("version").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Reactions_WithoutToken_ReturnsUnauthorized()
+    {
+        using HttpClient client = _factory.CreateClient();
+
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/screen/reactions", new { emoji = "🎉" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Reactions_AsPlayer_AreValidatedAndAccepted()
+    {
+        TestUser player = await _api.RegisterAsync();
+        _api.Authorize(player);
+
+        // Пустая реакция не принимается
+        HttpResponseMessage empty = await _api.Client.PostAsJsonAsync("/api/screen/reactions", new { });
+        empty.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Стикер
+        HttpResponseMessage sticker = await _api.Client.PostAsJsonAsync(
+            "/api/screen/reactions", new { emoji = "🎉" });
+        sticker.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement stickerJson = await PartyAppApi.ReadJsonAsync(sticker);
+        stickerJson.GetProperty("emoji").GetString().Should().Be("🎉");
+        stickerJson.GetProperty("authorName").GetString().Should().Be(player.DisplayName);
+
+        // Длинный текст обрезается
+        HttpResponseMessage text = await _api.Client.PostAsJsonAsync(
+            "/api/screen/reactions", new { emoji = "❤️", text = new string('а', 200) });
+        text.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(text)).GetProperty("text").GetString()!.Length.Should().Be(120);
+
+        // Слишком длинный стикер — ошибка
+        HttpResponseMessage longEmoji = await _api.Client.PostAsJsonAsync(
+            "/api/screen/reactions", new { emoji = new string('x', 17) });
+        longEmoji.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

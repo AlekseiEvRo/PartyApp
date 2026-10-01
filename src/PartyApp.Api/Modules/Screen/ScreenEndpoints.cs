@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
@@ -12,6 +13,7 @@ namespace PartyApp.Api.Modules.Screen;
 public static class ScreenEndpoints
 {
     private const int MaxMessageLength = 200;
+    private const int MaxReactionTextLength = 120;
 
     public static IEndpointRouteBuilder MapScreenEndpoints(this IEndpointRouteBuilder app)
     {
@@ -73,10 +75,50 @@ public static class ScreenEndpoints
 
                 return Results.Ok(confetti);
             })
-            .RequireAuthorization("AdminOnly");
+            .RequireRateLimiting("submit");
+
+        // Стикеры и подписи от игроков: всплывают на экране поверх всего
+        group.MapPost("/reactions", async (
+                SendReactionRequest request,
+                ClaimsPrincipal user,
+                IHubContext<PartyHub> hub,
+                CancellationToken ct) =>
+            {
+                string? emoji = request.Emoji?.Trim();
+                if (emoji is { Length: > 16 })
+                    return Results.BadRequest(new { error = "Стикер слишком длинный" });
+
+                string? text = request.Text?.Trim();
+                if (text is { Length: > MaxReactionTextLength })
+                    text = text[..MaxReactionTextLength];
+
+                if (string.IsNullOrEmpty(emoji) && string.IsNullOrEmpty(text))
+                    return Results.BadRequest(new { error = "Нужен стикер или текст" });
+
+                var reaction = new ScreenReactionDto(
+                    Id: Guid.NewGuid(),
+                    Emoji: string.IsNullOrEmpty(emoji) ? null : emoji,
+                    Text: string.IsNullOrEmpty(text) ? null : text,
+                    AuthorName: user.FindFirst("displayName")?.Value ?? "Гость",
+                    CreatedAt: DateTime.UtcNow);
+
+                await hub.Clients.All.SendAsync("ScreenReaction", reaction, ct);
+
+                return Results.Ok(reaction);
+            })
+            .RequireRateLimiting("submit");
 
         return app;
     }
 }
 
 public record SetScreenStateRequest(string? Mode, Guid? SessionId, string? Message);
+
+public record SendReactionRequest(string? Emoji, string? Text);
+
+public record ScreenReactionDto(
+    Guid Id,
+    string? Emoji,
+    string? Text,
+    string AuthorName,
+    DateTime CreatedAt);

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onDestroy, onMount } from 'svelte';
-    import { fade } from 'svelte/transition';
+    import { crossfade } from 'svelte/transition';
     import { api } from '../api';
     import { connect, getConnection, reconnectIfNeeded } from '../signalr';
     import { loadPhotoUrl, releasePhotoUrls } from '../photos';
@@ -45,6 +45,24 @@
         author: string;
     }
 
+    interface Reaction {
+        id: string;
+        emoji: string | null;
+        text: string | null;
+        authorName: string;
+        createdAt: string;
+    }
+
+    interface FloatingReaction extends Reaction {
+        left: number;
+        bottom: number;
+        duration: number;
+        delay: number;
+        rotation: number;
+        scale: number;
+        drift: number;
+    }
+
     interface ConfettiPiece {
         id: number;
         left: number;
@@ -56,6 +74,9 @@
 
     const slideIntervalMs = 8000;
     const refreshIntervalMs = 15000;
+    const maxReactionsOnScreen = 40;
+
+    const [sendSlide, receiveSlide] = crossfade({ duration: 900 });
 
     let state: ScreenState = {
         mode: 'idle',
@@ -64,6 +85,10 @@
         version: 0,
         serverTimeUtc: new Date().toISOString()
     };
+
+    // Локальный автопереход на свежий ивент. Сбрасывается, когда админ
+    // сам переключает режим (приходит ScreenUpdated).
+    let forced: { mode: string; sessionId?: string } | null = null;
 
     // Разница между серверным и клиентским временем: таймеры считаем от сервера
     let clockOffset = 0;
@@ -76,17 +101,21 @@
     let slideIndex = 0;
     let lastSlideAt = 0;
     let confetti: ConfettiPiece[] = [];
+    let reactions: FloatingReaction[] = [];
+    let reactionTimers: ReturnType<typeof setTimeout>[] = [];
 
     let clockTimer: ReturnType<typeof setInterval>;
     let refreshTimer: ReturnType<typeof setInterval>;
     let confettiTimer: ReturnType<typeof setTimeout> | undefined;
     let balanceHandler: (() => void) | null = null;
 
+    $: displayMode = forced?.mode ?? state.mode;
+    $: displaySessionId = forced?.sessionId ?? state.sessionId;
     $: remainingSeconds = computeRemaining(now);
     $: currentSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
     // Листаем слайдшоу
-    $: if (state.mode === 'photos' && slides.length > 1 && now - lastSlideAt >= slideIntervalMs) {
+    $: if (displayMode === 'photos' && slides.length > 1 && now - lastSlideAt >= slideIntervalMs) {
         lastSlideAt = now;
         slideIndex = (slideIndex + 1) % slides.length;
     }
@@ -102,8 +131,12 @@
         if (connection) {
             connection.on('ScreenUpdated', onScreenUpdated);
             connection.on('ScreenConfetti', onConfetti);
+            connection.on('ScreenReaction', onReaction);
+            connection.on('EventStarted', onEventStarted);
+            connection.on('EventFinished', onEventFinished);
+
             balanceHandler = () => {
-                if (state.mode === 'leaderboard') void loadLeaderboard();
+                if (displayMode === 'leaderboard') void loadLeaderboard();
             };
             connection.on('BalanceUpdated', balanceHandler);
         }
@@ -122,11 +155,15 @@
         clearInterval(clockTimer);
         clearInterval(refreshTimer);
         clearTimeout(confettiTimer);
+        for (const timer of reactionTimers) clearTimeout(timer);
 
         const connection = getConnection();
         if (connection) {
             connection.off('ScreenUpdated', onScreenUpdated);
             connection.off('ScreenConfetti', onConfetti);
+            connection.off('ScreenReaction', onReaction);
+            connection.off('EventStarted', onEventStarted);
+            connection.off('EventFinished', onEventFinished);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
 
@@ -140,18 +177,47 @@
     }
 
     function onScreenUpdated(updated: ScreenState) {
+        // Админ сам выбрал режим — следуем за сервером
+        forced = null;
         state = updated;
         clockOffset = new Date(updated.serverTimeUtc).getTime() - Date.now();
         void refreshContent();
+    }
+
+    function onEventStarted(event: {
+        sessionId: string;
+        type: string;
+        displayName: string;
+        description?: string | null;
+        startedAt: string;
+    }) {
+        // Новый ивент показываем автоматически, даже если админ не переключил экран
+        forced = { mode: 'event', sessionId: event.sessionId };
+        eventInfo = {
+            sessionId: event.sessionId,
+            type: event.type,
+            displayName: event.displayName,
+            description: event.description ?? null,
+            startedAt: event.startedAt
+        };
+        void loadEvent();
+    }
+
+    function onEventFinished(data: { sessionId: string }) {
+        if (displaySessionId !== data.sessionId) return;
+
+        // Ивент закончился — показываем лидерборд с результатами
+        forced = { mode: 'leaderboard' };
+        void loadLeaderboard();
     }
 
     async function refreshContent(checkConnection = false) {
         try {
             if (checkConnection) await reconnectIfNeeded();
 
-            if (state.mode === 'leaderboard') await loadLeaderboard();
-            else if (state.mode === 'event') await loadEvent();
-            else if (state.mode === 'photos') await loadPhotos();
+            if (displayMode === 'leaderboard') await loadLeaderboard();
+            else if (displayMode === 'event') await loadEvent();
+            else if (displayMode === 'photos') await loadPhotos();
         } catch (e) {
             console.error('Screen: не удалось обновить содержимое', e);
         }
@@ -162,15 +228,18 @@
     }
 
     async function loadEvent() {
-        if (!state.sessionId) return;
+        if (!displaySessionId) return;
+
+        const sessionId = displaySessionId;
 
         const [data, available] = await Promise.all([
-            api<EventData>(`/api/events/${state.sessionId}/data`),
+            api<EventData>(`/api/events/${sessionId}/data`),
             api<AvailableEvent[]>('/api/events/available')
         ]);
 
         eventData = data;
-        eventInfo = available.find((e) => e.sessionId === state.sessionId) ?? null;
+        eventInfo = available.find((e) => e.sessionId === sessionId)
+            ?? (eventInfo?.sessionId === sessionId ? eventInfo : null);
     }
 
     async function loadPhotos() {
@@ -207,8 +276,31 @@
         confettiTimer = setTimeout(() => (confetti = []), 5200);
     }
 
+    function onReaction(reaction: Reaction) {
+        const piece: FloatingReaction = {
+            ...reaction,
+            left: 6 + Math.random() * 84,
+            bottom: 6 + Math.random() * 30,
+            duration: 4.5 + Math.random() * 3,
+            delay: Math.random() * 0.4,
+            rotation: -18 + Math.random() * 36,
+            scale: 0.9 + Math.random() * 0.8,
+            drift: -90 + Math.random() * 180
+        };
+
+        reactions = [...reactions.slice(-(maxReactionsOnScreen - 1)), piece];
+
+        const timer = setTimeout(() => {
+            reactions = reactions.filter((r) => r.id !== piece.id);
+            reactionTimers = reactionTimers.filter((t) => t !== timer);
+        }, (piece.delay + piece.duration + 0.5) * 1000);
+
+        reactionTimers.push(timer);
+    }
+
     function computeRemaining(clientNow: number): number | null {
-        if (state.mode !== 'event' || !eventInfo || !eventData) return null;
+        if (displayMode !== 'event' || !eventInfo || !eventData) return null;
+        if (eventInfo.sessionId !== displaySessionId) return null;
 
         const timeLimit = Number(eventData.config?.timeLimitSec ?? 0);
         if (!timeLimit) return null;
@@ -228,6 +320,11 @@
         const seconds = value % 60;
         return minutes > 0 ? `${minutes}:${seconds.toString().padStart(2, '0')}` : `${seconds}`;
     }
+
+    // Обёртка для crossfade: слайд всегда один, но анимации нужен keyed each
+    function asList(slide: Slide | null): Slide[] {
+        return slide ? [slide] : [];
+    }
 </script>
 
 <div class="screen">
@@ -236,13 +333,13 @@
         <span class="clock">{formatClock(now)}</span>
     </header>
 
-    {#if state.mode === 'idle'}
+    {#if displayMode === 'idle'}
         <main class="center">
             <div class="idle-emoji">🎉</div>
             <h1>Скоро начнём!</h1>
             <p class="muted">Следи за приложением — ивенты появятся здесь</p>
         </main>
-    {:else if state.mode === 'leaderboard'}
+    {:else if displayMode === 'leaderboard'}
         <main class="leaderboard">
             <h1>🏆 Лидерборд</h1>
 
@@ -260,9 +357,9 @@
                 </ol>
             {/if}
         </main>
-    {:else if state.mode === 'event'}
+    {:else if displayMode === 'event'}
         <main class="event">
-            <h1>{eventData?.displayName ?? 'Ивент'}</h1>
+            <h1>{eventData?.displayName ?? eventInfo?.displayName ?? 'Ивент'}</h1>
 
             {#if eventInfo?.description}
                 <p class="description">{eventInfo.description}</p>
@@ -296,26 +393,47 @@
                 <p class="muted">Слова от {eventData.config?.minWordLength ?? 3} букв</p>
             {/if}
         </main>
-    {:else if state.mode === 'photos'}
+    {:else if displayMode === 'photos'}
         <main class="photos">
             {#if currentSlide}
-                {#key currentSlide.id}
+                {#each asList(currentSlide) as slide (slide.id)}
                     <img
                         class="slide"
-                        src={currentSlide.url}
-                        alt="Фото от {currentSlide.author}"
-                        transition:fade={{ duration: 700 }}
+                        src={slide.url}
+                        alt="Фото от {slide.author}"
+                        in:receiveSlide={{ key: slide.id }}
+                        out:sendSlide={{ key: slide.id }}
                     />
-                {/key}
+                {/each}
                 <span class="author">📸 {currentSlide.author}</span>
             {:else}
                 <p class="muted">Пока нет одобренных фото</p>
             {/if}
         </main>
-    {:else if state.mode === 'message'}
+    {:else if displayMode === 'message'}
         <main class="center">
             <p class="big-message">{state.message}</p>
         </main>
+    {/if}
+
+    {#if reactions.length > 0}
+        <div class="reactions" aria-hidden="true">
+            {#each reactions as reaction (reaction.id)}
+                <div
+                    class="reaction"
+                    style="--left: {reaction.left}%; --bottom: {reaction.bottom}vh; --duration: {reaction.duration}s; --delay: {reaction.delay}s; --rotation: {reaction.rotation}deg; --scale: {reaction.scale}; --drift: {reaction.drift}px;"
+                    title={reaction.authorName}
+                >
+                    {#if reaction.text}
+                        <span class="bubble">
+                            {#if reaction.emoji}<b>{reaction.emoji}</b>{/if}{reaction.text}
+                        </span>
+                    {:else}
+                        <span class="sticker">{reaction.emoji}</span>
+                    {/if}
+                </div>
+            {/each}
+        </div>
     {/if}
 
     {#if confetti.length > 0}
@@ -487,8 +605,10 @@
     .photos { padding: 0; }
 
     .slide {
-        width: 100vw;
-        height: 100vh;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         object-fit: contain;
         background: #000;
     }
@@ -497,10 +617,66 @@
         position: absolute;
         bottom: 3vh;
         left: 3vw;
+        z-index: 2;
         background: rgba(0, 0, 0, 0.6);
         border-radius: 999px;
         padding: 0.8vh 1.4vw;
         font-size: clamp(14px, 1.4vw, 22px);
+    }
+
+    /* Реакции игроков */
+    .reactions {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+        z-index: 40;
+    }
+
+    .reaction {
+        position: absolute;
+        left: var(--left);
+        bottom: var(--bottom);
+        transform: rotate(var(--rotation)) scale(var(--scale));
+        animation: float-up var(--duration) ease-out var(--delay) both;
+        will-change: transform, opacity;
+    }
+
+    .sticker {
+        font-size: clamp(48px, 7vw, 110px);
+        line-height: 1;
+        filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45));
+    }
+
+    .bubble {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5em;
+        max-width: 42vw;
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 999px;
+        padding: 0.6em 1.1em;
+        font-size: clamp(20px, 2.2vw, 36px);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .bubble b { font-size: 1.2em; }
+
+    @keyframes float-up {
+        0% {
+            transform: translate(0, 40px) rotate(var(--rotation)) scale(var(--scale));
+            opacity: 0;
+        }
+        12% { opacity: 1; }
+        80% { opacity: 1; }
+        100% {
+            transform: translate(var(--drift), -75vh) rotate(calc(var(--rotation) + 24deg)) scale(var(--scale));
+            opacity: 0;
+        }
     }
 
     /* Конфетти */
