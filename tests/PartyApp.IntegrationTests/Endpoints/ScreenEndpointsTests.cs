@@ -196,4 +196,59 @@ public class ScreenEndpointsTests : IDisposable
             "/api/screen/reactions", new { emoji = new string('x', 17) });
         longEmoji.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task Settings_DefaultValuesThenAdminCanUpdate()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+
+        _api.Authorize(player);
+        JsonElement defaults = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync("/api/screen/settings"));
+        defaults.GetProperty("photoSeconds").GetInt32().Should().Be(8);
+        defaults.GetProperty("leaderboardSeconds").GetInt32().Should().Be(60);
+        defaults.GetProperty("shopSeconds").GetInt32().Should().Be(60);
+
+        // Игрок менять не может
+        HttpResponseMessage forbidden = await _api.Client.PutAsJsonAsync(
+            "/api/screen/settings",
+            new { photoSeconds = 10, leaderboardSeconds = 30, shopSeconds = 30 });
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        _api.Authorize(admin);
+        HttpResponseMessage update = await _api.Client.PutAsJsonAsync(
+            "/api/screen/settings",
+            new { photoSeconds = 10, leaderboardSeconds = 30, shopSeconds = 45 });
+        update.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement updated = await PartyAppApi.ReadJsonAsync(update);
+        updated.GetProperty("leaderboardSeconds").GetInt32().Should().Be(30);
+
+        JsonElement stored = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync("/api/screen/settings"));
+        stored.GetProperty("shopSeconds").GetInt32().Should().Be(45);
+
+        // Некорректные значения
+        HttpResponseMessage invalid = await _api.Client.PutAsJsonAsync(
+            "/api/screen/settings",
+            new { photoSeconds = 1, leaderboardSeconds = 30, shopSeconds = 30 });
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task SetState_AcceptsShopAndRotationModes()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        _api.Authorize(admin);
+
+        HttpResponseMessage shop = await _api.Client.PostAsJsonAsync(
+            "/api/screen/state", new { mode = "shop" });
+        shop.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(shop)).GetProperty("mode").GetString().Should().Be("shop");
+
+        HttpResponseMessage rotation = await _api.Client.PostAsJsonAsync(
+            "/api/screen/state", new { mode = "rotation" });
+        rotation.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(rotation)).GetProperty("mode").GetString().Should().Be("rotation");
+    }
 }

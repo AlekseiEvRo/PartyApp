@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
@@ -60,6 +62,7 @@ public static class ShopEndpoints
                 ClaimsPrincipal user,
                 AppDbContext db,
                 IPointsAwardService pointsAward,
+                IHubContext<PartyHub> hub,
                 CancellationToken ct) =>
             {
                 if (!TryGetUserId(user, out Guid userId))
@@ -117,6 +120,12 @@ public static class ShopEndpoints
                 db.Purchases.Add(purchase);
                 await db.SaveChangesAsync(ct);
 
+                await hub.Clients.All.SendAsync("PurchaseUpdated", new
+                {
+                    purchaseId = purchase.Id,
+                    isFulfilled = false
+                }, ct);
+
                 return Results.Ok(new
                 {
                     purchaseId = purchase.Id,
@@ -153,6 +162,7 @@ public static class ShopEndpoints
         group.MapPost("/items", async (
                 ShopItemRequest request,
                 AppDbContext db,
+                IHubContext<PartyHub> hub,
                 CancellationToken ct) =>
             {
                 string? error = ValidateItem(request, out string name, out string? description);
@@ -171,6 +181,8 @@ public static class ShopEndpoints
                 db.ShopItems.Add(item);
                 await db.SaveChangesAsync(ct);
 
+                await BroadcastShopUpdatedAsync(hub, item.Id, ct);
+
                 return Results.Created($"/api/shop/items/{item.Id}", item);
             })
             .RequireAuthorization("AdminOnly");
@@ -179,6 +191,7 @@ public static class ShopEndpoints
                 Guid itemId,
                 ShopItemRequest request,
                 AppDbContext db,
+                IHubContext<PartyHub> hub,
                 CancellationToken ct) =>
             {
                 ShopItem? item = await db.ShopItems.SingleOrDefaultAsync(i => i.Id == itemId, ct);
@@ -197,6 +210,8 @@ public static class ShopEndpoints
 
                 await db.SaveChangesAsync(ct);
 
+                await BroadcastShopUpdatedAsync(hub, item.Id, ct);
+
                 return Results.Ok(item);
             })
             .RequireAuthorization("AdminOnly");
@@ -204,6 +219,7 @@ public static class ShopEndpoints
         group.MapDelete("/items/{itemId:guid}", async (
                 Guid itemId,
                 AppDbContext db,
+                IHubContext<PartyHub> hub,
                 CancellationToken ct) =>
             {
                 ShopItem? item = await db.ShopItems.SingleOrDefaultAsync(i => i.Id == itemId, ct);
@@ -219,6 +235,8 @@ public static class ShopEndpoints
 
                 db.ShopItems.Remove(item);
                 await db.SaveChangesAsync(ct);
+
+                await BroadcastShopUpdatedAsync(hub, itemId, ct);
 
                 return Results.Ok(new { success = true });
             })
@@ -252,6 +270,7 @@ public static class ShopEndpoints
         group.MapPost("/purchases/{purchaseId:guid}/fulfill", async (
                 Guid purchaseId,
                 AppDbContext db,
+                IHubContext<PartyHub> hub,
                 CancellationToken ct) =>
             {
                 Purchase? purchase = await db.Purchases.SingleOrDefaultAsync(p => p.Id == purchaseId, ct);
@@ -262,11 +281,23 @@ public static class ShopEndpoints
                 purchase.FulfilledAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
 
+                // Игрок сразу видит «выдан» у себя в магазине
+                await hub.Clients.All.SendAsync("PurchaseUpdated", new
+                {
+                    purchaseId = purchase.Id,
+                    isFulfilled = true
+                }, ct);
+
                 return Results.Ok(new { purchase.Id, purchase.IsFulfilled });
             })
             .RequireAuthorization("AdminOnly");
 
         return app;
+    }
+
+    private static Task BroadcastShopUpdatedAsync(IHubContext<PartyHub> hub, Guid itemId, CancellationToken ct)
+    {
+        return hub.Clients.All.SendAsync("ShopUpdated", new { itemId }, ct);
     }
 
     private static string? ValidateItem(ShopItemRequest request, out string name, out string? description)

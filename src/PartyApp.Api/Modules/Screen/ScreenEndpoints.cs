@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
+using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
 
 namespace PartyApp.Api.Modules.Screen;
@@ -22,6 +23,12 @@ public static class ScreenEndpoints
             .RequireAuthorization();
 
         group.MapGet("/state", (ScreenService screen) => Results.Ok(screen.GetState()));
+
+        group.MapGet("/settings", async (AppDbContext db, CancellationToken ct) =>
+        {
+            ScreenSettings? settings = await db.ScreenSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+            return Results.Ok(ToSettingsDto(settings));
+        });
 
         group.MapPost("/state", async (
                 SetScreenStateRequest request,
@@ -108,13 +115,58 @@ public static class ScreenEndpoints
             })
             .RequireRateLimiting("submit");
 
+        // Настройки ротации секций на экране
+        group.MapPut("/settings", async (
+                ScreenSettingsRequest request,
+                AppDbContext db,
+                IHubContext<PartyHub> hub,
+                CancellationToken ct) =>
+            {
+                if (request.PhotoSeconds is < 3 or > 600)
+                    return Results.BadRequest(new { error = "Время показа фото — от 3 до 600 секунд" });
+
+                if (request.LeaderboardSeconds is < 5 or > 3600)
+                    return Results.BadRequest(new { error = "Время лидерборда — от 5 до 3600 секунд" });
+
+                if (request.ShopSeconds is < 5 or > 3600)
+                    return Results.BadRequest(new { error = "Время магазина — от 5 до 3600 секунд" });
+
+                ScreenSettings? settings = await db.ScreenSettings.FirstOrDefaultAsync(ct);
+                if (settings is null)
+                {
+                    settings = new ScreenSettings();
+                    db.ScreenSettings.Add(settings);
+                }
+
+                settings.PhotoSeconds = request.PhotoSeconds;
+                settings.LeaderboardSeconds = request.LeaderboardSeconds;
+                settings.ShopSeconds = request.ShopSeconds;
+                settings.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+
+                object dto = ToSettingsDto(settings);
+                await hub.Clients.All.SendAsync("ScreenSettingsUpdated", dto, ct);
+
+                return Results.Ok(dto);
+            })
+            .RequireAuthorization("AdminOnly");
+
         return app;
     }
+
+    private static object ToSettingsDto(ScreenSettings? settings) => new
+    {
+        photoSeconds = settings?.PhotoSeconds ?? 8,
+        leaderboardSeconds = settings?.LeaderboardSeconds ?? 60,
+        shopSeconds = settings?.ShopSeconds ?? 60
+    };
 }
 
 public record SetScreenStateRequest(string? Mode, Guid? SessionId, string? Message);
 
 public record SendReactionRequest(string? Emoji, string? Text);
+
+public record ScreenSettingsRequest(int PhotoSeconds, int LeaderboardSeconds, int ShopSeconds);
 
 public record ScreenReactionDto(
     Guid Id,

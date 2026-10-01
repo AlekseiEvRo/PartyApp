@@ -9,7 +9,8 @@ import {
     wishesVersion,
     photoRemovedId,
     wishRemovedId,
-    moderationVersion
+    moderationVersion,
+    shopVersion
 } from './stores';
 import { getToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
@@ -96,6 +97,21 @@ export async function connect(): Promise<void> {
             'info'
         );
     });
+
+    // === Магазин и аукцион ===
+    connection.on('ShopUpdated', () => shopVersion.update((v) => v + 1));
+
+    connection.on('PurchaseUpdated', () => shopVersion.update((v) => v + 1));
+
+    connection.on('LotFinished', (data: { name?: string; winnerName?: string; winningBid?: number }) => {
+        shopVersion.update((v) => v + 1);
+
+        if (data.winnerName) {
+            showToast(`🏆 ${data.name}: победил ${data.winnerName} (${data.winningBid})`, 'info');
+        }
+    });
+
+    connection.on('LotCancelled', () => shopVersion.update((v) => v + 1));
 
     // === Шпионаж ===
     connection.on('SpyGameRoleAssigned', (data: any) => {

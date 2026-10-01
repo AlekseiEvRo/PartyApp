@@ -5,7 +5,7 @@
 | Проект | Что проверяет | Тестов |
 |---|---|---|
 | `PartyApp.UnitTests` | Сервисы, обработчики ивентов, middleware, EF-конфигурации — без HTTP | 262 |
-| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 177 |
+| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 182 |
 
 Общий запуск из корня репозитория:
 
@@ -88,7 +88,8 @@ in-memory и записывающие фейки вместо инфрастру
 - **Магазин/Аукцион**: покупка со списанием и остатком (`out-of-stock` и
   нехватка баллов — 409), выдача призов, удаление товара с покупками — 409;
   закрытые ставки (игрок видит только свою), победа максимальной ставки,
-  возврат проигравшим, отмена лота, права админа.
+  возврат проигравшим, отмена лота, права админа. Живые события `ShopUpdated`,
+  `PurchaseUpdated`, `LotFinished` приходят игрокам без перезагрузки.
 - **Toast/QR/Push/Notifications**: реальный кулдаун тостов, одноразовые
   QR-коды (некорректные count/points — 400), защита от SSRF в подписке
   на push, рассылка сообщений ведущего.
@@ -100,10 +101,12 @@ in-memory и записывающие фейки вместо инфрастру
   модерации админам приходят `ModerationPending` (только в группу `admins`)
   и push с тегом `moderation`.
 - **Экран**: `ScreenService` — режимы, версии состояния и конфетти; API
-  `/api/screen/*` с валидацией (режим, sessionId, сообщение, реакции) и правами:
-  режимы переключает админ, конфетти и стикеры/подписи доступны игрокам.
-  Рассылки `ScreenUpdated`, `ScreenConfetti` и `ScreenReaction`; «живые» данные
-  ивента (`live` в `GET /data`, `EventLiveUpdated`) — например, кто говорит тост.
+  `/api/screen/*` с валидацией (режим, sessionId, сообщение, реакции,
+  настройки ротации) и правами: режимы и таймауты меняет админ, конфетти
+  и стикеры/подписи доступны игрокам. Рассылки `ScreenUpdated`,
+  `ScreenConfetti`, `ScreenReaction` и `ScreenSettingsUpdated`; «живые»
+  данные ивента (`live` в `GET /data`, `EventLiveUpdated`) — например,
+  кто говорит тост.
 - **SignalR**: настоящий `HubConnection` через `TestServer` — отказ без токена,
   `BalanceUpdated`, `EventStarted`, `ReceiveBroadcast`, `SpyGameRoleAssigned`,
   `PhotoRemoved`, `WishRemoved`, `ModerationPending` (админам и никому другому),

@@ -1,7 +1,6 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
     import { api } from '../api';
-    import { balance, showToast } from '../stores';
+    import { balance, showToast, shopVersion } from '../stores';
 
     interface ShopItem {
         id: string;
@@ -37,8 +36,14 @@
     let error = '';
     let busyId: string | null = null;
     let bidInputs: Record<string, string> = {};
+    let lastShopVersion = -1;
 
-    onMount(load);
+    // Загружаем при старте и обновляемся по SignalR: новые товары, ставки,
+    // закрытие лота и статус «выдан» приходят без перезагрузки
+    $: if ($shopVersion !== lastShopVersion) {
+        lastShopVersion = $shopVersion;
+        void load();
+    }
 
     async function load() {
         loading = true;

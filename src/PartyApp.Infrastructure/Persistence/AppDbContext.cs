@@ -22,6 +22,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Purchase> Purchases => Set<Purchase>();
     public DbSet<Lot> Lots => Set<Lot>();
     public DbSet<Bid> Bids => Set<Bid>();
+    public DbSet<ScreenSettings> ScreenSettings => Set<ScreenSettings>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
