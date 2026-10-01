@@ -60,7 +60,7 @@ public static class AdminEndpoints
             GrantPointsRequest request,
             ClaimsPrincipal admin,
             AppDbContext db,
-            PointsAwardService pointsAward,
+            IPointsAwardService pointsAward,
             CancellationToken ct) =>
         {
             var playerId = request.PlayerId;

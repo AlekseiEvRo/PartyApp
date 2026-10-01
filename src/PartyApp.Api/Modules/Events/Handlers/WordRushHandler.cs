@@ -16,13 +16,13 @@ public class WordRushHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly RussianDictionaryService _dictionary;
-    private readonly PointsAwardService _pointsAward;
+    private readonly IPointsAwardService _pointsAward;
     private readonly ILogger<WordRushHandler> _logger;
 
     public WordRushHandler(
         IServiceScopeFactory scopeFactory,
         RussianDictionaryService dictionary,
-        PointsAwardService pointsAward,
+        IPointsAwardService pointsAward,
         ILogger<WordRushHandler> logger)
     {
         _scopeFactory = scopeFactory;

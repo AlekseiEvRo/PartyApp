@@ -106,7 +106,8 @@ builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
 builder.Services.AddSingleton<ToastService>();
 builder.Services.AddSingleton<SpyGameService>();
 builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();
-builder.Services.AddSingleton<PointsAwardService>();
+builder.Services.AddSingleton<IPointsAwardService, PointsAwardService>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 
 // === Конструктор ивентов ===
@@ -345,3 +346,6 @@ app.MapSpyGameEndpoints();
 app.MapHub<PartyHub>("/hubs/party");
 
 app.Run();
+
+// Нужно для интеграционных тестов (WebApplicationFactory<Program>)
+public partial class Program { }

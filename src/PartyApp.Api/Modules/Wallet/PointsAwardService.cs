@@ -12,7 +12,7 @@ namespace PartyApp.Api.Modules.Wallet;
 /// <summary>
 /// Единая точка изменения баланса: кошелёк, транзакция, новый баланс в SignalR и push.
 /// </summary>
-public class PointsAwardService
+public class PointsAwardService : IPointsAwardService
 {
     private static readonly TimeSpan BalancePushThrottle = TimeSpan.FromSeconds(60);
 

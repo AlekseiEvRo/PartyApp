@@ -8,14 +8,14 @@ Party/event app: ASP.NET Core 9 minimal API (`src/`) + Svelte 5 SPA (`web/`). SQ
 - `src/PartyApp.Infrastructure` — `AppDbContext`, EF configurations, migrations under `Persistence/Migrations`, wallet/file/QR services.
 - `src/PartyApp.Api` — minimal API endpoints grouped by feature in `Modules/<Feature>/`, SignalR in `Hubs/`. `Program.cs` wires everything (DI, JWT, CORS, seeding).
 - `web/` — Svelte 5 + Vite + TS PWA; Vite build output goes to `src/PartyApp.Api/wwwroot`.
-- `tests/` — two xUnit projects, both still placeholder `UnitTest1` stubs. No CI.
+- `tests/` — два xUnit проекта: `PartyApp.UnitTests` (реальная SQLite in-memory, NSubstitute, FluentAssertions) и `PartyApp.IntegrationTests` (`WebApplicationFactory<Program>`, реальные миграции в Temp-SQLite, SignalR). Детали и известные ограничения — `tests/README.md`. CI нет.
 
 ## Commands
 
 Backend (from repo root):
 
 - `dotnet build PartyApp.sln`
-- `dotnet test PartyApp.sln` (only passes the two placeholder tests)
+- `dotnet test PartyApp.sln` (345 тестов: unit + integration; `Program.cs` обязан оставаться доступным тестам через `public partial class Program`)
 - `dotnet run --project src/PartyApp.Api` — http://localhost:5000, Swagger at `/swagger`; applies migrations and seeds event definitions on startup.
 - New migration: `dotnet ef migrations add <Name> --project src/PartyApp.Infrastructure --startup-project src/PartyApp.Api -o Persistence/Migrations`. No design-time factory, so both projects are required; the `-o` is required to match the existing migrations and their namespaces. Never run `database update` — startup migrates.
 

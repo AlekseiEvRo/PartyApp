@@ -11,7 +11,8 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 /// </summary>
 public class QuickCheckinHandler : IEventHandler
 {
-    private readonly PointsAwardService _pointsAward;
+    private readonly IPointsAwardService _pointsAward;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<QuickCheckinHandler> _logger;
 
     private readonly SemaphoreSlim _cooldownLock = new(1, 1);
@@ -20,10 +21,12 @@ public class QuickCheckinHandler : IEventHandler
     private string? _lastPlayerName;
 
     public QuickCheckinHandler(
-        PointsAwardService pointsAward,
+        IPointsAwardService pointsAward,
+        TimeProvider timeProvider,
         ILogger<QuickCheckinHandler> logger)
     {
         _pointsAward = pointsAward;
+        _timeProvider = timeProvider;
         _logger = logger;
     }
 
@@ -39,7 +42,7 @@ public class QuickCheckinHandler : IEventHandler
         CancellationToken ct = default)
     {
         // Читаем конфиг из EventDefinition
-        var config = JsonSerializer.Deserialize<QuickCheckinConfig>(definition.ConfigJson);
+        var config = JsonSerializer.Deserialize<QuickCheckinConfig>(definition.ConfigJson, EventJsonOptions.Default);
         var cooldownSeconds = config?.CooldownSeconds ?? 60;
         var points = config?.Points ?? 1;
 
@@ -58,7 +61,7 @@ public class QuickCheckinHandler : IEventHandler
         await _cooldownLock.WaitAsync(ct);
         try
         {
-            var nowUtc = DateTime.UtcNow;
+            var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
             if (_cooldownUntilUtc.HasValue && nowUtc < _cooldownUntilUtc.Value)
             {
