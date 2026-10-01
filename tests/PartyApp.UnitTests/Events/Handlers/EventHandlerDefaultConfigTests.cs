@@ -98,6 +98,7 @@ public class EventHandlerDefaultConfigTests
     {
         QuickCheckinHandler handler = new(
             PointsAward,
+            new RecordingHubContext(),
             TimeProvider.System,
             NullLogger<QuickCheckinHandler>.Instance);
 
@@ -133,7 +134,11 @@ public class EventHandlerDefaultConfigTests
                 NullLogger<WordRushHandler>.Instance),
             new PromoCodeHandler(ScopeFactory, PointsAward, NullLogger<PromoCodeHandler>.Instance),
             new QrScanHandler(ScopeFactory, PointsAward, NullLogger<QrScanHandler>.Instance),
-            new QuickCheckinHandler(PointsAward, TimeProvider.System, NullLogger<QuickCheckinHandler>.Instance)
+            new QuickCheckinHandler(
+                PointsAward,
+                new RecordingHubContext(),
+                TimeProvider.System,
+                NullLogger<QuickCheckinHandler>.Instance)
         };
 
         handlers.Select(h => h.EventType).Should().OnlyHaveUniqueItems();

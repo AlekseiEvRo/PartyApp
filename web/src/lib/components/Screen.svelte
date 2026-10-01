@@ -28,9 +28,11 @@
     }
 
     interface EventData {
+        sessionId: string;
         type: string;
         displayName: string;
         config: Record<string, any>;
+        live?: { speakerName?: string | null; busyUntilUtc?: string | null } | null;
     }
 
     interface Photo {
@@ -73,7 +75,7 @@
     }
 
     const slideIntervalMs = 8000;
-    const refreshIntervalMs = 15000;
+    const refreshIntervalMs = 5000;
     const maxReactionsOnScreen = 40;
 
     const [sendSlide, receiveSlide] = crossfade({ duration: 900 });
@@ -112,7 +114,13 @@
     $: displayMode = forced?.mode ?? state.mode;
     $: displaySessionId = forced?.sessionId ?? state.sessionId;
     $: remainingSeconds = computeRemaining(now);
+    $: toastRemaining = computeToastRemaining(now);
     $: currentSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
+
+    // Не показываем данные предыдущего ивента, пока грузятся данные нового
+    $: if (eventData && eventData.sessionId !== displaySessionId) {
+        eventData = null;
+    }
 
     // Листаем слайдшоу
     $: if (displayMode === 'photos' && slides.length > 1 && now - lastSlideAt >= slideIntervalMs) {
@@ -134,6 +142,7 @@
             connection.on('ScreenReaction', onReaction);
             connection.on('EventStarted', onEventStarted);
             connection.on('EventFinished', onEventFinished);
+            connection.on('EventLiveUpdated', onEventLiveUpdated);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -164,6 +173,7 @@
             connection.off('ScreenReaction', onReaction);
             connection.off('EventStarted', onEventStarted);
             connection.off('EventFinished', onEventFinished);
+            connection.off('EventLiveUpdated', onEventLiveUpdated);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
 
@@ -171,8 +181,13 @@
     });
 
     async function loadState() {
-        state = await api<ScreenState>('/api/screen/state');
-        clockOffset = new Date(state.serverTimeUtc).getTime() - Date.now();
+        const fetched = await api<ScreenState>('/api/screen/state');
+
+        // Пока запрос летел, могло прийти более свежее состояние по SignalR
+        if (fetched.version < state.version) return;
+
+        state = fetched;
+        clockOffset = new Date(fetched.serverTimeUtc).getTime() - Date.now();
         await refreshContent();
     }
 
@@ -193,6 +208,7 @@
     }) {
         // Новый ивент показываем автоматически, даже если админ не переключил экран
         forced = { mode: 'event', sessionId: event.sessionId };
+        eventData = null;
         eventInfo = {
             sessionId: event.sessionId,
             type: event.type,
@@ -201,6 +217,12 @@
             startedAt: event.startedAt
         };
         void loadEvent();
+    }
+
+    function onEventLiveUpdated(data: { sessionId: string; live: EventData['live'] }) {
+        if (data.sessionId !== displaySessionId || !eventData) return;
+
+        eventData = { ...eventData, live: data.live };
     }
 
     function onEventFinished(data: { sessionId: string }) {
@@ -228,14 +250,16 @@
     }
 
     async function loadEvent() {
-        if (!displaySessionId) return;
-
         const sessionId = displaySessionId;
+        if (!sessionId) return;
 
         const [data, available] = await Promise.all([
             api<EventData>(`/api/events/${sessionId}/data`),
             api<AvailableEvent[]>('/api/events/available')
         ]);
+
+        // Пока грузилось, экран могли переключить на другой ивент
+        if (displaySessionId !== sessionId || displayMode !== 'event') return;
 
         eventData = data;
         eventInfo = available.find((e) => e.sessionId === sessionId)
@@ -309,6 +333,17 @@
         const elapsed = (clientNow + clockOffset - startedAt) / 1000;
 
         return Math.max(0, Math.ceil(timeLimit - elapsed));
+    }
+
+    /** Сколько секунд осталось говорить тост (quick_checkin), либо null. */
+    function computeToastRemaining(clientNow: number): number | null {
+        if (displayMode !== 'event' || eventData?.type !== 'quick_checkin') return null;
+
+        const busyUntil = eventData.live?.busyUntilUtc;
+        if (!busyUntil) return null;
+
+        const remaining = (new Date(busyUntil).getTime() - (clientNow + clockOffset)) / 1000;
+        return remaining > 0 ? Math.ceil(remaining) : null;
     }
 
     function formatClock(timestamp: number): string {
@@ -391,6 +426,15 @@
                     {/each}
                 </div>
                 <p class="muted">Слова от {eventData.config?.minWordLength ?? 3} букв</p>
+            {:else if eventData?.type === 'quick_checkin'}
+                {#if toastRemaining !== null && eventData.live?.speakerName}
+                    <div class="speaker">
+                        <span class="speaker-name">🎤 {eventData.live.speakerName} говорит тост</span>
+                        <span class="speaker-timer">{formatSeconds(toastRemaining)}</span>
+                    </div>
+                {:else}
+                    <p class="muted">Нажми кнопку в приложении — расскажи тост!</p>
+                {/if}
             {/if}
         </main>
     {:else if displayMode === 'photos'}
@@ -599,6 +643,27 @@
         font-weight: bold;
         color: #f5a623;
         line-height: 1;
+    }
+
+    /* Тост за именинника */
+    .speaker {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2vh;
+    }
+
+    .speaker-name {
+        font-size: clamp(32px, 5vw, 88px);
+        font-weight: bold;
+        line-height: 1.15;
+    }
+
+    .speaker-timer {
+        font-size: clamp(60px, 10vw, 200px);
+        font-weight: bold;
+        color: #27ae60;
+        font-variant-numeric: tabular-nums;
     }
 
     /* Фото */
