@@ -14,12 +14,12 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 public class QuizHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly PointsAwardService _pointsAward;
+    private readonly IPointsAwardService _pointsAward;
     private readonly ILogger<QuizHandler> _logger;
 
     public QuizHandler(
         IServiceScopeFactory scopeFactory,
-        PointsAwardService pointsAward,
+        IPointsAwardService pointsAward,
         ILogger<QuizHandler> logger)
     {
         _scopeFactory = scopeFactory;

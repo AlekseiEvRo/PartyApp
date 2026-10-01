@@ -14,12 +14,12 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 public class PromoCodeHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly PointsAwardService _pointsAward;
+    private readonly IPointsAwardService _pointsAward;
     private readonly ILogger<PromoCodeHandler> _logger;
 
     public PromoCodeHandler(
         IServiceScopeFactory scopeFactory,
-        PointsAwardService pointsAward,
+        IPointsAwardService pointsAward,
         ILogger<PromoCodeHandler> logger)
     {
         _scopeFactory = scopeFactory;

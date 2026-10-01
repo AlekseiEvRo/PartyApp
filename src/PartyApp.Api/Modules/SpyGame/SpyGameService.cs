@@ -13,7 +13,7 @@ public class SpyGameService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<PartyHub> _hubContext;
     private readonly IPushNotificationService _push;
-    private readonly PointsAwardService _pointsAward;
+    private readonly IPointsAwardService _pointsAward;
     private readonly ILogger<SpyGameService> _logger;
 
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -31,7 +31,7 @@ public class SpyGameService
         IServiceScopeFactory scopeFactory,
         IHubContext<PartyHub> hubContext,
         IPushNotificationService push,
-        PointsAwardService pointsAward,
+        IPointsAwardService pointsAward,
         ILogger<SpyGameService> logger)
     {
         _scopeFactory = scopeFactory;

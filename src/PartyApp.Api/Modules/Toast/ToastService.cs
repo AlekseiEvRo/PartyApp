@@ -8,9 +8,10 @@ namespace PartyApp.Api.Modules.Toast;
 public class ToastService
 {
     private readonly IHubContext<PartyHub> _hubContext;
-    private readonly PointsAwardService _pointsAward;
+    private readonly IPointsAwardService _pointsAward;
     private readonly IPushNotificationService _push;
     private readonly IConfiguration _configuration;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<ToastService> _logger;
 
     private readonly ToastState _state = new();
@@ -18,15 +19,17 @@ public class ToastService
 
     public ToastService(
         IHubContext<PartyHub> hubContext,
-        PointsAwardService pointsAward,
+        IPointsAwardService pointsAward,
         IPushNotificationService push,
         IConfiguration configuration,
+        TimeProvider timeProvider,
         ILogger<ToastService> logger)
     {
         _hubContext = hubContext;
         _pointsAward = pointsAward;
         _push = push;
         _configuration = configuration;
+        _timeProvider = timeProvider;
         _logger = logger;
     }
 
@@ -40,7 +43,7 @@ public class ToastService
         await _lock.WaitAsync(ct);
         try
         {
-            var nowUtc = DateTime.UtcNow;
+            var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
             if (_state.IsBusy(nowUtc))
             {
@@ -106,7 +109,7 @@ public class ToastService
 
     public ToastStatus GetStatus()
     {
-        var nowUtc = DateTime.UtcNow;
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
         if (_state.IsBusy(nowUtc))
         {

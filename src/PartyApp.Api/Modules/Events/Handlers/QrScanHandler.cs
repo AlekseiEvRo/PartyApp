@@ -15,12 +15,12 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 public class QrScanHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly PointsAwardService _pointsAward;
+    private readonly IPointsAwardService _pointsAward;
     private readonly ILogger<QrScanHandler> _logger;
 
     public QrScanHandler(
         IServiceScopeFactory scopeFactory,
-        PointsAwardService pointsAward,
+        IPointsAwardService pointsAward,
         ILogger<QrScanHandler> logger)
     {
         _scopeFactory = scopeFactory;
