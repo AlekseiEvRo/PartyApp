@@ -1,5 +1,16 @@
 import * as signalR from '@microsoft/signalr';
-import { activeEvents, connectionState, showToast, balance, spyGameRole } from './stores';
+import {
+    activeEvents,
+    connectionState,
+    showToast,
+    balance,
+    spyGameRole,
+    photosVersion,
+    wishesVersion,
+    photoRemovedId,
+    wishRemovedId,
+    moderationVersion
+} from './stores';
 import { getToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
 
@@ -57,6 +68,33 @@ export async function connect(): Promise<void> {
 
     connection.on('BalanceUpdated', (data: { balance: number }) => {
         balance.set(data.balance);
+    });
+
+    // === Фото и стенка пожеланий ===
+    connection.on('PhotoUploaded', (data: { photoId: string; uploadedByName: string }) => {
+        photosVersion.update((v) => v + 1);
+        showToast(`📸 ${data.uploadedByName} добавил(а) фото`, 'info');
+    });
+
+    connection.on('PhotoRemoved', (data: { photoId: string }) => {
+        photoRemovedId.set(data.photoId);
+    });
+
+    connection.on('WishAdded', () => {
+        wishesVersion.update((v) => v + 1);
+    });
+
+    connection.on('WishRemoved', (data: { wishId: string }) => {
+        wishRemovedId.set(data.wishId);
+    });
+
+    // Событие приходит только админам: у них открыты вкладки модерации
+    connection.on('ModerationPending', (data: { kind: string }) => {
+        moderationVersion.update((v) => v + 1);
+        showToast(
+            data.kind === 'photo' ? '📸 Новое фото на модерации' : '💌 Новое пожелание на модерации',
+            'info'
+        );
     });
 
     // === Шпионаж ===

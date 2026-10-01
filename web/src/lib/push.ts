@@ -201,6 +201,25 @@ export async function disablePush(): Promise<PushActionResult> {
     }
 }
 
+/**
+ * Отвязывает подписку устройства от текущего пользователя на сервере,
+ * не удаляя её в браузере. Вызывается при выходе: телефон один,
+ * а логиниться могут разные люди, чужие уведомления приходить не должны.
+ */
+export async function detachPushSubscription(): Promise<void> {
+    if (getPermission() !== 'granted') return;
+
+    try {
+        const subscription = await getExistingSubscription();
+        if (!subscription) return;
+
+        await api('/api/push/unsubscribe', 'POST', { endpoint: subscription.endpoint })
+            .catch(() => undefined);
+    } catch {
+        // Выход не должен блокироваться проблемами с push-подпиской
+    }
+}
+
 export async function sendTestPush(): Promise<PushReport> {
     return api<PushReport>('/api/push/test', 'POST');
 }

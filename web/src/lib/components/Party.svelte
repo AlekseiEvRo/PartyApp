@@ -6,6 +6,8 @@
     import Header from './Header.svelte';
     import EventCard from './EventCard.svelte';
     import SpyGame from './SpyGame.svelte';
+    import PhotoGallery from './PhotoGallery.svelte';
+    import WishesWall from './WishesWall.svelte';
     import InstallPrompt from './InstallPrompt.svelte';
     import { syncPushSubscription } from '../push';
 
@@ -77,5 +79,8 @@
                 <EventCard {event} />
             {/each}
         {/if}
+
+        <PhotoGallery />
+        <WishesWall />
     </main>
 </div>

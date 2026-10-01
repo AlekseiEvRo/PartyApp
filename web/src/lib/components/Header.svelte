@@ -1,13 +1,15 @@
 <script lang="ts">
     import { user, balance, connectionState } from '../stores';
     import { onMount } from 'svelte';
-    import { getPermission, getPushSupport } from '../push';
+    import { detachPushSubscription, getPermission, getPushSupport } from '../push';
     import { disconnect } from '../signalr';
     import NotificationSettings from './NotificationSettings.svelte';
+    import BalanceHistory from './BalanceHistory.svelte';
 
     let showNotifButton = false;
     let notificationsEnabled = false;
     let showSettings = false;
+    let showBalanceHistory = false;
 
     onMount(() => {
         const support = getPushSupport();
@@ -28,10 +30,17 @@
     }
 
     function logout() {
-        disconnect();
-        user.set(null);
-        localStorage.removeItem('party_token');
-        location.reload();
+        // Отвязываем push на сервере, чтобы уведомления не уходили на телефон
+        // следующего пользователя. Браузерную подписку при этом не удаляем.
+        void Promise.race([
+            detachPushSubscription(),
+            new Promise<void>((resolve) => setTimeout(resolve, 1500))
+        ]).then(async () => {
+            await disconnect();
+            user.set(null);
+            localStorage.removeItem('party_token');
+            location.reload();
+        });
     }
 </script>
 
@@ -56,7 +65,12 @@
                 🔔
             </button>
         {/if}
-        <span class="balance">⭐ {$balance}</span>
+        <button
+            class="balance"
+            on:click={() => (showBalanceHistory = true)}
+            title="История баллов"
+            aria-label="История баллов"
+        >⭐ {$balance}</button>
         <span class="conn" title={$connectionState === 'connected' ? 'Подключено' : 'Нет соединения'}>
             {$connectionState === 'connected' ? '🟢' : '🔴'}
         </span>
@@ -65,6 +79,7 @@
 </header>
 
 <NotificationSettings open={showSettings} on:close={closeSettings} />
+<BalanceHistory open={showBalanceHistory} on:close={() => (showBalanceHistory = false)} />
 
 <style>
     header {
@@ -112,11 +127,19 @@
     }
 
     .balance {
+        background: none;
+        border: none;
+        padding: 0;
+        font-family: inherit;
         font-size: 17px;
         font-weight: bold;
         color: var(--green, #27ae60);
         white-space: nowrap;
+        cursor: pointer;
+        transition: opacity 0.2s;
     }
+
+    .balance:hover { opacity: 0.75; }
 
     .conn { font-size: 12px; }
 

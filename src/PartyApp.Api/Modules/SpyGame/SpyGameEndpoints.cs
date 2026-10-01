@@ -15,7 +15,25 @@ public static class SpyGameEndpoints
                 SpyGameService service,
                 CancellationToken ct) =>
             {
-                var state = await service.StartGameAsync(request.PlayerIds, ct);
+                List<Guid> playerIds = request.PlayerIds ?? new List<Guid>();
+
+                if (playerIds.Count < 4)
+                    return Results.BadRequest(new { error = "Нужно минимум 4 игрока" });
+
+                if (playerIds.Distinct().Count() != playerIds.Count)
+                    return Results.BadRequest(new { error = "Игроки не должны повторяться" });
+
+                SpyGameState state;
+                try
+                {
+                    state = await service.StartGameAsync(playerIds, ct);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    // «Игра уже запущена» или «не все игроки найдены»
+                    return Results.Conflict(new { error = ex.Message });
+                }
+
                 return Results.Ok(new
                 {
                     sessionId = state.SessionId,
@@ -58,7 +76,7 @@ public static class SpyGameEndpoints
 
         // === Игровые (для участников) ===
 
-        group.MapGet("/my-role", async (
+        group.MapGet("/my-role", (
                 ClaimsPrincipal user,
                 SpyGameService service,
                 CancellationToken ct) =>
@@ -129,7 +147,7 @@ public static class SpyGameEndpoints
     }
 }
 
-public record StartGameRequest(List<Guid> PlayerIds);
+public record StartGameRequest(List<Guid>? PlayerIds);
 
 public record SubmitWordRequest(string? Word);
 

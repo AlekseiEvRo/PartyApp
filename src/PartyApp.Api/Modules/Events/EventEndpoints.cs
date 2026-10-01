@@ -48,7 +48,8 @@ public static class EventsEndpoints
                 data = outcome.Data
             });
         })
-        .RequireAuthorization();
+        .RequireAuthorization()
+        .RequireRateLimiting("submit");
         
         group.MapGet("/{sessionId:guid}/data", async (
                 Guid sessionId,

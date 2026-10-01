@@ -1,7 +1,9 @@
 using System.Reflection;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -15,13 +17,17 @@ using PartyApp.Api.Modules.Auth.Services;
 using PartyApp.Api.Modules.Events;
 using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Events.Services;
+using PartyApp.Api.Modules.Moderation;
 using PartyApp.Api.Modules.Notifications;
+using PartyApp.Api.Modules.Photos;
 using PartyApp.Api.Modules.Push;
 using PartyApp.Api.Modules.Qr;
 using PartyApp.Api.Modules.SpyGame;
+using PartyApp.Api.Modules.Submissions;
 using PartyApp.Api.Modules.Toast;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
+using PartyApp.Infrastructure.Files;
 using PartyApp.Infrastructure.Persistence;
 using Serilog;
 
@@ -98,6 +104,65 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
 });
 
+// === Rate limiting ===
+// Защищает /api/auth от перебора пароля, а отправку ответов в ивентах — от случайных
+// дублей и скриптов. Настройки читаются на каждый запрос, чтобы их можно было
+// переопределять в конфиге (в том числе в интеграционных тестах).
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json; charset=utf-8";
+        await context.HttpContext.Response.WriteAsync(
+            """{"error":"Слишком много запросов. Попробуй чуть позже"}""", ct);
+    };
+
+    // Логин/регистрация — окно на IP-адрес
+    options.AddPolicy("auth", httpContext =>
+    {
+        IConfiguration config = httpContext.RequestServices.GetRequiredService<IConfiguration>();
+        string key = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        if (!config.GetValue("RateLimiting:Enabled", true))
+            return RateLimitPartition.GetNoLimiter(key);
+
+        int permitLimit = config.GetValue("RateLimiting:AuthPermitLimit", 10);
+        TimeSpan window = TimeSpan.FromSeconds(config.GetValue("RateLimiting:AuthWindowSeconds", 60));
+
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitLimit,
+            Window = window,
+            QueueLimit = 0
+        });
+    });
+
+    // Ответы в ивентах — лимит на игрока, без авторизации — на IP
+    options.AddPolicy("submit", httpContext =>
+    {
+        IConfiguration config = httpContext.RequestServices.GetRequiredService<IConfiguration>();
+        string key = httpContext.User.FindFirst("sub")?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+
+        if (!config.GetValue("RateLimiting:Enabled", true))
+            return RateLimitPartition.GetNoLimiter(key);
+
+        int tokenLimit = config.GetValue("RateLimiting:SubmitTokenLimit", 30);
+        TimeSpan refill = TimeSpan.FromSeconds(config.GetValue("RateLimiting:SubmitRefillSeconds", 60));
+
+        return RateLimitPartition.GetTokenBucketLimiter(key, _ => new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = tokenLimit,
+            TokensPerPeriod = tokenLimit,
+            ReplenishmentPeriod = refill,
+            AutoReplenishment = true,
+            QueueLimit = 0
+        });
+    });
+});
+
 // Services
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -107,6 +172,7 @@ builder.Services.AddSingleton<ToastService>();
 builder.Services.AddSingleton<SpyGameService>();
 builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();
 builder.Services.AddSingleton<IPointsAwardService, PointsAwardService>();
+builder.Services.AddScoped<ModerationNotifier>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 
@@ -126,6 +192,11 @@ builder.Services.AddSingleton<RussianDictionaryService>();
 
 // QR сервис
 builder.Services.AddSingleton<IQrTokenService, QrTokenService>();
+
+// Файловое хранилище (фотоальбом)
+string uploadRoot = builder.Configuration["Files:UploadRoot"] ?? "App_Data/uploads";
+builder.Services.AddSingleton<IFileStorage>(sp =>
+    new LocalFileStorage(uploadRoot, sp.GetRequiredService<ILogger<LocalFileStorage>>()));
 
 // Фабрика обработчиков
 builder.Services.AddSingleton<IEventHandlerFactory, EventHandlerFactory>();
@@ -318,6 +389,7 @@ app.MapFallbackToFile("index.html");
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 // Применяем миграции при старте
 using (var scope = app.Services.CreateScope())
@@ -341,6 +413,8 @@ app.MapQrEndpoints();
 app.MapAdminEndpoints();
 app.MapWalletEndpoints();
 app.MapSpyGameEndpoints();
+app.MapPhotoEndpoints();
+app.MapSubmissionEndpoints();
 
 // SignalR
 app.MapHub<PartyHub>("/hubs/party");

@@ -108,16 +108,27 @@ public class QrEndpointsTests : IClassFixture<PartyAppFactory>
     [Theory]
     [InlineData(0)]
     [InlineData(101)]
-    public async Task Generate_WithOutOfRangeCount_ReturnsServerError(int count)
+    public async Task Generate_WithOutOfRangeCount_ReturnsBadRequest(int count)
     {
-        // Известное ограничение: QrTokenService бросает InvalidOperationException,
-        // а middleware маппит в 500. Тест фиксирует текущее поведение.
         TestUser admin = await _api.CreateAdminAsync();
         _api.Authorize(admin);
 
         HttpResponseMessage response = await GenerateAsync(count, 10);
 
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task Generate_WithNonPositivePoints_ReturnsBadRequest(int points)
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        _api.Authorize(admin);
+
+        HttpResponseMessage response = await GenerateAsync(1, points);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]

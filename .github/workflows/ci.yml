@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend (build + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.317
+
+      - name: Restore
+        run: dotnet restore PartyApp.sln
+
+      - name: Build
+        run: dotnet build PartyApp.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test PartyApp.sln --no-build --configuration Release --verbosity normal
+
+  frontend:
+    name: Frontend (check + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Svelte/TypeScript check
+        run: npm run check
+
+      - name: Build
+        run: npm run build

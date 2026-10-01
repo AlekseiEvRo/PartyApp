@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -19,7 +21,11 @@ public class SignalRTests : IDisposable
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
-    private readonly PartyAppFactory _factory = new();
+    private readonly PartyAppFactory _factory = new()
+    {
+        // Фото уходят на модерацию: проверяем уведомления админам
+        ConfigureOverrides = settings => settings["Photos:RequireModeration"] = "true"
+    };
     private readonly PartyAppApi _api;
 
     public SignalRTests()
@@ -163,11 +169,152 @@ public class SignalRTests : IDisposable
         _api.Authorize(admin);
         HttpResponseMessage start = await _api.Client.PostAsJsonAsync(
             "/api/spygame/start", new { playerIds = players.Select(p => p.Id).ToList() });
-        start.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        start.StatusCode.Should().Be(HttpStatusCode.OK);
 
         JsonElement payload = await message;
         payload.GetProperty("role").GetString().Should().BeOneOf("Spy", "Townsfolk");
         payload.GetProperty("allPlayers").GetArrayLength().Should().Be(3);
         payload.GetProperty("sessionId").GetGuid().Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public async Task PhotoRemoved_IsBroadcastToAllPlayers()
+    {
+        TestUser author = await _api.RegisterAsync();
+        await using HubConnection connection = await ConnectAsync(author);
+        Task<JsonElement> removedMessage = WaitForAsync(connection, "PhotoRemoved");
+
+        _api.Authorize(author);
+        ByteArrayContent file = new(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3 });
+        file.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+        MultipartFormDataContent form = new();
+        form.Add(file, "file", "photo.jpg");
+
+        HttpResponseMessage upload = await _api.Client.PostAsync("/api/photos", form);
+        upload.StatusCode.Should().Be(HttpStatusCode.Created);
+        Guid photoId = (await PartyAppApi.ReadJsonAsync(upload)).GetProperty("id").GetGuid();
+
+        HttpResponseMessage delete = await _api.Client.DeleteAsync($"/api/photos/{photoId}");
+        delete.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await removedMessage;
+        payload.GetProperty("photoId").GetGuid().Should().Be(photoId);
+    }
+
+    [Fact]
+    public async Task WishRemoved_IsBroadcastToAllPlayers()
+    {
+        TestUser author = await _api.RegisterAsync();
+        await using HubConnection connection = await ConnectAsync(author);
+        Task<JsonElement> removedMessage = WaitForAsync(connection, "WishRemoved");
+
+        _api.Authorize(author);
+        HttpResponseMessage submit = await _api.Client.PostAsJsonAsync(
+            "/api/wishes", new { text = "Пожелание под удаление" });
+        submit.StatusCode.Should().Be(HttpStatusCode.Created);
+        Guid wishId = (await PartyAppApi.ReadJsonAsync(submit)).GetProperty("id").GetGuid();
+
+        HttpResponseMessage delete = await _api.Client.DeleteAsync($"/api/wishes/{wishId}");
+        delete.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await removedMessage;
+        payload.GetProperty("wishId").GetGuid().Should().Be(wishId);
+    }
+
+    [Fact]
+    public async Task WishRemoved_IsBroadcastWhenApprovedWishIsRejected()
+    {
+        TestUser author = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+        await using HubConnection connection = await ConnectAsync(author);
+
+        _api.Authorize(author);
+        HttpResponseMessage submit = await _api.Client.PostAsJsonAsync(
+            "/api/wishes", new { text = "Сначала одобрили, потом передумали" });
+        submit.StatusCode.Should().Be(HttpStatusCode.Created);
+        Guid wishId = (await PartyAppApi.ReadJsonAsync(submit)).GetProperty("id").GetGuid();
+
+        _api.Authorize(admin);
+        (await _api.Client.PostAsync($"/api/wishes/{wishId}/approve", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        Task<JsonElement> removedMessage = WaitForAsync(connection, "WishRemoved");
+
+        (await _api.Client.PostAsync($"/api/wishes/{wishId}/reject", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await removedMessage;
+        payload.GetProperty("wishId").GetGuid().Should().Be(wishId);
+    }
+
+    [Fact]
+    public async Task ModerationPending_ForPhoto_IsDeliveredToAdminWithPush()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        await using HubConnection connection = await ConnectAsync(admin);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ModerationPending");
+
+        _api.Authorize(player);
+        ByteArrayContent file = new(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 9, 9, 9 });
+        file.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+        MultipartFormDataContent form = new();
+        form.Add(file, "file", "photo.jpg");
+        HttpResponseMessage upload = await _api.Client.PostAsync("/api/photos", form);
+        upload.StatusCode.Should().Be(HttpStatusCode.Created);
+        Guid photoId = (await PartyAppApi.ReadJsonAsync(upload)).GetProperty("id").GetGuid();
+
+        JsonElement payload = await message;
+        payload.GetProperty("kind").GetString().Should().Be("photo");
+        payload.GetProperty("itemId").GetGuid().Should().Be(photoId);
+        payload.GetProperty("authorName").GetString().Should().Be(player.DisplayName);
+
+        // Админам ушёл push
+        _factory.Push.Calls.Should().Contain(call =>
+            call.UserIds != null
+            && call.UserIds.Contains(admin.Id)
+            && call.Message.Tag == "moderation");
+    }
+
+    [Fact]
+    public async Task ModerationPending_ForWish_IsDeliveredToAdminWithPreview()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        await using HubConnection connection = await ConnectAsync(admin);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ModerationPending");
+
+        _api.Authorize(player);
+        HttpResponseMessage submit = await _api.Client.PostAsJsonAsync(
+            "/api/wishes", new { text = "Проверь моё пожелание" });
+        submit.StatusCode.Should().Be(HttpStatusCode.Created);
+        Guid wishId = (await PartyAppApi.ReadJsonAsync(submit)).GetProperty("id").GetGuid();
+
+        JsonElement payload = await message;
+        payload.GetProperty("kind").GetString().Should().Be("wish");
+        payload.GetProperty("itemId").GetGuid().Should().Be(wishId);
+        payload.GetProperty("preview").GetString().Should().Be("Проверь моё пожелание");
+    }
+
+    [Fact]
+    public async Task ModerationPending_IsNotDeliveredToPlayers()
+    {
+        TestUser player = await _api.RegisterAsync();
+        await using HubConnection connection = await ConnectAsync(player);
+
+        TaskCompletionSource<JsonElement> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using IDisposable subscription = connection.On<JsonElement>(
+            "ModerationPending", payload => completion.TrySetResult(payload));
+
+        _api.Authorize(player);
+        HttpResponseMessage submit = await _api.Client.PostAsJsonAsync(
+            "/api/wishes", new { text = "Событие не для игроков" });
+        submit.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        Task finished = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+
+        finished.Should().NotBe(completion.Task, "игрок не должен получать события модерации");
     }
 }
