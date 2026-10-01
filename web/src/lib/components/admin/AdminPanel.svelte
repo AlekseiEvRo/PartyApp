@@ -9,6 +9,7 @@
     import WishesTab from './WishesTab.svelte';
     import ScreenTab from './ScreenTab.svelte';
     import { user } from '../../stores';
+    import { forceRefreshApp } from '../../pwa';
 
     let activeTab = 'dashboard';
 
@@ -35,6 +36,11 @@
         <h1>🎉 PartyApp Админка</h1>
         <div class="header-actions">
             <a href="/" class="back-link">🎮 Режим игрока</a>
+            <button
+                class="refresh-btn"
+                on:click={forceRefreshApp}
+                title="Сбросить кэш приложения и загрузить свежую версию"
+            >↻ Обновить</button>
             <span class="admin-name">{$user?.displayName}</span>
             <button class="logout-btn" on:click={logout}>Выйти</button>
         </div>
@@ -109,6 +115,18 @@
         transition: background 0.2s;
     }
     .back-link:hover { background: #2ecc71; }
+    .refresh-btn {
+        background: var(--accent, #f5a623);
+        color: #12122e;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .refresh-btn:hover { background: #ffb84d; }
     .admin-name { color: var(--muted, #aaa); font-size: 14px; overflow-wrap: anywhere; }
     .logout-btn {
         background: var(--red, #e74c3c);

@@ -10,7 +10,10 @@ export default defineConfig({
     plugins: [
         svelte(),
         VitePWA({
-            registerType: 'autoUpdate',
+            // 'prompt': новая версия ждёт, показываем баннер и обновляемся по кнопке.
+            // Регистрируем SW сами (web/src/lib/pwa.ts), чтобы управлять этим процессом
+            registerType: 'prompt',
+            injectRegister: false,
             includeAssets: ['favicon.ico'],
             manifest: {
                 name: 'PartyApp — Вечеринка',
