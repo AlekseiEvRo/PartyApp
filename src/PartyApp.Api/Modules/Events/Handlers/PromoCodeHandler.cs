@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
-using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Persistence;
 
 namespace PartyApp.Api.Modules.Events.Handlers;
@@ -14,11 +14,16 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 public class PromoCodeHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly PointsAwardService _pointsAward;
     private readonly ILogger<PromoCodeHandler> _logger;
 
-    public PromoCodeHandler(IServiceScopeFactory scopeFactory, ILogger<PromoCodeHandler> logger)
+    public PromoCodeHandler(
+        IServiceScopeFactory scopeFactory,
+        PointsAwardService pointsAward,
+        ILogger<PromoCodeHandler> logger)
     {
         _scopeFactory = scopeFactory;
+        _pointsAward = pointsAward;
         _logger = logger;
     }
 
@@ -70,7 +75,12 @@ public class PromoCodeHandler : IEventHandler
         }
 
         // Начисляем баллы
-        await AwardPointsAsync(playerId, pointsPerCode, session.Id, $"Промокод: {matchedCode}", ct);
+        await _pointsAward.AwardAsync(
+            playerId,
+            pointsPerCode,
+            $"Промокод: {matchedCode}",
+            sessionId: session.Id,
+            ct: ct);
 
         _logger.LogInformation(
             "Player {PlayerId} activated promo code {Code} in session {SessionId}",
@@ -107,38 +117,6 @@ public class PromoCodeHandler : IEventHandler
         }
 
         return false;
-    }
-
-    private async Task AwardPointsAsync(Guid userId, int points, Guid? sessionId, string description, CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == userId, ct);
-
-        if (wallet is null)
-        {
-            wallet = new Domain.Entities.Wallet { UserId = userId, Balance = points };
-            db.Wallets.Add(wallet);
-            await db.SaveChangesAsync(ct);
-        }
-        else
-        {
-            wallet.Balance += points;
-            await db.SaveChangesAsync(ct);
-        }
-
-        var transaction = new WalletTransaction
-        {
-            WalletId = wallet.Id,
-            Amount = points,
-            Type = WalletTransactionType.EventReward,
-            Description = description,
-            RelatedSessionId = sessionId
-        };
-
-        db.WalletTransactions.Add(transaction);
-        await db.SaveChangesAsync(ct);
     }
 
     private class PromoCodeConfig

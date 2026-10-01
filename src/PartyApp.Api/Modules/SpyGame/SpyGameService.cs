@@ -2,8 +2,8 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
-using PartyApp.Domain.Entities;
-using PartyApp.Domain.Enums;
+using PartyApp.Api.Modules.Push;
+using PartyApp.Api.Modules.Wallet;
 using PartyApp.Infrastructure.Persistence;
 
 namespace PartyApp.Api.Modules.SpyGame;
@@ -12,6 +12,8 @@ public class SpyGameService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<PartyHub> _hubContext;
+    private readonly IPushNotificationService _push;
+    private readonly PointsAwardService _pointsAward;
     private readonly ILogger<SpyGameService> _logger;
 
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -28,10 +30,14 @@ public class SpyGameService
     public SpyGameService(
         IServiceScopeFactory scopeFactory,
         IHubContext<PartyHub> hubContext,
+        IPushNotificationService push,
+        PointsAwardService pointsAward,
         ILogger<SpyGameService> logger)
     {
         _scopeFactory = scopeFactory;
         _hubContext = hubContext;
+        _push = push;
+        _pointsAward = pointsAward;
         _logger = logger;
     }
 
@@ -133,6 +139,16 @@ public class SpyGameService
                 playersCount = players.Count,
                 spyCount
             }, ct);
+
+            // Push участникам: роль нужно посмотреть в приложении
+            await _push.SendToUsersAsync(
+                players.Select(p => p.UserId).ToList(),
+                new PushMessage(
+                    Title: "🕵 Игра «Шпионаж» началась!",
+                    Body: "Открой приложение и посмотри свою роль",
+                    Url: "/",
+                    Tag: "spy-game"),
+                ct);
 
             return _state;
         }
@@ -247,7 +263,7 @@ public class SpyGameService
         // Начисляем баллы обоим шпионам
         foreach (var spyId in spyIds)
         {
-            await AwardPointsAsync(spyId, points, $"Шпионаж: победа (слово: {_state.SecretWord})", ct);
+            await _pointsAward.AwardAsync(spyId, points, $"Шпионаж: победа (слово: {_state.SecretWord})", ct: ct);
         }
 
         var result = new SpyGameResult
@@ -274,7 +290,7 @@ public class SpyGameService
         _state.Winner = "town";
 
         var points = 50;
-        await AwardPointsAsync(winner.UserId, points, $"Шпионаж: разоблачил шпиона (слово: {_state.SecretWord})", ct);
+        await _pointsAward.AwardAsync(winner.UserId, points, $"Шпионаж: разоблачил шпиона (слово: {_state.SecretWord})", ct: ct);
 
         var spyNames = _state.Spies.Select(s => s.DisplayName).ToList();
 
@@ -311,38 +327,6 @@ public class SpyGameService
         await _hubContext.Clients.All.SendAsync("SpyGameFinished", result, ct);
 
         return result;
-    }
-
-    private async Task AwardPointsAsync(Guid userId, int points, string description, CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == userId, ct);
-
-        if (wallet is null)
-        {
-            wallet = new Domain.Entities.Wallet { UserId = userId, Balance = points };
-            db.Wallets.Add(wallet);
-            await db.SaveChangesAsync(ct);  // Сохраняем, чтобы получить wallet.Id
-        }
-        else
-        {
-            wallet.Balance += points;
-            await db.SaveChangesAsync(ct);  // Сохраняем изменение баланса
-        }
-
-        // Шаг 2: Добавляем транзакцию
-        var transaction = new WalletTransaction
-        {
-            WalletId = wallet.Id,
-            Amount = points,
-            Type = WalletTransactionType.EventReward,
-            Description = description
-        };
-
-        db.WalletTransactions.Add(transaction);
-        await db.SaveChangesAsync(ct);
     }
 
     // Общий DTO для SubmissionResult (если ещё не определён глобально)

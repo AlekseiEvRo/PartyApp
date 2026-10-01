@@ -1,26 +1,29 @@
 <script lang="ts">
     import { user, balance, connectionState } from '../stores';
-    import { canRequestPermission, requestNotificationPermission } from '../notifications';
     import { onMount } from 'svelte';
+    import { getPermission, getPushSupport } from '../push';
+    import NotificationSettings from './NotificationSettings.svelte';
 
     let showNotifButton = false;
+    let notificationsEnabled = false;
+    let showSettings = false;
 
     onMount(() => {
-        if (canRequestPermission() && Notification.permission === 'default') {
-            showNotifButton = true;
-        }
+        const support = getPushSupport();
+
+        // На iOS в Safari-вкладке push не работает, но кнопка полезна:
+        // она открывает экран настроек с инструкцией по установке
+        showNotifButton = support.supported || support.reason === 'ios-not-installed';
+        notificationsEnabled = getPermission() === 'granted';
     });
 
-    async function enableNotifications() {
-        const result = await requestNotificationPermission();
-        if (result === 'granted') {
-            showNotifButton = false;
-            new Notification('🔔 Уведомления включены!', {
-                body: 'Теперь ты узнаешь о новых ивентах первым'
-            });
-        } else if (result === 'denied') {
-            showNotifButton = false;
-        }
+    function openSettings() {
+        showSettings = true;
+    }
+
+    function closeSettings() {
+        showSettings = false;
+        notificationsEnabled = getPermission() === 'granted';
     }
 </script>
 
@@ -34,7 +37,12 @@
     </div>
     <div class="header-right">
         {#if showNotifButton}
-            <button class="notif-btn" on:click={enableNotifications} title="Включить уведомления">
+            <button
+                class="notif-btn"
+                class:enabled={notificationsEnabled}
+                on:click={openSettings}
+                title="Настройки уведомлений"
+            >
                 🔔
             </button>
         {/if}
@@ -42,6 +50,8 @@
         <span class="conn">{$connectionState === 'connected' ? '🟢' : '🔴'}</span>
     </div>
 </header>
+
+<NotificationSettings open={showSettings} on:close={closeSettings} />
 
 <style>
     header {
@@ -99,5 +109,11 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        position: relative;
+    }
+
+    .notif-btn.enabled {
+        background: #27ae60;
+        box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.35);
     }
 </style>

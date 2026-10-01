@@ -44,6 +44,17 @@ export async function connect(): Promise<void> {
         showToast('🏁 Ивент завершён', 'info');
     });
 
+    connection.on('ReceiveBroadcast', (message: string) => {
+        showToast(`📢 ${message}`, 'info');
+
+        if (isNotificationSupported() && Notification.permission === 'granted') {
+            showBrowserNotification('📢 Сообщение от ведущего', {
+                body: message,
+                tag: 'broadcast'
+            });
+        }
+    });
+
     connection.on('BalanceUpdated', (data: { balance: number }) => {
         balance.set(data.balance);
     });

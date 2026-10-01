@@ -16,6 +16,7 @@ export default defineConfig({
                 name: 'PartyApp — Вечеринка',
                 short_name: 'PartyApp',
                 description: 'Интерактивное приложение для вечеринки с друзьями',
+                lang: 'ru',
                 theme_color: '#0f0f23',
                 background_color: '#0f0f23',
                 display: 'standalone',
@@ -44,6 +45,8 @@ export default defineConfig({
             workbox: {
                 // Кэшируем статику для офлайн-работы
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+                // Обработчик push-уведомлений добавляется в сгенерированный service worker
+                importScripts: ['/push-sw.js'],
                 runtimeCaching: [
                     {
                         // API запросы — сначала сеть, потом кэш

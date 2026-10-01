@@ -16,6 +16,7 @@ using PartyApp.Api.Modules.Events;
 using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Api.Modules.Notifications;
+using PartyApp.Api.Modules.Push;
 using PartyApp.Api.Modules.Qr;
 using PartyApp.Api.Modules.SpyGame;
 using PartyApp.Api.Modules.Toast;
@@ -104,6 +105,8 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
 builder.Services.AddSingleton<ToastService>();
 builder.Services.AddSingleton<SpyGameService>();
+builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();
+builder.Services.AddSingleton<PointsAwardService>();
 builder.Services.AddSignalR();
 
 // === Конструктор ивентов ===
@@ -324,9 +327,6 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-// Редирект с корня на Swagger
-app.MapGet("/", () => Results.Redirect("/swagger"));
-
 // Health
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
@@ -334,6 +334,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapToastEndpoints();
 app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
+app.MapPushEndpoints();
 app.MapEventsEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();

@@ -1,8 +1,6 @@
 ﻿using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
-using PartyApp.Domain.Enums;
-using PartyApp.Infrastructure.Persistence;
 
 namespace PartyApp.Api.Modules.Events.Handlers;
 
@@ -13,7 +11,7 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 /// </summary>
 public class QuickCheckinHandler : IEventHandler
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly PointsAwardService _pointsAward;
     private readonly ILogger<QuickCheckinHandler> _logger;
 
     private readonly SemaphoreSlim _cooldownLock = new(1, 1);
@@ -21,9 +19,11 @@ public class QuickCheckinHandler : IEventHandler
     private Guid? _lastPlayerId;
     private string? _lastPlayerName;
 
-    public QuickCheckinHandler(IServiceScopeFactory scopeFactory, ILogger<QuickCheckinHandler> logger)
+    public QuickCheckinHandler(
+        PointsAwardService pointsAward,
+        ILogger<QuickCheckinHandler> logger)
     {
-        _scopeFactory = scopeFactory;
+        _pointsAward = pointsAward;
         _logger = logger;
     }
 
@@ -75,7 +75,12 @@ public class QuickCheckinHandler : IEventHandler
         }
 
         // Начисляем баллы
-        await AwardPointsAsync(playerId, points, session.Id, $"Тост за именинника ({definition.DisplayName})", ct);
+        await _pointsAward.AwardAsync(
+            playerId,
+            points,
+            $"Тост за именинника ({definition.DisplayName})",
+            sessionId: session.Id,
+            ct: ct);
 
         _logger.LogInformation(
             "Player {PlayerName} ({PlayerId}) said a toast in session {SessionId}",
@@ -85,38 +90,6 @@ public class QuickCheckinHandler : IEventHandler
             points,
             "Тост засчитан!",
             new { busyUntilUtc = _cooldownUntilUtc.Value, playerName });
-    }
-
-    private async Task AwardPointsAsync(Guid userId, int points, Guid? sessionId, string description, CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == userId, ct);
-
-        if (wallet is null)
-        {
-            wallet = new Domain.Entities.Wallet { UserId = userId, Balance = points };
-            db.Wallets.Add(wallet);
-            await db.SaveChangesAsync(ct);
-        }
-        else
-        {
-            wallet.Balance += points;
-            await db.SaveChangesAsync(ct);
-        }
-
-        var transaction = new WalletTransaction
-        {
-            WalletId = wallet.Id,
-            Amount = points,
-            Type = WalletTransactionType.EventReward,
-            Description = description,
-            RelatedSessionId = sessionId
-        };
-
-        db.WalletTransactions.Add(transaction);
-        await db.SaveChangesAsync(ct);
     }
 
     private class QuickCheckinConfig

@@ -1,16 +1,15 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
-using PartyApp.Domain.Entities;
-using PartyApp.Domain.Enums;
-using PartyApp.Infrastructure.Persistence;
+using PartyApp.Api.Modules.Push;
+using PartyApp.Api.Modules.Wallet;
 
 namespace PartyApp.Api.Modules.Toast;
 
 public class ToastService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<PartyHub> _hubContext;
+    private readonly PointsAwardService _pointsAward;
+    private readonly IPushNotificationService _push;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ToastService> _logger;
 
@@ -18,13 +17,15 @@ public class ToastService
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public ToastService(
-        IServiceScopeFactory scopeFactory,
         IHubContext<PartyHub> hubContext,
+        PointsAwardService pointsAward,
+        IPushNotificationService push,
         IConfiguration configuration,
         ILogger<ToastService> logger)
     {
-        _scopeFactory = scopeFactory;
         _hubContext = hubContext;
+        _pointsAward = pointsAward;
+        _push = push;
         _configuration = configuration;
         _logger = logger;
     }
@@ -59,7 +60,7 @@ public class ToastService
 
             try
             {
-                await AwardPointsAsync(userId, points, "Тост за именинника", ct);
+                await _pointsAward.AwardAsync(userId, points, "Тост за именинника", ct: ct);
             }
             catch
             {
@@ -83,6 +84,16 @@ public class ToastService
             busyUntilUtc
         }, ct);
 
+        // Push всем, кроме самого говорящего
+        await _push.SendToAllAsync(
+            new PushMessage(
+                Title: "🍾 Тосты!",
+                Body: $"{username} говорит тост — скорее слушай!",
+                Url: "/",
+                Tag: "toast"),
+            excludedUserId: userId,
+            ct);
+
         _logger.LogInformation("User {Username} said a toast. Cooldown until {UntilUtc}", username, busyUntilUtc);
 
         return new ToastResult(
@@ -103,41 +114,5 @@ public class ToastService
         }
 
         return new ToastStatus(false, null, null);
-    }
-
-    private async Task AwardPointsAsync(Guid userId, int points, string description, CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == userId, ct);
-
-        if (wallet is null)
-        {
-            wallet = new Domain.Entities.Wallet
-            {
-                UserId = userId,
-                Balance = points
-            };
-            db.Wallets.Add(wallet);
-            await db.SaveChangesAsync(ct); // Сначала сохраняем кошелёк
-        }
-        else
-        {
-            wallet.Balance += points;
-            await db.SaveChangesAsync(ct); // Обновляем баланс
-        }
-
-        // Теперь добавляем транзакцию
-        var transaction = new WalletTransaction
-        {
-            WalletId = wallet.Id, // Теперь Id точно есть
-            Amount = points,
-            Type = WalletTransactionType.EventReward,
-            Description = description
-        };
-
-        db.WalletTransactions.Add(transaction);
-        await db.SaveChangesAsync(ct);
     }
 }
