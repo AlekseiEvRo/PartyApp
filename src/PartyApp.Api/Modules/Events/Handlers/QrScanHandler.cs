@@ -30,6 +30,8 @@ public class QrScanHandler : IEventHandler
 
     public string EventType => "qr_scan";
 
+    public string DefaultConfigJson => "{}";
+
     public async Task<SubmissionResult> HandleSubmissionAsync(
         EventSession session,
         EventDefinition definition,

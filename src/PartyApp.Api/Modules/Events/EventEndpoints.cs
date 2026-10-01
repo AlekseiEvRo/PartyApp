@@ -1,7 +1,12 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Events.Services;
+using PartyApp.Domain.Entities;
+using PartyApp.Domain.Enums;
+using PartyApp.Infrastructure.Persistence;
 
 namespace PartyApp.Api.Modules.Events;
 
@@ -60,10 +65,119 @@ public static class EventsEndpoints
 
         // === Только для админов ===
 
-        group.MapGet("/definitions", async (IEventService eventService, CancellationToken ct) =>
+        // Типы ивентов, для которых зарегистрирован обработчик
+        group.MapGet("/types", (IEventHandlerFactory handlerFactory) =>
         {
-            var definitions = await eventService.GetDefinitionsAsync(ct);
+            var types = handlerFactory.GetEventTypes()
+                .OrderBy(t => t)
+                .Select(t => new
+                {
+                    type = t,
+                    defaultConfigJson = handlerFactory.GetHandler(t).DefaultConfigJson
+                })
+                .ToList();
+
+            return Results.Ok(types);
+        })
+        .RequireAuthorization("AdminOnly");
+
+        group.MapGet("/definitions", async (
+            bool? includeInactive,
+            IEventService eventService,
+            CancellationToken ct) =>
+        {
+            var definitions = await eventService.GetDefinitionsAsync(includeInactive == true, ct);
             return Results.Ok(definitions);
+        })
+        .RequireAuthorization("AdminOnly");
+
+        // Создание нового определения ивента
+        group.MapPost("/definitions", async (
+            CreateEventDefinitionRequest request,
+            ClaimsPrincipal user,
+            AppDbContext db,
+            IEventHandlerFactory handlerFactory,
+            CancellationToken ct) =>
+        {
+            var subClaim = user.FindFirst("sub")?.Value;
+            if (subClaim is null || !Guid.TryParse(subClaim, out var adminId))
+                return Results.Unauthorized();
+
+            var type = request.Type?.Trim() ?? string.Empty;
+            if (!handlerFactory.HasHandler(type))
+                return Results.BadRequest(new { error = $"Неизвестный тип ивента: {type}" });
+
+            var validationError = ValidateDefinitionFields(request.DisplayName, request.ConfigJson, out var displayName, out var configJson);
+            if (validationError is not null)
+                return Results.BadRequest(new { error = validationError });
+
+            var definition = new EventDefinition
+            {
+                Type = type,
+                DisplayName = displayName,
+                Description = NormalizeDescription(request.Description),
+                ConfigJson = configJson,
+                Availability = AvailabilityMode.Manual,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                CreatedById = adminId
+            };
+
+            db.EventDefinitions.Add(definition);
+            await db.SaveChangesAsync(ct);
+
+            return Results.Created($"/api/events/definitions/{definition.Id}", definition);
+        })
+        .RequireAuthorization("AdminOnly");
+
+        // Редактирование определения. Type не меняется после создания
+        group.MapPut("/definitions/{definitionId:guid}", async (
+            Guid definitionId,
+            UpdateEventDefinitionRequest request,
+            AppDbContext db,
+            CancellationToken ct) =>
+        {
+            var definition = await db.EventDefinitions.FindAsync(new object[] { definitionId }, ct);
+            if (definition is null)
+                return Results.NotFound(new { error = "Ивент не найден" });
+
+            var validationError = ValidateDefinitionFields(request.DisplayName, request.ConfigJson, out var displayName, out var configJson);
+            if (validationError is not null)
+                return Results.BadRequest(new { error = validationError });
+
+            definition.DisplayName = displayName;
+            definition.Description = NormalizeDescription(request.Description);
+            definition.ConfigJson = configJson;
+            definition.IsActive = request.IsActive;
+
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(definition);
+        })
+        .RequireAuthorization("AdminOnly");
+
+        // Системные определения (созданные сидом) удалять нельзя, только деактивировать.
+        // Определения с сессиями тоже нельзя — иначе каскад снесёт историю
+        group.MapDelete("/definitions/{definitionId:guid}", async (
+            Guid definitionId,
+            AppDbContext db,
+            CancellationToken ct) =>
+        {
+            var definition = await db.EventDefinitions.FindAsync(new object[] { definitionId }, ct);
+            if (definition is null)
+                return Results.NotFound(new { error = "Ивент не найден" });
+
+            if (definition.CreatedById is null)
+                return Results.Conflict(new { error = "Системный ивент нельзя удалить — только деактивировать" });
+
+            var sessionCount = await db.EventSessions.CountAsync(s => s.DefinitionId == definitionId, ct);
+            if (sessionCount > 0)
+                return Results.Conflict(new { error = $"Нельзя удалить: у ивента уже есть сессии ({sessionCount}). Деактивируйте его вместо удаления" });
+
+            db.EventDefinitions.Remove(definition);
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new { success = true });
         })
         .RequireAuthorization("AdminOnly");
 
@@ -77,14 +191,21 @@ public static class EventsEndpoints
             if (subClaim is null || !Guid.TryParse(subClaim, out var adminId))
                 return Results.Unauthorized();
 
-            var session = await eventService.StartEventAsync(definitionId, adminId, ct);
-
-            return Results.Ok(new
+            try
             {
-                sessionId = session.Id,
-                state = session.State.ToString(),
-                startedAt = session.StartedAt
-            });
+                var session = await eventService.StartEventAsync(definitionId, adminId, ct);
+
+                return Results.Ok(new
+                {
+                    sessionId = session.Id,
+                    state = session.State.ToString(),
+                    startedAt = session.StartedAt
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { error = ex.Message });
+            }
         })
         .RequireAuthorization("AdminOnly");
 
@@ -93,13 +214,67 @@ public static class EventsEndpoints
             IEventService eventService,
             CancellationToken ct) =>
         {
-            await eventService.FinishEventAsync(sessionId, ct);
-            return Results.Ok(new { success = true });
+            try
+            {
+                await eventService.FinishEventAsync(sessionId, ct);
+                return Results.Ok(new { success = true });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { error = ex.Message });
+            }
         })
         .RequireAuthorization("AdminOnly");
 
         return app;
     }
+
+    private static string? ValidateDefinitionFields(
+        string? displayName,
+        string? configJson,
+        out string normalizedDisplayName,
+        out string normalizedConfigJson)
+    {
+        normalizedDisplayName = displayName?.Trim() ?? string.Empty;
+        normalizedConfigJson = string.IsNullOrWhiteSpace(configJson) ? "{}" : configJson;
+
+        if (normalizedDisplayName.Length == 0)
+            return "Название не может быть пустым";
+
+        if (normalizedDisplayName.Length > 100)
+            return "Название не должно быть длиннее 100 символов";
+
+        if (!string.IsNullOrWhiteSpace(configJson))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(configJson);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    return "ConfigJson должен быть JSON-объектом";
+            }
+            catch (JsonException)
+            {
+                return "ConfigJson не является валидным JSON";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeDescription(string? description)
+    {
+        return string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+    }
 }
 
 public record SubmitRequest(string? PayloadJson);
+public record CreateEventDefinitionRequest(
+    string? Type,
+    string? DisplayName,
+    string? Description,
+    string? ConfigJson);
+public record UpdateEventDefinitionRequest(
+    string? DisplayName,
+    string? Description,
+    string? ConfigJson,
+    bool IsActive = true);

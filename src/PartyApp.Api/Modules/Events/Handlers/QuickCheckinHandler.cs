@@ -29,6 +29,8 @@ public class QuickCheckinHandler : IEventHandler
 
     public string EventType => "quick_checkin";
 
+    public string DefaultConfigJson => """{"points":1,"cooldownSeconds":60}""";
+
     public async Task<SubmissionResult> HandleSubmissionAsync(
         EventSession session,
         EventDefinition definition,

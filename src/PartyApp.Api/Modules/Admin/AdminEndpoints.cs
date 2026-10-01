@@ -103,6 +103,7 @@ public static class AdminEndpoints
                 .Select(s => new
                 {
                     s.Id,
+                    s.DefinitionId,
                     DefinitionName = s.Definition.DisplayName,
                     Type = s.Definition.Type,
                     State = s.State.ToString(),

@@ -33,6 +33,16 @@ public class WordRushHandler : IEventHandler
 
     public string EventType => "word_rush";
 
+    public string DefaultConfigJson => """
+        {
+            "timeLimitSec": 60,
+            "requiredLetters": ["А", "Е"],
+            "minWordLength": 3,
+            "pointsPerWord": 5,
+            "uniqueWordsOnly": true
+        }
+        """;
+
     public async Task<SubmissionResult> HandleSubmissionAsync(
         EventSession session,
         EventDefinition definition,

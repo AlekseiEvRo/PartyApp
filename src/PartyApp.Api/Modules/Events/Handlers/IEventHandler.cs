@@ -15,6 +15,12 @@ public interface IEventHandler
     string EventType { get; }
 
     /// <summary>
+    /// Пример конфига этого типа ивента (JSON-объект).
+    /// Используется админкой как заготовка при создании нового ивента.
+    /// </summary>
+    string DefaultConfigJson { get; }
+
+    /// <summary>
     /// Обрабатывает действие игрока в рамках активного ивента.
     /// </summary>
     /// <param name="session">Активная сессия ивента</param>
