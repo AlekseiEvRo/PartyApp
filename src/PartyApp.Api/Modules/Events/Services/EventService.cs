@@ -209,6 +209,14 @@ public class EventService : IEventService
         if (session is null)
             return null;
 
+        // «Живые» данные обработчика (например, кто сейчас говорит тост)
+        object? live = null;
+        if (_handlerFactory.HasHandler(session.Definition.Type))
+        {
+            var handler = _handlerFactory.GetHandler(session.Definition.Type);
+            live = await handler.GetLiveDataAsync(session, session.Definition, ct);
+        }
+
         // Возвращаем конфиг как объект
         try
         {
@@ -218,7 +226,8 @@ public class EventService : IEventService
                 sessionId = session.Id,
                 type = session.Definition.Type,
                 displayName = session.Definition.DisplayName,
-                config
+                config,
+                live
             };
         }
         catch
@@ -228,7 +237,8 @@ public class EventService : IEventService
                 sessionId = session.Id,
                 type = session.Definition.Type,
                 displayName = session.Definition.DisplayName,
-                config = new { }
+                config = new { },
+                live
             };
         }
     }

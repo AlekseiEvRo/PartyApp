@@ -317,4 +317,60 @@ public class SignalRTests : IDisposable
 
         finished.Should().NotBe(completion.Task, "игрок не должен получать события модерации");
     }
+
+    [Fact]
+    public async Task ScreenUpdated_IsBroadcastToAllClients()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+        await using HubConnection connection = await ConnectAsync(player);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ScreenUpdated");
+
+        _api.Authorize(admin);
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/screen/state", new { mode = "leaderboard" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("mode").GetString().Should().Be("leaderboard");
+        payload.GetProperty("version").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ScreenConfetti_IsBroadcastToAllClients()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+        await using HubConnection connection = await ConnectAsync(player);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ScreenConfetti");
+
+        _api.Authorize(admin);
+        HttpResponseMessage response = await _api.Client.PostAsync("/api/screen/confetti", null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("version").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ScreenReaction_IsBroadcastToAllClients()
+    {
+        TestUser author = await _api.RegisterAsync();
+        TestUser other = await _api.RegisterAsync();
+        await using HubConnection connection = await ConnectAsync(other);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ScreenReaction");
+
+        _api.Authorize(author);
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/screen/reactions", new { emoji = "🔥", text = "Давай!" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("emoji").GetString().Should().Be("🔥");
+        payload.GetProperty("text").GetString().Should().Be("Давай!");
+        payload.GetProperty("authorName").GetString().Should().Be(author.DisplayName);
+    }
 }

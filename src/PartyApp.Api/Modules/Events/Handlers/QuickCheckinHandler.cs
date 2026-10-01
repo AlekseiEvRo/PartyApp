@@ -1,4 +1,6 @@
 ﻿using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
+using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 
@@ -12,6 +14,7 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 public class QuickCheckinHandler : IEventHandler
 {
     private readonly IPointsAwardService _pointsAward;
+    private readonly IHubContext<PartyHub> _hub;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<QuickCheckinHandler> _logger;
 
@@ -22,10 +25,12 @@ public class QuickCheckinHandler : IEventHandler
 
     public QuickCheckinHandler(
         IPointsAwardService pointsAward,
+        IHubContext<PartyHub> hub,
         TimeProvider timeProvider,
         ILogger<QuickCheckinHandler> logger)
     {
         _pointsAward = pointsAward;
+        _hub = hub;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -91,11 +96,27 @@ public class QuickCheckinHandler : IEventHandler
             "Player {PlayerName} ({PlayerId}) said a toast in session {SessionId}",
             playerName, playerId, session.Id);
 
+        // Большой экран сразу показывает, кто говорит тост
+        await _hub.Clients.All.SendAsync("EventLiveUpdated", new
+        {
+            sessionId = session.Id,
+            live = BuildLiveData()
+        }, ct);
+
         return SubmissionResult.Ok(
             points,
             "Тост засчитан!",
             new { busyUntilUtc = _cooldownUntilUtc.Value, playerName });
     }
+
+    public Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
+        => Task.FromResult<object?>(BuildLiveData());
+
+    private object BuildLiveData() => new
+    {
+        speakerName = _lastPlayerName,
+        busyUntilUtc = _cooldownUntilUtc
+    };
 
     private class QuickCheckinConfig
     {

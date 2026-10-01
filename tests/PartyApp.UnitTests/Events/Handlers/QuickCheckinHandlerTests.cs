@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using FluentAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,12 +20,13 @@ public class QuickCheckinHandlerTests
     private const string ConfigJson = """{"points":1,"cooldownSeconds":30}""";
 
     private readonly IPointsAwardService _award = Substitute.For<IPointsAwardService>();
+    private readonly RecordingHubContext _hub = new();
     private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero));
     private readonly QuickCheckinHandler _handler;
 
     public QuickCheckinHandlerTests()
     {
-        _handler = new QuickCheckinHandler(_award, _timeProvider, NullLogger<QuickCheckinHandler>.Instance);
+        _handler = new QuickCheckinHandler(_award, _hub, _timeProvider, NullLogger<QuickCheckinHandler>.Instance);
     }
 
     private static (EventDefinition Definition, EventSession Session) CreateEvent(
@@ -174,5 +177,41 @@ public class QuickCheckinHandlerTests
         SubmissionResult second = await _handler.HandleSubmissionAsync(
             session, definition, Guid.NewGuid(), """{"playerName":"Борис"}""");
         second.Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HandleSubmission_BroadcastsLiveUpdateToScreen()
+    {
+        (EventDefinition definition, EventSession session) = CreateEvent();
+
+        await _handler.HandleSubmissionAsync(session, definition, Guid.NewGuid(), """{"playerName":"Алиса"}""");
+
+        RecordingHubContext.HubCall call = _hub.SingleCall("EventLiveUpdated");
+        call.Target.Should().Be("all");
+
+        JsonElement payload = JsonSerializer.Deserialize<JsonElement>(
+            JsonSerializer.Serialize(call.Payload));
+        payload.GetProperty("sessionId").GetGuid().Should().Be(session.Id);
+        payload.GetProperty("live").GetProperty("speakerName").GetString().Should().Be("Алиса");
+        payload.GetProperty("live").GetProperty("busyUntilUtc").GetDateTime().Should()
+            .BeCloseTo(new DateTime(2026, 10, 1, 12, 0, 30, DateTimeKind.Utc), TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task GetLiveData_ReturnsCurrentSpeakerAndBusyUntil()
+    {
+        (EventDefinition definition, EventSession session) = CreateEvent();
+
+        JsonElement before = JsonSerializer.Deserialize<JsonElement>(
+            JsonSerializer.Serialize(await _handler.GetLiveDataAsync(session, definition)));
+        before.GetProperty("speakerName").ValueKind.Should().Be(JsonValueKind.Null);
+
+        await _handler.HandleSubmissionAsync(session, definition, Guid.NewGuid(), """{"playerName":"Алиса"}""");
+
+        JsonElement during = JsonSerializer.Deserialize<JsonElement>(
+            JsonSerializer.Serialize(await _handler.GetLiveDataAsync(session, definition)));
+        during.GetProperty("speakerName").GetString().Should().Be("Алиса");
+        during.GetProperty("busyUntilUtc").GetDateTime().Should()
+            .BeCloseTo(new DateTime(2026, 10, 1, 12, 0, 30, DateTimeKind.Utc), TimeSpan.FromSeconds(1));
     }
 }

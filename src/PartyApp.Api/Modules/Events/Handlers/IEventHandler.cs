@@ -47,4 +47,11 @@ public interface IEventHandler
     /// </summary>
     Task OnSessionFinishedAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
         => Task.CompletedTask;
+
+    /// <summary>
+    /// «Живые» данные ивента для большого экрана: например, кто сейчас говорит тост.
+    /// Возвращаются в ответе GET /api/events/{sessionId}/data. По умолчанию — ничего.
+    /// </summary>
+    Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
+        => Task.FromResult<object?>(null);
 }

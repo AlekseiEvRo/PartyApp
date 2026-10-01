@@ -7,6 +7,7 @@
     import SpyGameTab from './SpyGameTab.svelte';
     import PhotosTab from './PhotosTab.svelte';
     import WishesTab from './WishesTab.svelte';
+    import ScreenTab from './ScreenTab.svelte';
     import { user } from '../../stores';
 
     let activeTab = 'dashboard';
@@ -19,7 +20,8 @@
         { id: 'leaderboard', label: '🏆 Лидерборд' },
         { id: 'spy', label: '🕵 Шпионаж' },
         { id: 'photos', label: '📸 Фото' },
-        { id: 'wishes', label: '💌 Пожелания' }
+        { id: 'wishes', label: '💌 Пожелания' },
+        { id: 'screen', label: '🖥 Экран' }
     ];
 
     function logout() {
@@ -67,6 +69,8 @@
             <PhotosTab />
         {:else if activeTab === 'wishes'}
             <WishesTab />
+        {:else if activeTab === 'screen'}
+            <ScreenTab />
         {/if}
     </div>
 </div>
