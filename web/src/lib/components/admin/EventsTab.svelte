@@ -3,12 +3,70 @@
     import { api } from '../../api';
     import { showToast } from '../../stores';
 
-    let definitions: any[] = [];
-    let sessions: any[] = [];
+    interface EventTypeInfo {
+        type: string;
+        defaultConfigJson: string;
+    }
+
+    interface EventDefinition {
+        id: string;
+        type: string;
+        displayName: string;
+        description?: string | null;
+        configJson: string;
+        availability: string | number;
+        isActive: boolean;
+        createdAt: string;
+        createdById?: string | null;
+    }
+
+    interface EventSession {
+        id: string;
+        definitionId: string;
+        definitionName: string;
+        type: string;
+        state: string;
+        startedAt: string;
+        endedAt?: string | null;
+        startedBy: string;
+        submissionCount: number;
+    }
+
+    let definitions: EventDefinition[] = [];
+    let sessions: EventSession[] = [];
+    let types: EventTypeInfo[] = [];
+
+    // Состояние формы создания/редактирования
+    let formOpen = false;
+    let editingId: string | null = null;
+    let saving = false;
+    let formType = '';
+    let formDisplayName = '';
+    let formDescription = '';
+    let formConfigJson = '{}';
+    let formIsActive = true;
+    let configTouched = false;
+    let configError = '';
+
+    const typeLabels: Record<string, string> = {
+        quick_checkin: 'Тост за именинника',
+        promo_code: 'Промокоды',
+        quiz: 'Квиз',
+        word_rush: 'Слова на буквы',
+        qr_scan: 'Охота за QR-кодами'
+    };
+
+    function typeLabel(type: string) {
+        return typeLabels[type] ?? type;
+    }
+
+    function availabilityLabel(value: string | number) {
+        return value === 0 || value === 'Manual' ? 'Вручную' : String(value);
+    }
 
     async function loadDefinitions() {
         try {
-            definitions = await api<any[]>('/api/events/definitions');
+            definitions = await api<EventDefinition[]>('/api/events/definitions?includeInactive=true');
         } catch (e: any) {
             showToast(e.message, 'error');
         }
@@ -16,7 +74,15 @@
 
     async function loadSessions() {
         try {
-            sessions = await api<any[]>('/api/admin/sessions');
+            sessions = await api<EventSession[]>('/api/admin/sessions');
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        }
+    }
+
+    async function loadTypes() {
+        try {
+            types = await api<EventTypeInfo[]>('/api/events/types');
         } catch (e: any) {
             showToast(e.message, 'error');
         }
@@ -42,6 +108,156 @@
         }
     }
 
+    function hasActiveSession(definitionId: string) {
+        return sessions.some(s => s.definitionId === definitionId && s.state === 'Active');
+    }
+
+    function formatJson(raw: string): string {
+        try {
+            return JSON.stringify(JSON.parse(raw), null, 2);
+        } catch {
+            return raw;
+        }
+    }
+
+    function defaultConfigFor(type: string): string {
+        const info = types.find(t => t.type === type);
+        return info ? formatJson(info.defaultConfigJson) : '{}';
+    }
+
+    function openCreateForm() {
+        editingId = null;
+        formType = types[0]?.type ?? '';
+        formDisplayName = '';
+        formDescription = '';
+        formConfigJson = defaultConfigFor(formType);
+        formIsActive = true;
+        configTouched = false;
+        configError = '';
+        formOpen = true;
+    }
+
+    function openEditForm(definition: EventDefinition) {
+        editingId = definition.id;
+        formType = definition.type;
+        formDisplayName = definition.displayName;
+        formDescription = definition.description ?? '';
+        formConfigJson = formatJson(definition.configJson);
+        formIsActive = definition.isActive;
+        configTouched = true;
+        configError = '';
+        formOpen = true;
+    }
+
+    function closeForm() {
+        formOpen = false;
+        editingId = null;
+    }
+
+    function handleTypeChange(event: Event) {
+        formType = (event.currentTarget as HTMLSelectElement).value;
+        if (!editingId && !configTouched) {
+            formConfigJson = defaultConfigFor(formType);
+        }
+    }
+
+    function handleConfigInput() {
+        configTouched = true;
+        configError = '';
+    }
+
+    function formatConfig() {
+        try {
+            formConfigJson = JSON.stringify(JSON.parse(formConfigJson), null, 2);
+            configError = '';
+        } catch {
+            configError = 'Невалидный JSON';
+        }
+    }
+
+    function validateConfig(): boolean {
+        try {
+            const parsed = JSON.parse(formConfigJson || '{}');
+            if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                configError = 'Конфиг должен быть JSON-объектом';
+                return false;
+            }
+            configError = '';
+            return true;
+        } catch {
+            configError = 'Невалидный JSON';
+            return false;
+        }
+    }
+
+    async function saveDefinition() {
+        if (!formDisplayName.trim()) {
+            showToast('Укажи название ивента', 'error');
+            return;
+        }
+        if (!validateConfig()) {
+            showToast('Проверь ConfigJson', 'error');
+            return;
+        }
+
+        saving = true;
+        try {
+            if (editingId) {
+                await api(`/api/events/definitions/${editingId}`, 'PUT', {
+                    displayName: formDisplayName.trim(),
+                    description: formDescription.trim() || null,
+                    configJson: formConfigJson,
+                    isActive: formIsActive
+                });
+                showToast('Ивент обновлён');
+            } else {
+                await api('/api/events/definitions', 'POST', {
+                    type: formType,
+                    displayName: formDisplayName.trim(),
+                    description: formDescription.trim() || null,
+                    configJson: formConfigJson
+                });
+                showToast('Ивент создан');
+            }
+
+            closeForm();
+            loadDefinitions();
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function toggleActive(definition: EventDefinition) {
+        try {
+            await api(`/api/events/definitions/${definition.id}`, 'PUT', {
+                displayName: definition.displayName,
+                description: definition.description ?? null,
+                configJson: definition.configJson,
+                isActive: !definition.isActive
+            });
+            showToast(definition.isActive ? 'Ивент деактивирован' : 'Ивент активирован');
+            loadDefinitions();
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        }
+    }
+
+    async function deleteDefinition(definition: EventDefinition) {
+        if (!confirm(`Удалить ивент «${definition.displayName}»? Действие необратимо.`)) {
+            return;
+        }
+
+        try {
+            await api(`/api/events/definitions/${definition.id}`, 'DELETE');
+            showToast('Ивент удалён');
+            loadDefinitions();
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        }
+    }
+
     function badgeClass(state: string) {
         if (state === 'Active') return 'badge-active';
         if (state === 'Finished') return 'badge-finished';
@@ -49,6 +265,7 @@
     }
 
     onMount(() => {
+        loadTypes();
         loadDefinitions();
         loadSessions();
     });
@@ -56,9 +273,72 @@
 
 <h2>Управление ивентами</h2>
 
+{#if formOpen}
+    <div class="card form-card">
+        <h3>{editingId ? 'Редактирование ивента' : 'Новый ивент'}</h3>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="event-type">Тип</label>
+                <select id="event-type" value={formType} on:change={handleTypeChange} disabled={!!editingId}>
+                    {#each types as t}
+                        <option value={t.type}>{typeLabel(t.type)} ({t.type})</option>
+                    {/each}
+                </select>
+                {#if editingId}
+                    <p class="hint">Тип нельзя изменить после создания</p>
+                {/if}
+            </div>
+            <div class="form-group">
+                <label for="event-name">Название</label>
+                <input id="event-name" type="text" maxlength="100" bind:value={formDisplayName}
+                       placeholder="Например: Квиз про именинника" />
+            </div>
+            {#if editingId}
+                <div class="form-group form-group-small">
+                    <label for="event-active">Активен</label>
+                    <input id="event-active" type="checkbox" bind:checked={formIsActive} />
+                </div>
+            {/if}
+        </div>
+
+        <div class="form-group">
+            <label for="event-description">Описание</label>
+            <input id="event-description" type="text" bind:value={formDescription}
+                   placeholder="Что увидит игрок" />
+        </div>
+
+        <div class="form-group">
+            <label for="event-config">ConfigJson</label>
+            <textarea id="event-config" rows="12" spellcheck="false" bind:value={formConfigJson}
+                      on:input={handleConfigInput}></textarea>
+            {#if configError}
+                <p class="error">{configError}</p>
+            {/if}
+        </div>
+
+        {#if editingId && hasActiveSession(editingId)}
+            <p class="warning">⚠️ Идёт сессия этого ивента — правки конфига и деактивация применятся немедленно.</p>
+        {/if}
+
+        <div class="form-actions">
+            <button class="btn btn-primary" on:click={formatConfig}>🧹 Форматировать</button>
+            <button class="btn btn-success" on:click={saveDefinition} disabled={saving}>
+                {saving ? 'Сохранение…' : '💾 Сохранить'}
+            </button>
+            <button class="btn btn-secondary" on:click={closeForm} disabled={saving}>Нет, отмена</button>
+        </div>
+    </div>
+{/if}
+
 <div class="card">
-    <h3>Определения ивентов</h3>
-    <button class="btn btn-primary" on:click={loadDefinitions}>🔄 Обновить</button>
+    <div class="card-head">
+        <h3>Определения ивентов</h3>
+        <div class="card-actions">
+            <button class="btn btn-primary" on:click={openCreateForm} disabled={types.length === 0}>➕ Добавить ивент</button>
+            <button class="btn btn-secondary" on:click={loadDefinitions}>🔄 Обновить</button>
+        </div>
+    </div>
     <div class="table-wrap">
         <table>
             <thead>
@@ -66,19 +346,39 @@
                 <th>Название</th>
                 <th>Тип</th>
                 <th>Доступность</th>
-                <th>Активен</th>
+                <th>Статус</th>
                 <th>Действия</th>
             </tr>
             </thead>
             <tbody>
             {#each definitions as d}
-                <tr>
-                    <td>{d.displayName}</td>
-                    <td><code>{d.type}</code></td>
-                    <td>{d.availability}</td>
-                    <td>{d.isActive ? '✅' : '❌'}</td>
+                <tr class:inactive={!d.isActive}>
                     <td>
-                        <button class="btn btn-success" on:click={() => startEvent(d.id)}>▶️ Запустить</button>
+                        {d.displayName}
+                        {#if !d.createdById}
+                            <span class="system-mark" title="Создан приложением при первом запуске, удалить нельзя">системный</span>
+                        {/if}
+                    </td>
+                    <td><code>{d.type}</code></td>
+                    <td>{availabilityLabel(d.availability)}</td>
+                    <td>
+                        {#if d.isActive}
+                            <span class="badge badge-active">Активен</span>
+                        {:else}
+                            <span class="badge badge-finished">Неактивен</span>
+                        {/if}
+                    </td>
+                    <td class="actions">
+                        {#if d.isActive}
+                            <button class="btn btn-success" on:click={() => startEvent(d.id)}>▶️ Запустить</button>
+                        {/if}
+                        <button class="btn btn-primary" on:click={() => openEditForm(d)}>✏️ Изменить</button>
+                        <button class="btn btn-warning" on:click={() => toggleActive(d)}>
+                            {d.isActive ? '⏸ Деактивировать' : '▶️ Активировать'}
+                        </button>
+                        {#if d.createdById}
+                            <button class="btn btn-danger" on:click={() => deleteDefinition(d)}>🗑 Удалить</button>
+                        {/if}
                     </td>
                 </tr>
             {/each}
@@ -88,8 +388,12 @@
 </div>
 
 <div class="card">
-    <h3>Сессии ивентов</h3>
-    <button class="btn btn-primary" on:click={loadSessions}>🔄 Обновить</button>
+    <div class="card-head">
+        <h3>Сессии ивентов</h3>
+        <div class="card-actions">
+            <button class="btn btn-secondary" on:click={loadSessions}>🔄 Обновить</button>
+        </div>
+    </div>
     <div class="table-wrap">
         <table>
             <thead>
@@ -126,14 +430,44 @@
 
 <style>
     .card { background: var(--bg, #0f0f23); border-radius: 8px; padding: 16px; margin: 16px 0; }
+    .form-card { border: 1px solid var(--border, #333); }
+    .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .form-row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .form-group { flex: 1; min-width: 220px; margin-bottom: 12px; }
+    .form-group-small { flex: 0 0 auto; min-width: 80px; }
+    .form-group label { display: block; margin-bottom: 6px; color: var(--muted, #aaa); font-size: 14px; }
+    .form-group input[type="text"], .form-group select, .form-group textarea {
+        width: 100%; padding: 10px; border-radius: 6px;
+        border: 1px solid var(--border, #333); background: var(--bg, #0f0f23); color: #fff;
+        font-family: inherit;
+    }
+    .form-group textarea {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 13px; resize: vertical;
+    }
+    .form-group input[type="checkbox"] { width: auto; }
+    .hint { color: var(--muted, #aaa); font-size: 12px; margin: 6px 0 0; }
+    .error { color: var(--red, #e74c3c); font-size: 13px; margin: 6px 0 0; }
+    .warning { color: var(--orange, #f39c12); font-size: 14px; margin: 0 0 12px; }
+    .form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 12px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border, #333); white-space: nowrap; }
     th { color: var(--accent, #f5a623); }
+    tr.inactive { opacity: 0.55; }
+    .system-mark {
+        color: var(--muted, #aaa); font-size: 11px; margin-left: 6px;
+        border: 1px solid var(--border, #333); border-radius: 4px; padding: 1px 5px;
+    }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .btn { padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: var(--blue, #3498db); color: #fff; }
     .btn-success { background: var(--green, #27ae60); color: #fff; }
+    .btn-warning { background: var(--orange, #f39c12); color: #fff; }
     .btn-danger { background: var(--red, #e74c3c); color: #fff; }
+    .btn-secondary { background: #555; color: #fff; }
     .badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
     .badge-active { background: var(--green, #27ae60); color: #fff; }
     .badge-finished { background: #7f8c8d; color: #fff; }

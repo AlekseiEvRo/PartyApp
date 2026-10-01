@@ -29,6 +29,20 @@ public class QuizHandler : IEventHandler
 
     public string EventType => "quiz";
 
+    public string DefaultConfigJson => """
+        {
+            "timeLimitSec": 30,
+            "pointsPerCorrect": 10,
+            "questions": [
+                {
+                    "text": "Вопрос про именинника?",
+                    "options": ["Вариант 1", "Вариант 2", "Вариант 3", "Вариант 4"],
+                    "correctIndex": 0
+                }
+            ]
+        }
+        """;
+
     public async Task<SubmissionResult> HandleSubmissionAsync(
         EventSession session,
         EventDefinition definition,

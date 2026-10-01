@@ -29,6 +29,14 @@ public class PromoCodeHandler : IEventHandler
 
     public string EventType => "promo_code";
 
+    public string DefaultConfigJson => """
+        {
+            "codes": ["КОД1", "КОД2"],
+            "pointsPerCode": 15,
+            "oneTimePerPlayer": true
+        }
+        """;
+
     public async Task<SubmissionResult> HandleSubmissionAsync(
         EventSession session,
         EventDefinition definition,

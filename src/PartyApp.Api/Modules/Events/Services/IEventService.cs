@@ -4,7 +4,7 @@ namespace PartyApp.Api.Modules.Events.Services;
 
 public interface IEventService
 {
-    Task<List<EventDefinition>> GetDefinitionsAsync(CancellationToken ct = default);
+    Task<List<EventDefinition>> GetDefinitionsAsync(bool includeInactive = false, CancellationToken ct = default);
     Task<List<AvailableEventDto>> GetAvailableEventsAsync(CancellationToken ct = default);
     Task<EventSession> StartEventAsync(Guid definitionId, Guid startedById, CancellationToken ct = default);
     Task FinishEventAsync(Guid sessionId, CancellationToken ct = default);

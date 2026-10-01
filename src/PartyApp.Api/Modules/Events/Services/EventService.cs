@@ -33,13 +33,16 @@ public class EventService : IEventService
         _logger = logger;
     }
 
-    public async Task<List<EventDefinition>> GetDefinitionsAsync(CancellationToken ct = default)
+    public async Task<List<EventDefinition>> GetDefinitionsAsync(bool includeInactive = false, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        return await db.EventDefinitions
-            .Where(d => d.IsActive)
+        IQueryable<EventDefinition> query = db.EventDefinitions;
+        if (!includeInactive)
+            query = query.Where(d => d.IsActive);
+
+        return await query
             .OrderBy(d => d.CreatedAt)
             .ToListAsync(ct);
     }

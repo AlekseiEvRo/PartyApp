@@ -29,6 +29,8 @@ public class EventHandlerFactory : IEventHandlerFactory
         }
     }
 
+    public IReadOnlyCollection<string> GetEventTypes() => _handlers.Keys;
+
     public IEventHandler GetHandler(string eventType)
     {
         if (_handlers.TryGetValue(eventType, out var handler))
