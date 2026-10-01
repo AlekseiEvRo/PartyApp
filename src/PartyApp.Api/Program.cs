@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -384,10 +385,17 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("Web");
 
-// Статические файлы (для тестовой страницы SignalR)
+// Статические файлы (для тестовой страницы SignalR).
+// HTML не кэшируем: после деплоя новая версия SPA должна подхватываться сразу
+void DisableHtmlCache(StaticFileResponseContext context)
+{
+    if (context.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        context.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+}
+
 app.UseDefaultFiles();
-app.UseStaticFiles();
-app.MapFallbackToFile("index.html");
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = DisableHtmlCache });
+app.MapFallbackToFile("index.html", new StaticFileOptions { OnPrepareResponse = DisableHtmlCache });
 
 app.UseAuthentication();
 app.UseAuthorization();

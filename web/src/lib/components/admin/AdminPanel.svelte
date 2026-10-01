@@ -9,6 +9,7 @@
     import WishesTab from './WishesTab.svelte';
     import ScreenTab from './ScreenTab.svelte';
     import { user } from '../../stores';
+    import { forceRefreshApp } from '../../pwa';
 
     let activeTab = 'dashboard';
 
@@ -28,6 +29,14 @@
         localStorage.removeItem('party_token');
         location.href = '/admin';
     }
+
+    // Видно, какая версия фронтенда загружена — помогает ловить «залипший» кэш
+    const buildLabel = new Date(__APP_BUILD__).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
 </script>
 
 <div class="admin">
@@ -35,7 +44,13 @@
         <h1>🎉 PartyApp Админка</h1>
         <div class="header-actions">
             <a href="/" class="back-link">🎮 Режим игрока</a>
+            <button
+                class="refresh-btn"
+                on:click={forceRefreshApp}
+                title="Сбросить кэш приложения и загрузить свежую версию"
+            >↻ Обновить</button>
             <span class="admin-name">{$user?.displayName}</span>
+            <span class="build" title="Версия сборки приложения">сборка {buildLabel}</span>
             <button class="logout-btn" on:click={logout}>Выйти</button>
         </div>
     </header>
@@ -109,7 +124,20 @@
         transition: background 0.2s;
     }
     .back-link:hover { background: #2ecc71; }
+    .refresh-btn {
+        background: var(--accent, #f5a623);
+        color: #12122e;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .refresh-btn:hover { background: #ffb84d; }
     .admin-name { color: var(--muted, #aaa); font-size: 14px; overflow-wrap: anywhere; }
+    .build { color: #666; font-size: 11px; white-space: nowrap; }
     .logout-btn {
         background: var(--red, #e74c3c);
         color: #fff;
