@@ -51,6 +51,16 @@
         shopSeconds: number;
     }
 
+    interface ShopLot {
+        id: string;
+        name: string;
+        minBid: number;
+        endsAt: string;
+        bidsCount: number;
+        topBid: number | null;
+        leaderName: string | null;
+    }
+
     interface Photo {
         id: string;
         uploadedByName: string;
@@ -122,6 +132,7 @@
     let reactions: FloatingReaction[] = [];
     let reactionTimers: ReturnType<typeof setTimeout>[] = [];
     let shopItems: ShopItem[] = [];
+    let lots: ShopLot[] = [];
 
     // Настройки ротации секций (таймауты задаются в админке)
     let settings: ScreenSettings = { photoSeconds: 8, leaderboardSeconds: 60, shopSeconds: 60 };
@@ -188,6 +199,8 @@
             connection.on('EventFinished', onEventFinished);
             connection.on('EventLiveUpdated', onEventLiveUpdated);
             connection.on('ScreenSettingsUpdated', onScreenSettingsUpdated);
+            connection.on('BidPlaced', onBidPlaced);
+            connection.on('LotStarted', onLotStarted);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -221,6 +234,8 @@
             connection.off('EventFinished', onEventFinished);
             connection.off('EventLiveUpdated', onEventLiveUpdated);
             connection.off('ScreenSettingsUpdated', onScreenSettingsUpdated);
+            connection.off('BidPlaced', onBidPlaced);
+            connection.off('LotStarted', onLotStarted);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
 
@@ -288,6 +303,7 @@
             else if (currentView === 'event') await loadEvent();
             else if (currentView === 'photos') await loadPhotos();
             else if (currentView === 'shop') await loadShopItems();
+            else if (currentView === 'lots') await loadLots();
         } catch (e) {
             console.error('Screen: не удалось обновить содержимое', e);
         }
@@ -334,6 +350,18 @@
 
     async function loadShopItems() {
         shopItems = await api<ShopItem[]>('/api/shop/items');
+    }
+
+    async function loadLots() {
+        lots = await api<ShopLot[]>('/api/shop/lots');
+    }
+
+    function onBidPlaced() {
+        if (currentView === 'lots') void loadLots();
+    }
+
+    function onLotStarted() {
+        if (currentView === 'lots') void loadLots();
     }
 
     async function loadSettings() {
@@ -453,6 +481,20 @@
         const minutes = Math.floor(value / 60);
         const seconds = value % 60;
         return minutes > 0 ? `${minutes}:${seconds.toString().padStart(2, '0')}` : `${seconds}`;
+    }
+
+    /** Сколько осталось до конца приёма ставок. */
+    function formatLotsRemaining(endsAt: string): string {
+        const leftMs = new Date(endsAt).getTime() - (now + clockOffset);
+        if (leftMs <= 0) return 'приём закрыт';
+
+        const totalSeconds = Math.ceil(leftMs / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+
+        return minutes > 0
+            ? `${minutes} мин ${seconds.toString().padStart(2, '0')} с`
+            : `${seconds} с`;
     }
 
     // Обёртка для crossfade: слайд всегда один, но анимации нужен keyed each
@@ -607,6 +649,28 @@
                             <span class="item-stock">
                                 {item.stock === null ? '∞' : item.stock === 0 ? 'нет в наличии' : `осталось ${item.stock}`}
                             </span>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+        </main>
+    {:else if currentView === 'lots'}
+        <main class="lots">
+            <h1>🔨 Ставки</h1>
+
+            {#if lots.length === 0}
+                <p class="muted">Активных лотов нет</p>
+            {:else}
+                <ul>
+                    {#each lots as lot (lot.id)}
+                        <li>
+                            <span class="item-name">{lot.name}</span>
+                            {#if lot.topBid !== null}
+                                <span class="lot-leader">{lot.leaderName}: {lot.topBid}</span>
+                            {:else}
+                                <span class="lot-leader empty">от {lot.minBid}</span>
+                            {/if}
+                            <span class="lot-time">{formatLotsRemaining(lot.endsAt)}</span>
                         </li>
                     {/each}
                 </ul>
@@ -857,6 +921,40 @@
         color: var(--muted, #aaa);
         font-size: clamp(13px, 1.2vw, 20px);
         text-align: center;
+    }
+
+    /* Ставки */
+    .lots ul {
+        list-style: none;
+        width: min(1100px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1.2vh;
+    }
+
+    .lots li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.4vh 2vw;
+        font-size: clamp(18px, 2vw, 34px);
+    }
+
+    .lot-leader {
+        color: #f5a623;
+        font-weight: bold;
+        white-space: nowrap;
+    }
+
+    .lot-leader.empty { color: var(--muted, #aaa); font-weight: normal; }
+
+    .lot-time {
+        color: var(--green, #27ae60);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        font-size: clamp(15px, 1.6vw, 28px);
     }
 
     .predictions {

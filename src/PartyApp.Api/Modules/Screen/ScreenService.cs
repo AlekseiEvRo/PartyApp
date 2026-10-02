@@ -10,10 +10,11 @@ public static class ScreenModes
     public const string Message = "message";
     public const string Shop = "shop";
     public const string Rotation = "rotation";
+    public const string Lots = "lots";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Idle, Leaderboard, Event, Photos, Message, Shop, Rotation
+        Idle, Leaderboard, Event, Photos, Message, Shop, Rotation, Lots
     };
 }
 

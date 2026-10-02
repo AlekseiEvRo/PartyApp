@@ -26,8 +26,9 @@ public class AuctionEndpointsTests : IDisposable
     private async Task<Guid> CreateLotAsync(
         TestUser admin,
         int minBid = 10,
-        int endsInMinutes = 30,
-        string name = "Торт")
+        int durationMinutes = 30,
+        string name = "Торт",
+        bool start = true)
     {
         _api.Authorize(admin);
         HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
@@ -37,14 +38,23 @@ public class AuctionEndpointsTests : IDisposable
                 name,
                 description = "Спор за лучший кусок",
                 minBid,
-                endsAt = DateTime.UtcNow.AddMinutes(endsInMinutes)
+                durationMinutes
             });
 
         response.StatusCode.Should().Be(
             HttpStatusCode.Created,
             await response.Content.ReadAsStringAsync());
 
-        return (await PartyAppApi.ReadJsonAsync(response)).GetProperty("id").GetGuid();
+        Guid lotId = (await PartyAppApi.ReadJsonAsync(response)).GetProperty("id").GetGuid();
+
+        if (start)
+        {
+            _api.Authorize(admin);
+            (await _api.Client.PostAsync($"/api/shop/lots/{lotId}/start", null)).StatusCode
+                .Should().Be(HttpStatusCode.OK);
+        }
+
+        return lotId;
     }
 
     private async Task<HttpResponseMessage> BidAsync(TestUser player, Guid lotId, int amount)
@@ -64,21 +74,48 @@ public class AuctionEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateLot_WithPastDateOrZeroBid_ReturnsBadRequest()
+    public async Task CreateLot_WithInvalidData_ReturnsBadRequest()
     {
         TestUser admin = await _api.CreateAdminAsync();
         _api.Authorize(admin);
 
-        HttpResponseMessage past = await _api.Client.PostAsJsonAsync(
-            "/api/shop/lots",
-            new { name = "Лот", minBid = 10, endsAt = DateTime.UtcNow.AddMinutes(-5) });
+        HttpResponseMessage zeroBid = await _api.Client.PostAsJsonAsync(
+            "/api/shop/lots", new { name = "Лот", minBid = 0, durationMinutes = 30 });
 
-        HttpResponseMessage zero = await _api.Client.PostAsJsonAsync(
-            "/api/shop/lots",
-            new { name = "Лот", minBid = 0, endsAt = DateTime.UtcNow.AddMinutes(30) });
+        HttpResponseMessage zeroDuration = await _api.Client.PostAsJsonAsync(
+            "/api/shop/lots", new { name = "Лот", minBid = 10, durationMinutes = 0 });
 
-        past.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        zero.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        zeroBid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        zeroDuration.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task DraftLot_IsHiddenAndAcceptsNoBidsUntilStarted()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        Guid lotId = await CreateLotAsync(admin, start: false);
+
+        // В список открытых лотов черновик не попадает
+        _api.Authorize(player);
+        JsonElement open = await PartyAppApi.ReadJsonAsync(await _api.Client.GetAsync("/api/shop/lots"));
+        open.GetArrayLength().Should().Be(0);
+
+        (await BidAsync(player, lotId, 20)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // После «Начать» лот появляется и принимает ставки
+        _api.Authorize(admin);
+        (await _api.Client.PostAsync($"/api/shop/lots/{lotId}/start", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        _api.Authorize(player);
+        (await BidAsync(player, lotId, 20)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement after = await PartyAppApi.ReadJsonAsync(await _api.Client.GetAsync("/api/shop/lots"));
+        after.GetArrayLength().Should().Be(1);
+        after[0].GetProperty("topBid").GetInt32().Should().Be(20);
+        after[0].GetProperty("leaderName").GetString().Should().Be(player.DisplayName);
+        after[0].GetProperty("endsAt").ValueKind.Should().NotBe(JsonValueKind.Null);
     }
 
     [Fact]
@@ -96,13 +133,15 @@ public class AuctionEndpointsTests : IDisposable
         (await _api.GetBalanceAsync(alice)).Should().Be(60);
         (await _api.GetBalanceAsync(boris)).Should().Be(30);
 
-        // Игроки видят только свои ставки
+        // Открытый аукцион: игроки видят лидера и его ставку
         _api.Authorize(alice);
         JsonElement lots = await PartyAppApi.ReadJsonAsync(
             await _api.Client.GetAsync("/api/shop/lots"));
         lots.GetArrayLength().Should().Be(1);
         lots[0].GetProperty("myBid").GetInt32().Should().Be(40);
         lots[0].GetProperty("bidsCount").GetInt32().Should().Be(2);
+        lots[0].GetProperty("topBid").GetInt32().Should().Be(70);
+        lots[0].GetProperty("leaderName").GetString().Should().Be(boris.DisplayName);
         lots[0].TryGetProperty("winningBid", out _).Should().BeFalse();
 
         _api.Authorize(boris);

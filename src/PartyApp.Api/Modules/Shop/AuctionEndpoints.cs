@@ -42,7 +42,17 @@ public static class AuctionEndpoints
                         l.MinBid,
                         l.EndsAt,
                         BidsCount = l.Bids.Count,
-                        // Закрытые ставки: игрок видит только свою
+                        // Открытый аукцион: видно текущего лидера и его ставку
+                        TopBid = l.Bids
+                            .OrderByDescending(b => b.Amount)
+                            .ThenBy(b => b.CreatedAt)
+                            .Select(b => (int?)b.Amount)
+                            .FirstOrDefault(),
+                        LeaderName = l.Bids
+                            .OrderByDescending(b => b.Amount)
+                            .ThenBy(b => b.CreatedAt)
+                            .Select(b => b.Player.DisplayName)
+                            .FirstOrDefault(),
                         MyBid = l.Bids
                             .Where(b => b.PlayerId == userId)
                             .Select(b => (int?)b.Amount)
@@ -82,6 +92,7 @@ public static class AuctionEndpoints
                         l.Name,
                         l.Description,
                         l.MinBid,
+                        l.DurationMinutes,
                         l.EndsAt,
                         Status = l.Status.ToString(),
                         WinnerName = l.Winner != null ? l.Winner.DisplayName : null,
@@ -104,7 +115,6 @@ public static class AuctionEndpoints
         group.MapPost("/", async (
                 CreateLotRequest request,
                 AppDbContext db,
-                TimeProvider timeProvider,
                 CancellationToken ct) =>
             {
                 string name = request.Name?.Trim() ?? string.Empty;
@@ -124,21 +134,36 @@ public static class AuctionEndpoints
                 if (request.MinBid <= 0)
                     return Results.BadRequest(new { error = "Минимальная ставка должна быть больше 0" });
 
-                if (request.EndsAt <= timeProvider.GetUtcNow().UtcDateTime)
-                    return Results.BadRequest(new { error = "Время окончания должно быть в будущем" });
+                if (request.DurationMinutes is < 1 or > 1440)
+                    return Results.BadRequest(new { error = "Длительность — от 1 минуты до 24 часов" });
 
                 var lot = new Lot
                 {
                     Name = name,
                     Description = description,
                     MinBid = request.MinBid,
-                    EndsAt = request.EndsAt
+                    DurationMinutes = request.DurationMinutes,
+                    Status = LotStatus.Draft
                 };
 
                 db.Lots.Add(lot);
                 await db.SaveChangesAsync(ct);
 
                 return Results.Created($"/api/shop/lots/{lot.Id}", lot);
+            })
+            .RequireAuthorization("AdminOnly");
+
+        // Лот создаётся черновиком: приём ставок открывает кнопка «Начать»
+        group.MapPost("/{lotId:guid}/start", async (
+                Guid lotId,
+                AuctionService auction,
+                CancellationToken ct) =>
+            {
+                LotCloseOutcome outcome = await auction.StartLotAsync(lotId, ct);
+
+                return outcome.Success
+                    ? Results.Ok(outcome.Data ?? new { success = true })
+                    : Results.Conflict(new { error = outcome.Message });
             })
             .RequireAuthorization("AdminOnly");
 
@@ -180,4 +205,4 @@ public static class AuctionEndpoints
 
 public record PlaceBidRequest(int Amount);
 
-public record CreateLotRequest(string? Name, string? Description, int MinBid, DateTime EndsAt);
+public record CreateLotRequest(string? Name, string? Description, int MinBid, int DurationMinutes);

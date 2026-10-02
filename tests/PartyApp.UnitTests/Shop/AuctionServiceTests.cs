@@ -54,17 +54,23 @@ public class AuctionServiceTests : IDisposable
         return user;
     }
 
-    private async Task<Lot> SeedLotAsync(int minBid = 10, int endsInMinutes = 30)
+    private async Task<Lot> SeedLotAsync(int minBid = 10, int durationMinutes = 30)
     {
         var lot = new Lot
         {
             Name = "Торт от именинника",
             MinBid = minBid,
-            EndsAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(endsInMinutes)
+            DurationMinutes = durationMinutes,
+            Status = LotStatus.Draft
         };
 
         _host.Db.Lots.Add(lot);
         await _host.Db.SaveChangesAsync();
+
+        // Лот стартует как в проде: черновик → приём ставок
+        LotCloseOutcome started = await _service.StartLotAsync(lot.Id);
+        started.Success.Should().BeTrue();
+
         return lot;
     }
 
@@ -130,7 +136,7 @@ public class AuctionServiceTests : IDisposable
     public async Task PlaceBid_AfterDeadline_IsRejected()
     {
         User player = await SeedUserAsync(balance: 100);
-        Lot lot = await SeedLotAsync(endsInMinutes: 5);
+        Lot lot = await SeedLotAsync(durationMinutes: 5);
 
         _timeProvider.Advance(TimeSpan.FromMinutes(6));
 
@@ -232,8 +238,8 @@ public class AuctionServiceTests : IDisposable
     public async Task CloseExpired_ClosesOnlyExpiredLots()
     {
         User player = await SeedUserAsync(balance: 100);
-        Lot expired = await SeedLotAsync(endsInMinutes: 5);
-        Lot active = await SeedLotAsync(endsInMinutes: 60);
+        Lot expired = await SeedLotAsync(durationMinutes: 5);
+        Lot active = await SeedLotAsync(durationMinutes: 60);
 
         _timeProvider.Advance(TimeSpan.FromMinutes(6));
         await _service.CloseExpiredAsync();
@@ -242,5 +248,67 @@ public class AuctionServiceTests : IDisposable
             .Should().Be(LotStatus.Finished);
         (await ReadAsync(db => db.Lots.AsNoTracking().SingleAsync(l => l.Id == active.Id))).Status
             .Should().Be(LotStatus.Open);
+    }
+
+    [Fact]
+    public async Task StartLot_OpensBiddingAndBroadcasts()
+    {
+        var lot = new Lot { Name = "Торт", MinBid = 10, DurationMinutes = 45 };
+        _host.Db.Lots.Add(lot);
+        await _host.Db.SaveChangesAsync();
+
+        LotCloseOutcome outcome = await _service.StartLotAsync(lot.Id);
+
+        outcome.Success.Should().BeTrue();
+
+        Lot stored = await ReadAsync(db => db.Lots.AsNoTracking().SingleAsync(l => l.Id == lot.Id));
+        stored.Status.Should().Be(LotStatus.Open);
+        stored.EndsAt.Should().NotBeNull();
+        stored.EndsAt!.Value.Should()
+            .BeCloseTo(_timeProvider.GetUtcNow().UtcDateTime.AddMinutes(45), TimeSpan.FromSeconds(2));
+
+        _hub.SingleCall("LotStarted").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task StartLot_Twice_IsRejected()
+    {
+        Lot lot = await SeedLotAsync();
+
+        LotCloseOutcome second = await _service.StartLotAsync(lot.Id);
+
+        second.Success.Should().BeFalse();
+        second.Message.Should().Contain("уже запущен");
+    }
+
+    [Fact]
+    public async Task BidOnDraftLot_IsRejected()
+    {
+        User player = await SeedUserAsync(balance: 100);
+        var draft = new Lot { Name = "Черновик", MinBid = 10, DurationMinutes = 30 };
+        _host.Db.Lots.Add(draft);
+        await _host.Db.SaveChangesAsync();
+
+        BidOutcome outcome = await _service.PlaceBidAsync(draft.Id, player.Id, 20);
+
+        outcome.Success.Should().BeFalse();
+        outcome.Message.Should().Contain("не открыт");
+    }
+
+    [Fact]
+    public async Task PlaceBid_BroadcastsBidPlacedWithLeader()
+    {
+        User player = await SeedUserAsync(balance: 100);
+        Lot lot = await SeedLotAsync();
+
+        await _service.PlaceBidAsync(lot.Id, player.Id, 40);
+
+        RecordingHubContext.HubCall call = _hub.SingleCall("BidPlaced");
+        System.Text.Json.JsonElement payload = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            System.Text.Json.JsonSerializer.Serialize(call.Payload));
+
+        payload.GetProperty("amount").GetInt32().Should().Be(40);
+        payload.GetProperty("leaderName").GetString().Should().Be(player.DisplayName);
+        payload.GetProperty("lotId").GetGuid().Should().Be(lot.Id);
     }
 }

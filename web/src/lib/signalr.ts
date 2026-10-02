@@ -114,6 +114,10 @@ export async function connect(): Promise<void> {
 
     connection.on('LotCancelled', () => shopVersion.update((v) => v + 1));
 
+    connection.on('LotStarted', () => shopVersion.update((v) => v + 1));
+
+    connection.on('BidPlaced', () => shopVersion.update((v) => v + 1));
+
     connection.on('DareConfirmed', (data: { sessionId: string; playerId: string; points: number }) => {
         dareConfirmed.set(data);
     });

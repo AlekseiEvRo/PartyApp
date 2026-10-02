@@ -15,8 +15,13 @@ public class Lot: BaseEntity
     /// <summary>Минимальная ставка.</summary>
     public int MinBid { get; set; }
 
-    public DateTime EndsAt { get; set; }
-    public LotStatus Status { get; set; } = LotStatus.Open;
+    /// <summary>Сколько минут идёт приём ставок после старта.</summary>
+    public int DurationMinutes { get; set; }
+
+    /// <summary>Когда закончится приём ставок; null пока лот не запущен.</summary>
+    public DateTime? EndsAt { get; set; }
+
+    public LotStatus Status { get; set; } = LotStatus.Draft;
 
     public Guid? WinnerId { get; set; }
     public User? Winner { get; set; }
