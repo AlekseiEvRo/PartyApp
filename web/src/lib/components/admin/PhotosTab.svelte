@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onDestroy } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import { api } from '../../api';
     import { loadPhotoUrl, releasePhotoUrls } from '../../photos';
     import { moderationVersion, showToast } from '../../stores';
@@ -31,6 +31,12 @@
     let loading = true;
     let error = '';
     let lastModerationVersion = -1;
+
+    // Награда за одобренные фото
+    let photoPoints = 5;
+    let savingSettings = false;
+
+    onMount(() => void loadSettings());
 
     $: void load(filter);
 
@@ -112,9 +118,42 @@
                 return 'одобрено';
         }
     }
+
+    async function loadSettings() {
+        try {
+            const settings = await api<{ photoApprovedPoints: number }>('/api/photos/settings');
+            photoPoints = settings.photoApprovedPoints;
+        } catch { /* настройки не критичны */ }
+    }
+
+    async function saveSettings() {
+        savingSettings = true;
+
+        try {
+            const settings = await api<{ photoApprovedPoints: number }>(
+                '/api/photos/settings',
+                'PUT',
+                { photoApprovedPoints: Number(photoPoints) }
+            );
+            photoPoints = settings.photoApprovedPoints;
+            showToast('Настройки сохранены');
+        } catch (e) {
+            showToast(e instanceof Error ? e.message : 'Не удалось сохранить', 'error');
+        } finally {
+            savingSettings = false;
+        }
+    }
 </script>
 
 <h2>📸 Модерация фото</h2>
+
+<div class="settings">
+    <label for="photo-points">Баллов за одобренное фото</label>
+    <input id="photo-points" type="number" min="0" max="1000" bind:value={photoPoints} />
+    <button class="filter" disabled={savingSettings} on:click={saveSettings}>
+        {savingSettings ? 'Сохраняем…' : 'Сохранить'}
+    </button>
+</div>
 
 <div class="filters">
     {#each filters as item}
@@ -168,6 +207,29 @@
         gap: 6px;
         margin-bottom: 14px;
         flex-wrap: wrap;
+    }
+
+    .settings {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+
+    .settings label {
+        font-size: 13px;
+        color: var(--muted, #aaa);
+    }
+
+    .settings input {
+        width: 90px;
+        background: var(--bg-soft, #12122e);
+        border: 1px solid #2a2a5e;
+        border-radius: 8px;
+        color: inherit;
+        padding: 8px 10px;
+        font-size: 14px;
     }
 
     .filter {

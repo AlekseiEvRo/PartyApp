@@ -5,7 +5,7 @@
 | Проект | Что проверяет | Тестов |
 |---|---|---|
 | `PartyApp.UnitTests` | Сервисы, обработчики ивентов, middleware, EF-конфигурации — без HTTP | 300 |
-| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 186 |
+| `PartyApp.IntegrationTests` | API через `WebApplicationFactory`, реальные миграции, SignalR | 189 |
 
 Общий запуск из корня репозитория:
 

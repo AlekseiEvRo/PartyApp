@@ -1,6 +1,7 @@
 <script lang="ts">
     import { api } from '../api';
     import { showToast, balance, user, dareConfirmed } from '../stores';
+    import { serverNow } from '../time';
     import { onMount } from 'svelte';
 
     export let event: any;
@@ -112,7 +113,7 @@
         cooldownUntil = untilIso;
         const until = new Date(untilIso).getTime();
         const tick = () => {
-            const left = Math.ceil((until - Date.now()) / 1000);
+            const left = Math.ceil((until - serverNow()) / 1000);
             if (left <= 0) {
                 cooldownUntil = null;
                 cooldownLeft = 0;
@@ -134,7 +135,7 @@
         const startAt = new Date(event.startedAt).getTime() + (dataConfig.delaySec ?? 5) * 1000;
 
         const tick = () => {
-            reactionLeft = Math.max(0, Math.ceil((startAt - Date.now()) / 1000));
+            reactionLeft = Math.max(0, Math.ceil((startAt - serverNow()) / 1000));
             if (reactionLeft > 0) setTimeout(tick, 200);
         };
 

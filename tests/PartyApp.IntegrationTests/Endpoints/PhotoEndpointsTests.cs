@@ -216,6 +216,96 @@ public class PhotoEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task Approve_AwardsPhotoPointsOnce()
+    {
+        using PartyAppFactory factory = new()
+        {
+            ConfigureOverrides = settings => settings["Photos:RequireModeration"] = "true"
+        };
+        PartyAppApi api = new(factory);
+        TestUser author = await api.RegisterAsync();
+        TestUser admin = await api.CreateAdminAsync();
+
+        api.Authorize(author);
+        HttpResponseMessage upload = await api.Client.PostAsync("/api/photos", CreateUpload(JpegBytes));
+        Guid photoId = (await PartyAppApi.ReadJsonAsync(upload)).GetProperty("id").GetGuid();
+        (await api.GetBalanceAsync(author)).Should().Be(100);
+
+        // Одобрение начисляет баллы автору
+        api.Authorize(admin);
+        (await api.Client.PostAsync($"/api/photos/{photoId}/approve", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+        (await api.GetBalanceAsync(author)).Should().Be(105);
+
+        // Повторное одобрение после отклонения не удваивает награду
+        api.Authorize(admin);
+        (await api.Client.PostAsync($"/api/photos/{photoId}/reject", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+        (await api.Client.PostAsync($"/api/photos/{photoId}/approve", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+        (await api.GetBalanceAsync(author)).Should().Be(105);
+    }
+
+    [Fact]
+    public async Task Upload_WhenAutoApproved_AwardsPhotoPoints()
+    {
+        using PartyAppFactory factory = new()
+        {
+            ConfigureOverrides = settings => settings["Photos:RequireModeration"] = "false"
+        };
+        PartyAppApi api = new(factory);
+        TestUser author = await api.RegisterAsync();
+
+        api.Authorize(author);
+        HttpResponseMessage upload = await api.Client.PostAsync("/api/photos", CreateUpload(JpegBytes));
+        upload.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        (await api.GetBalanceAsync(author)).Should().Be(105);
+    }
+
+    [Fact]
+    public async Task RewardSettings_AreEditableByAdminOnlyAndApplyToNewPhotos()
+    {
+        using PartyAppFactory factory = new()
+        {
+            ConfigureOverrides = settings => settings["Photos:RequireModeration"] = "false"
+        };
+        PartyAppApi api = new(factory);
+        TestUser admin = await api.CreateAdminAsync();
+        TestUser player = await api.RegisterAsync();
+
+        api.Authorize(admin);
+        HttpResponseMessage defaults = await api.Client.GetAsync("/api/photos/settings");
+        defaults.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(defaults)).GetProperty("photoApprovedPoints").GetInt32()
+            .Should().Be(5);
+
+        // Игрок менять не может
+        api.Authorize(player);
+        (await api.Client.PutAsJsonAsync("/api/photos/settings", new { photoApprovedPoints = 20 }))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Админ меняет — новое значение применяется к следующему фото
+        api.Authorize(admin);
+        HttpResponseMessage update = await api.Client.PutAsJsonAsync(
+            "/api/photos/settings", new { photoApprovedPoints = 20 });
+        update.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(update)).GetProperty("photoApprovedPoints").GetInt32()
+            .Should().Be(20);
+
+        TestUser author = await api.RegisterAsync();
+        api.Authorize(author);
+        await api.Client.PostAsync("/api/photos", CreateUpload(JpegBytes));
+
+        (await api.GetBalanceAsync(author)).Should().Be(120);
+
+        // Вне диапазона — ошибка
+        api.Authorize(admin);
+        (await api.Client.PutAsJsonAsync("/api/photos/settings", new { photoApprovedPoints = -1 }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Upload_TooLarge_ReturnsBadRequest()
     {
         using PartyAppFactory factory = new()

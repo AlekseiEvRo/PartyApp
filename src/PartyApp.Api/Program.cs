@@ -534,6 +534,10 @@ using (var scope = app.Services.CreateScope())
 // Health
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
+// Серверное время: клиенты синхронизируют отсчёты, чтобы таймеры
+// на телефонах и на большом экране совпадали
+app.MapGet("/api/time", () => Results.Ok(new { serverTimeUtc = DateTime.UtcNow }));
+
 // Endpoints
 app.MapToastEndpoints();
 app.MapAuthEndpoints();
