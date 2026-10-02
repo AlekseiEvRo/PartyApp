@@ -10,7 +10,8 @@ import {
     photoRemovedId,
     wishRemovedId,
     moderationVersion,
-    shopVersion
+    shopVersion,
+    dareConfirmed
 } from './stores';
 import { getToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
@@ -112,6 +113,10 @@ export async function connect(): Promise<void> {
     });
 
     connection.on('LotCancelled', () => shopVersion.update((v) => v + 1));
+
+    connection.on('DareConfirmed', (data: { sessionId: string; playerId: string; points: number }) => {
+        dareConfirmed.set(data);
+    });
 
     // === Шпионаж ===
     connection.on('SpyGameRoleAssigned', (data: any) => {

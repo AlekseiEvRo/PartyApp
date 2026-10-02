@@ -1,6 +1,6 @@
 <script lang="ts">
     import { api } from '../api';
-    import { showToast, balance, user } from '../stores';
+    import { showToast, balance, user, dareConfirmed } from '../stores';
     import { onMount } from 'svelte';
 
     export let event: any;
@@ -18,10 +18,11 @@
     let reactionLeft = 0;
     let reacted = false;
 
-    // Фанты
+    // Фанты: один фант на игрока, баллы начисляет админ после проверки
     let dareTask: string | null = null;
-    let dareCompleted = 0;
-    let dareTotal = 0;
+    let dareStatus: 'none' | 'pending' | 'confirmed' = 'none';
+    let darePoints = 0;
+    let confirmedDareApplied = false;
 
     // Бинго
     let bingoSize = 5;
@@ -51,8 +52,7 @@
                 reacted = playerData?.reacted ?? false;
                 startReactionCountdown();
             } else if (event.type === 'dare') {
-                dareCompleted = playerData?.completed ?? 0;
-                dareTotal = playerData?.total ?? (dataConfig.tasks?.length ?? 0);
+                applyDare(playerData?.dare ?? null);
             } else if (event.type === 'bingo') {
                 bingoSize = dataConfig.size ?? 5;
                 bingoCells = dataConfig.cells ?? [];
@@ -66,12 +66,22 @@
         } catch { /* карточка просто останется без данных */ }
     });
 
+    // Админ подтвердил фант — сразу показываем начисленные баллы
+    $: if (!confirmedDareApplied
+        && $dareConfirmed
+        && $dareConfirmed.sessionId === event.sessionId
+        && $dareConfirmed.playerId === $user?.userId) {
+        confirmedDareApplied = true;
+        applyConfirmedDare($dareConfirmed.points);
+    }
+
     async function submit(payload: any) {
         try {
             const data = await api<any>(`/api/events/${event.sessionId}/submit`, 'POST', {
                 payloadJson: JSON.stringify(payload)
             });
-            showToast(`${data.message} (+${data.pointsAwarded})`, 'success');
+            const suffix = data.pointsAwarded > 0 ? ` (+${data.pointsAwarded})` : '';
+            showToast(`${data.message}${suffix}`, 'success');
             refreshBalance();
             if (data.data?.busyUntilUtc) startCooldown(data.data.busyUntilUtc);
             return data;
@@ -132,10 +142,24 @@
     async function drawDare() {
         const result = await submit({});
         if (result?.data) {
-            dareTask = result.data.task;
-            dareCompleted = result.data.completed;
-            dareTotal = result.data.total;
+            applyDare(result.data);
         }
+    }
+
+    /** Применяет состояние фанта из ответа сервера или данных игрока. */
+    function applyDare(dare: any): void {
+        if (!dare) return;
+
+        dareTask = dare.task;
+        dareStatus = dare.status === 'confirmed' ? 'confirmed' : 'pending';
+        darePoints = dare.points ?? 0;
+    }
+
+    function applyConfirmedDare(points: number): void {
+        dareStatus = 'confirmed';
+        darePoints = points;
+        showToast(`✅ Фант засчитан! +${points}`, 'success');
+        refreshBalance();
     }
 
     async function markBingo(index: number) {
@@ -230,12 +254,14 @@
         {#if dareTask}
             <p class="desc dare-task">🎭 {dareTask}</p>
         {/if}
-        <div class="row">
+
+        {#if dareStatus === 'confirmed'}
+            <button class="btn dare-done" disabled>✅ Баллы начислены (+{darePoints})</button>
+        {:else if dareStatus === 'pending'}
+            <button class="btn" disabled>⏳ Жди подтверждения</button>
+        {:else}
             <button class="btn" on:click={drawDare}>🎲 Вытянуть фант</button>
-            {#if dareTotal > 0}
-                <span class="event-counter">Выполнено: {dareCompleted}/{dareTotal}</span>
-            {/if}
-        </div>
+        {/if}
 
     {:else if event.type === 'bingo'}
         {#if bingoCells.length >= bingoSize * bingoSize}

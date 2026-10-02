@@ -525,6 +525,7 @@ app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
 app.MapPushEndpoints();
 app.MapEventsEndpoints();
+app.MapDareEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
 app.MapWalletEndpoints();
