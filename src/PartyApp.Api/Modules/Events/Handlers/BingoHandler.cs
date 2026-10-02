@@ -108,6 +108,26 @@ public class BingoHandler : IEventHandler
             });
     }
 
+    public async Task<object?> GetLiveDataAsync(
+        EventSession session,
+        EventDefinition definition,
+        CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        int markedCount = await db.PlayerSubmissions
+            .CountAsync(s => s.SessionId == session.Id && s.Score > 0, ct);
+
+        int playersCount = await db.PlayerSubmissions
+            .Where(s => s.SessionId == session.Id && s.Score > 0)
+            .Select(s => s.PlayerId)
+            .Distinct()
+            .CountAsync(ct);
+
+        return new { markedCount, playersCount };
+    }
+
     public async Task<object?> GetPlayerDataAsync(
         EventSession session,
         EventDefinition definition,

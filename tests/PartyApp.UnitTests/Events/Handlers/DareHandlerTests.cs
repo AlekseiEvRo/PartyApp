@@ -54,6 +54,28 @@ public class DareHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task GetLiveData_CountsPendingAndConfirmed()
+    {
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        await _handler.HandleSubmissionAsync(session, definition, playerId, "{}");
+
+        JsonElement live = Json(await _handler.GetLiveDataAsync(session, definition));
+        live.GetProperty("pending").GetInt32().Should().Be(1);
+        live.GetProperty("confirmed").GetInt32().Should().Be(0);
+
+        await _host.DbAsync(async db =>
+        {
+            DareAssignment assignment = await db.DareAssignments.SingleAsync();
+            assignment.Status = DareStatus.Confirmed;
+            await db.SaveChangesAsync();
+        });
+
+        JsonElement after = Json(await _handler.GetLiveDataAsync(session, definition));
+        after.GetProperty("pending").GetInt32().Should().Be(0);
+        after.GetProperty("confirmed").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
     public async Task FirstDare_CreatesPendingAssignmentWithoutPoints()
     {
         (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();

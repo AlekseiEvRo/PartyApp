@@ -15,7 +15,7 @@ Party/event app: ASP.NET Core 9 minimal API (`src/`) + Svelte 5 SPA (`web/`). SQ
 Backend (from repo root):
 
 - `dotnet build PartyApp.sln`
-- `dotnet test PartyApp.sln` (475 тестов: unit + integration; `Program.cs` обязан оставаться доступным тестам через `public partial class Program`)
+- `dotnet test PartyApp.sln` (486 тестов: unit + integration; `Program.cs` обязан оставаться доступным тестам через `public partial class Program`)
 - `dotnet run --project src/PartyApp.Api` — http://localhost:5000, Swagger at `/swagger`; applies migrations and seeds event definitions on startup.
 - New migration: `dotnet ef migrations add <Name> --project src/PartyApp.Infrastructure --startup-project src/PartyApp.Api -o Persistence/Migrations`. No design-time factory, so both projects are required; the `-o` is required to match the existing migrations and their namespaces. Never run `database update` — startup migrates.
 

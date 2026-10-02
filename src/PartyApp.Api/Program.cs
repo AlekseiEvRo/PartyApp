@@ -476,6 +476,21 @@ using (var scope = app.Services.CreateScope())
         });
     }
     
+    // Seed: предсказания имениннику
+    if (!db.EventDefinitions.Any(d => d.Type == "predictions"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "predictions",
+            DisplayName = "Предсказания имениннику",
+            Description = "Напиши предсказание для именинника — все раскроются в конце вечеринки!",
+            ConfigJson = """{"points":3,"prompt":"Что случится на вечеринке?"}""",
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+    
     db.SaveChanges();
 }
 

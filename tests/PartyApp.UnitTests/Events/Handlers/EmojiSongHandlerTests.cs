@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using FluentAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -145,10 +147,28 @@ public class EmojiSongHandlerTests : IDisposable
         });
         await _host.Db.SaveChangesAsync();
 
-        object? data = await _handler.GetPlayerDataAsync(session, definition, playerId);
-        System.Text.Json.JsonElement json = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
-            System.Text.Json.JsonSerializer.Serialize(data));
+        JsonElement json = Json(await _handler.GetPlayerDataAsync(session, definition, playerId));
 
         json.GetProperty("answered").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(0);
+    }
+
+    [Fact]
+    public async Task GetLiveData_ListsSongsWithoutAnswers()
+    {
+        (EventDefinition definition, EventSession session, _) = await SeedEventAsync();
+
+        JsonElement live = Json(await _handler.GetLiveDataAsync(session, definition));
+        JsonElement songs = live.GetProperty("songs");
+
+        songs.GetArrayLength().Should().Be(2);
+        songs[0].GetProperty("emoji").GetString().Should().NotBeNullOrWhiteSpace();
+        songs[0].TryGetProperty("answer", out _).Should().BeFalse();
+        live.GetProperty("guessedCount").GetInt32().Should().Be(0);
+    }
+
+    private static JsonElement Json(object? value)
+    {
+        return System.Text.Json.JsonSerializer.Deserialize<JsonElement>(
+            System.Text.Json.JsonSerializer.Serialize(value));
     }
 }

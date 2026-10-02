@@ -198,3 +198,21 @@ img, svg, video { max-width: 100%; }
 .song-result { font-size: 14px; color: var(--green); }
 
 .song-result.wrong { color: var(--red); }
+
+.predictions {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.predictions li {
+    background: var(--bg-soft, #12122e);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+.predictions b { color: var(--accent); }

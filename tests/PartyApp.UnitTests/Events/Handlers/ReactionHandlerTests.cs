@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using FluentAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -147,6 +149,25 @@ public class ReactionHandlerTests : IDisposable
 
         object? after = await _handler.GetPlayerDataAsync(session, definition, playerId);
         Json(after).GetProperty("reacted").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetLiveData_ReturnsSignalTimeAndReactedCount()
+    {
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        session.StartedAt = _timeProvider.GetUtcNow().UtcDateTime;
+
+        _host.Db.PlayerSubmissions.Add(new PlayerSubmission
+        {
+            SessionId = session.Id, PlayerId = playerId, PayloadJson = "{}", Score = 5
+        });
+        await _host.Db.SaveChangesAsync();
+
+        JsonElement live = Json(await _handler.GetLiveDataAsync(session, definition));
+
+        live.GetProperty("reactedCount").GetInt32().Should().Be(1);
+        live.GetProperty("startsAtUtc").GetDateTime().Should()
+            .BeCloseTo(session.StartedAt.AddSeconds(5), TimeSpan.FromSeconds(1));
     }
 
     private static System.Text.Json.JsonElement Json(object? value)

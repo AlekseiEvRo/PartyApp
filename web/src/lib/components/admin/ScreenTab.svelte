@@ -10,10 +10,10 @@
         version: number;
     }
 
-    interface AvailableEvent {
-        sessionId: string;
-        type: string;
-        displayName: string;
+    interface ScreenSession {
+        id: string;
+        definitionName: string;
+        state: string;
     }
 
     interface ScreenSettings {
@@ -23,7 +23,7 @@
     }
 
     let state: ScreenState | null = null;
-    let events: AvailableEvent[] = [];
+    let sessions: ScreenSession[] = [];
     let settings: ScreenSettings = { photoSeconds: 8, leaderboardSeconds: 60, shopSeconds: 60 };
     let selectedSessionId = '';
     let message = '';
@@ -39,10 +39,13 @@
         try {
             state = await api<ScreenState>('/api/screen/state');
             settings = await api<ScreenSettings>('/api/screen/settings');
-            events = await api<AvailableEvent[]>('/api/events/available');
 
-            if (!selectedSessionId && events.length > 0) {
-                selectedSessionId = events[0].sessionId;
+            // Берём и активные, и недавно завершённые сессии: последние нужны,
+            // например, чтобы показать раскрытые предсказания
+            sessions = (await api<ScreenSession[]>('/api/admin/sessions')).slice(0, 15);
+
+            if (!selectedSessionId && sessions.length > 0) {
+                selectedSessionId = sessions[0].id;
             }
         } catch (e) {
             error = e instanceof Error ? e.message : 'Не удалось получить состояние экрана';
@@ -138,7 +141,7 @@
     <div class="status">
         Сейчас: <strong>{state ? modeLabel(state.mode) : '…'}</strong>
         {#if state?.mode === 'event' && state.sessionId}
-            <span class="muted">({events.find((e) => e.sessionId === state?.sessionId)?.displayName ?? 'ивент'})</span>
+            <span class="muted">({sessions.find((s) => s.id === state?.sessionId)?.definitionName ?? 'ивент'})</span>
         {/if}
     </div>
 
@@ -176,11 +179,13 @@
         <label for="screen-event">Показать ивент:</label>
         <div class="inline">
             <select id="screen-event" bind:value={selectedSessionId}>
-                {#if events.length === 0}
-                    <option value="">Нет активных ивентов</option>
+                {#if sessions.length === 0}
+                    <option value="">Нет ивентов</option>
                 {/if}
-                {#each events as event (event.sessionId)}
-                    <option value={event.sessionId}>{event.displayName}</option>
+                {#each sessions as session (session.id)}
+                    <option value={session.id}>
+                        {session.definitionName}{session.state === 'Finished' ? ' (завершён)' : ''}
+                    </option>
                 {/each}
             </select>
             <button

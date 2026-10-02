@@ -36,7 +36,13 @@
     let songAnswered = new Set<number>();
     let songResults: Record<number, { correct: boolean; answer: string }> = {};
 
-    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song'];
+    // Предсказания
+    let predictionText = '';
+    let predictionSent: string | null = null;
+    let predictionPrompt = 'Что случится на вечеринке?';
+    let revealedPredictions: any[] | null = null;
+
+    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions'];
 
     onMount(async () => {
         if (!dataTypes.includes(event.type)) return;
@@ -62,6 +68,10 @@
                 songs = dataConfig.songs ?? [];
                 songAnswered = new Set<number>(playerData?.answered ?? []);
                 songInputs = Object.fromEntries(songs.map((_, i) => [i, '']));
+            } else if (event.type === 'predictions') {
+                predictionPrompt = dataConfig.prompt ?? predictionPrompt;
+                predictionSent = playerData?.text ?? null;
+                revealedPredictions = data.live?.revealed ?? null;
             }
         } catch { /* карточка просто останется без данных */ }
     });
@@ -191,6 +201,17 @@
         }
     }
 
+    async function submitPrediction() {
+        const text = predictionText.trim();
+        if (!text) return;
+
+        const result = await submit({ text });
+        if (result?.data?.text) {
+            predictionSent = result.data.text;
+            predictionText = '';
+        }
+    }
+
     function range(count: number): number[] {
         return Array.from({ length: count }, (_, i) => i);
     }
@@ -301,6 +322,25 @@
                 {/if}
             </div>
         {/each}
+
+    {:else if event.type === 'predictions'}
+        {#if revealedPredictions}
+            <p class="desc">🔮 Предсказания раскрыты!</p>
+            <ul class="predictions">
+                {#each revealedPredictions as prediction}
+                    <li><b>{prediction.playerName}</b>: {prediction.text}</li>
+                {/each}
+            </ul>
+        {:else if predictionSent}
+            <p class="desc dare-task">🔮 {predictionSent}</p>
+            <p class="event-counter">Ждём раскрытия в конце вечеринки</p>
+        {:else}
+            <p class="desc">{predictionPrompt}</p>
+            <div class="row">
+                <input type="text" placeholder="Твоё предсказание" maxlength="200" bind:value={predictionText} />
+                <button class="btn" on:click={submitPrediction}>🔮 Отправить</button>
+            </div>
+        {/if}
 
     {:else}
         <p class="desc">Ивент скоро появится</p>

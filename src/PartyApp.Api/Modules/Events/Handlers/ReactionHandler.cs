@@ -85,15 +85,22 @@ public class ReactionHandler : IEventHandler
             new { elapsedMs = (int)elapsedMs, points });
     }
 
-    public Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
+    public async Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
     {
         var config = JsonSerializer.Deserialize<ReactionConfig>(definition.ConfigJson, EventJsonOptions.Default);
         int delaySec = Math.Max(0, config?.DelaySec ?? 5);
 
-        return Task.FromResult<object?>(new
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        int reactedCount = await db.PlayerSubmissions
+            .CountAsync(s => s.SessionId == session.Id && s.Score > 0, ct);
+
+        return new
         {
-            startsAtUtc = session.StartedAt.AddSeconds(delaySec)
-        });
+            startsAtUtc = session.StartedAt.AddSeconds(delaySec),
+            reactedCount
+        };
     }
 
     public async Task<object?> GetPlayerDataAsync(

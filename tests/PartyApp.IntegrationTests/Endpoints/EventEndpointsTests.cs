@@ -240,7 +240,7 @@ public class EventEndpointsTests : IClassFixture<PartyAppFactory>
         types.Select(t => t.GetProperty("type").GetString())
             .Should().BeEquivalentTo(
                 "quiz", "word_rush", "promo_code", "qr_scan", "quick_checkin",
-                "reaction", "dare", "bingo", "emoji_song");
+                "reaction", "dare", "bingo", "emoji_song", "predictions");
 
         foreach (JsonElement type in types)
         {

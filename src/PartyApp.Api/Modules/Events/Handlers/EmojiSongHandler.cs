@@ -110,15 +110,29 @@ public class EmojiSongHandler : IEventHandler
             new { songIndex, correct = false, answer = song.Answer });
     }
 
-    public Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
+    public async Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
     {
         var config = JsonSerializer.Deserialize<EmojiSongConfig>(definition.ConfigJson, EventJsonOptions.Default);
         var songs = config?.Songs ?? new List<EmojiSong>();
 
-        return Task.FromResult<object?>(new
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        int guessedCount = await db.PlayerSubmissions
+            .CountAsync(s => s.SessionId == session.Id && s.Score > 0, ct);
+
+        int playersCount = await db.PlayerSubmissions
+            .Where(s => s.SessionId == session.Id)
+            .Select(s => s.PlayerId)
+            .Distinct()
+            .CountAsync(ct);
+
+        return new
         {
-            songs = songs.Select(s => new { emoji = s.Emoji, hint = s.Hint }).ToArray()
-        });
+            songs = songs.Select(s => new { emoji = s.Emoji, hint = s.Hint }).ToArray(),
+            guessedCount,
+            playersCount
+        };
     }
 
     public async Task<object?> GetPlayerDataAsync(

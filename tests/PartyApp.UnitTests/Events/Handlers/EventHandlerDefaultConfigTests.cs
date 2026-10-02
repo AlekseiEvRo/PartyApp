@@ -129,6 +129,11 @@ public class EventHandlerDefaultConfigTests
         DareHandler dare = new(ScopeFactory, NullLogger<DareHandler>.Instance);
         BingoHandler bingo = new(ScopeFactory, PointsAward, NullLogger<BingoHandler>.Instance);
         EmojiSongHandler songs = new(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance);
+        PredictionsHandler predictions = new(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance);
+
+        JsonElement predictionsConfig = Parse(predictions.DefaultConfigJson);
+        predictionsConfig.GetProperty("points").GetInt32().Should().BePositive();
+        predictionsConfig.GetProperty("prompt").GetString().Should().NotBeNullOrWhiteSpace();
 
         JsonElement reactionConfig = Parse(reaction.DefaultConfigJson);
         reactionConfig.GetProperty("delaySec").GetInt32().Should().BeGreaterThanOrEqualTo(0);
@@ -172,7 +177,8 @@ public class EventHandlerDefaultConfigTests
                 ScopeFactory, PointsAward, TimeProvider.System, NullLogger<ReactionHandler>.Instance),
             new DareHandler(ScopeFactory, NullLogger<DareHandler>.Instance),
             new BingoHandler(ScopeFactory, PointsAward, NullLogger<BingoHandler>.Instance),
-            new EmojiSongHandler(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance)
+            new EmojiSongHandler(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance),
+            new PredictionsHandler(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance)
         };
 
         handlers.Select(h => h.EventType).Should().OnlyHaveUniqueItems();

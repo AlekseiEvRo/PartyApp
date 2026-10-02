@@ -109,6 +109,22 @@ public class DareHandler : IEventHandler
             BuildDareData(assignment));
     }
 
+    public async Task<object?> GetLiveDataAsync(
+        EventSession session,
+        EventDefinition definition,
+        CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        int pending = await db.DareAssignments
+            .CountAsync(a => a.SessionId == session.Id && a.Status == DareStatus.Pending, ct);
+        int confirmed = await db.DareAssignments
+            .CountAsync(a => a.SessionId == session.Id && a.Status == DareStatus.Confirmed, ct);
+
+        return new { pending, confirmed };
+    }
+
     public async Task<object?> GetPlayerDataAsync(
         EventSession session,
         EventDefinition definition,

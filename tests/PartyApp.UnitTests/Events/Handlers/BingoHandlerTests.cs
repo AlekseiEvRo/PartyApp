@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using FluentAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -157,6 +159,19 @@ public class BingoHandlerTests : IDisposable
 
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("25");
+    }
+
+    [Fact]
+    public async Task GetLiveData_CountsMarksAndPlayers()
+    {
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        await SeedCellAsync(session.Id, playerId, 0);
+        await SeedCellAsync(session.Id, playerId, 1);
+
+        JsonElement live = Json(await _handler.GetLiveDataAsync(session, definition));
+
+        live.GetProperty("markedCount").GetInt32().Should().Be(2);
+        live.GetProperty("playersCount").GetInt32().Should().Be(1);
     }
 
     [Fact]
