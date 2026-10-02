@@ -5,6 +5,7 @@
     import AdminPanel from './lib/components/admin/AdminPanel.svelte';
     import Screen from './lib/components/Screen.svelte';
     import { setToken } from './lib/api';
+    import { syncServerTime } from './lib/time';
     import { onMount } from 'svelte';
 
     let loading = true;
@@ -65,6 +66,10 @@
     }
 
     onMount(async () => {
+        // Таймеры считаем от серверного времени, а не от часов телефона
+        void syncServerTime();
+        setInterval(() => void syncServerTime(), 5 * 60 * 1000);
+
         await tryRestoreSession();
         loading = false;
     });

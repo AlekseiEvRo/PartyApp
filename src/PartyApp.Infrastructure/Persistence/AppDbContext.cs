@@ -23,7 +23,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Lot> Lots => Set<Lot>();
     public DbSet<Bid> Bids => Set<Bid>();
     public DbSet<ScreenSettings> ScreenSettings => Set<ScreenSettings>();
+    public DbSet<RewardSettings> RewardSettings => Set<RewardSettings>();
     public DbSet<DareAssignment> DareAssignments => Set<DareAssignment>();
+    public DbSet<BingoCellConfirmation> BingoCellConfirmations => Set<BingoCellConfirmation>();
+    public DbSet<RaffleDraw> RaffleDraws => Set<RaffleDraw>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)

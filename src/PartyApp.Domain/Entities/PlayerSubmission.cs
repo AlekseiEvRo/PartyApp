@@ -13,6 +13,9 @@ public class PlayerSubmission: BaseEntity
     /// <summary>Ответ игрока в гибком формате (зависит от типа ивента)</summary>
     public string PayloadJson { get; set; } = "{}";
 
+    /// <summary>Время реакции в мс для ивентов на скорость («Кто быстрее»); иначе null.</summary>
+    public int? DurationMs { get; set; }
+
     public int? Score { get; set; }
     public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
 }

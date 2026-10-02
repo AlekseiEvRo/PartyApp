@@ -45,6 +45,29 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.ToTable("Bids");
                 });
 
+            modelBuilder.Entity("PartyApp.Domain.Entities.BingoCellConfirmation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CellIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ConfirmedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "CellIndex")
+                        .IsUnique();
+
+                    b.ToTable("BingoCellConfirmations");
+                });
+
             modelBuilder.Entity("PartyApp.Domain.Entities.DareAssignment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -176,7 +199,10 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("EndsAt")
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("EndsAt")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("MinBid")
@@ -220,6 +246,9 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("RewardGranted")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("SessionId")
                         .HasColumnType("TEXT");
@@ -280,6 +309,9 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("PayloadJson")
                         .IsRequired()
@@ -416,6 +448,48 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.HasIndex("RedeemedById");
 
                     b.ToTable("QrTokens");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.RaffleDraw", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DrawnAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WinnerId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique();
+
+                    b.HasIndex("WinnerId");
+
+                    b.ToTable("RaffleDraws");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.RewardSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PhotoApprovedPoints")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RewardSettings");
                 });
 
             modelBuilder.Entity("PartyApp.Domain.Entities.ScreenSettings", b =>
@@ -613,6 +687,17 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Navigation("Player");
                 });
 
+            modelBuilder.Entity("PartyApp.Domain.Entities.BingoCellConfirmation", b =>
+                {
+                    b.HasOne("PartyApp.Domain.Entities.EventSession", "Session")
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+                });
+
             modelBuilder.Entity("PartyApp.Domain.Entities.DareAssignment", b =>
                 {
                     b.HasOne("PartyApp.Domain.Entities.User", "Player")
@@ -763,6 +848,25 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                         .HasForeignKey("RedeemedById");
 
                     b.Navigation("RedeemedBy");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.RaffleDraw", b =>
+                {
+                    b.HasOne("PartyApp.Domain.Entities.EventSession", "Session")
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PartyApp.Domain.Entities.User", "Winner")
+                        .WithMany()
+                        .HasForeignKey("WinnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+
+                    b.Navigation("Winner");
                 });
 
             modelBuilder.Entity("PartyApp.Domain.Entities.Wallet", b =>

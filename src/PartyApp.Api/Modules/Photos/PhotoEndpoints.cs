@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Moderation;
+using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Files;
@@ -33,6 +34,7 @@ public static class PhotoEndpoints
                 IFileStorage storage,
                 IHubContext<PartyHub> hub,
                 ModerationNotifier notifier,
+                IPointsAwardService pointsAward,
                 IConfiguration config,
                 CancellationToken ct) =>
             {
@@ -70,7 +72,19 @@ public static class PhotoEndpoints
                 };
 
                 db.PartyPhotos.Add(photo);
+
+                int reward = await CalculatePhotoRewardAsync(db, photo, ct);
                 await db.SaveChangesAsync(ct);
+
+                if (reward > 0)
+                {
+                    await pointsAward.AwardAsync(
+                        userId,
+                        reward,
+                        "Фото одобрено",
+                        WalletTransactionType.PhotoReward,
+                        ct: ct);
+                }
 
                 if (photo.Status == ModerationStatus.Pending)
                 {
@@ -239,8 +253,9 @@ public static class PhotoEndpoints
                 ClaimsPrincipal user,
                 AppDbContext db,
                 IHubContext<PartyHub> hub,
+                IPointsAwardService pointsAward,
                 CancellationToken ct) =>
-            ModerateAsync(photoId, ModerationStatus.Approved, user, db, hub, ct))
+            ModerateAsync(photoId, ModerationStatus.Approved, user, db, hub, pointsAward, ct))
             .RequireAuthorization("AdminOnly");
 
         group.MapPost("/{photoId:guid}/reject", (
@@ -248,11 +263,66 @@ public static class PhotoEndpoints
                 ClaimsPrincipal user,
                 AppDbContext db,
                 IHubContext<PartyHub> hub,
+                IPointsAwardService pointsAward,
                 CancellationToken ct) =>
-            ModerateAsync(photoId, ModerationStatus.Rejected, user, db, hub, ct))
+            ModerateAsync(photoId, ModerationStatus.Rejected, user, db, hub, pointsAward, ct))
+            .RequireAuthorization("AdminOnly");
+
+        // Настройка награды за одобренные фото
+        group.MapGet("/settings", async (AppDbContext db, CancellationToken ct) =>
+            {
+                RewardSettings? settings = await db.RewardSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+                return Results.Ok(ToRewardSettingsDto(settings));
+            })
+            .RequireAuthorization("AdminOnly");
+
+        group.MapPut("/settings", async (
+                RewardSettingsRequest request,
+                AppDbContext db,
+                CancellationToken ct) =>
+            {
+                if (request.PhotoApprovedPoints is < 0 or > 1000)
+                    return Results.BadRequest(new { error = "Баллы за фото — от 0 до 1000" });
+
+                RewardSettings? settings = await db.RewardSettings.FirstOrDefaultAsync(ct);
+                if (settings is null)
+                {
+                    settings = new RewardSettings();
+                    db.RewardSettings.Add(settings);
+                }
+
+                settings.PhotoApprovedPoints = request.PhotoApprovedPoints;
+                settings.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+
+                return Results.Ok(ToRewardSettingsDto(settings));
+            })
             .RequireAuthorization("AdminOnly");
 
         return app;
+    }
+
+    private static object ToRewardSettingsDto(RewardSettings? settings) => new
+    {
+        photoApprovedPoints = settings?.PhotoApprovedPoints ?? 5
+    };
+
+    /// <summary>
+    /// Помечает фото как награждённое и возвращает количество баллов автору.
+    /// Начисляем ровно один раз: повторное одобрение после отклонения не удваивает.
+    /// </summary>
+    private static async Task<int> CalculatePhotoRewardAsync(
+        AppDbContext db,
+        PartyPhoto photo,
+        CancellationToken ct)
+    {
+        if (photo.RewardGranted || photo.Status != ModerationStatus.Approved)
+            return 0;
+
+        RewardSettings? settings = await db.RewardSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+        photo.RewardGranted = true;
+
+        return settings?.PhotoApprovedPoints ?? 5;
     }
 
     private static async Task<IResult> ModerateAsync(
@@ -261,6 +331,7 @@ public static class PhotoEndpoints
         ClaimsPrincipal user,
         AppDbContext db,
         IHubContext<PartyHub> hub,
+        IPointsAwardService pointsAward,
         CancellationToken ct)
     {
         PartyPhoto? photo = await db.PartyPhotos
@@ -272,7 +343,19 @@ public static class PhotoEndpoints
         bool wasApproved = photo.Status == ModerationStatus.Approved;
 
         photo.Status = status;
+
+        int reward = await CalculatePhotoRewardAsync(db, photo, ct);
         await db.SaveChangesAsync(ct);
+
+        if (reward > 0)
+        {
+            await pointsAward.AwardAsync(
+                photo.UploadedById,
+                reward,
+                "Фото одобрено",
+                WalletTransactionType.PhotoReward,
+                ct: ct);
+        }
 
         if (status == ModerationStatus.Approved)
         {
@@ -362,3 +445,5 @@ public static class PhotoEndpoints
         return Guid.TryParse(subClaim, out userId);
     }
 }
+
+public record RewardSettingsRequest(int PhotoApprovedPoints);

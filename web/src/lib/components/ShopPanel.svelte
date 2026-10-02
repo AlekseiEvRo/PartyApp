@@ -18,6 +18,8 @@
         minBid: number;
         endsAt: string;
         bidsCount: number;
+        topBid: number | null;
+        leaderName: string | null;
         myBid: number | null;
     }
 
@@ -153,7 +155,7 @@
 
         {#if lots.length > 0}
             <h3>🔨 Аукцион</h3>
-            <p class="hint">Закрытые ставки: никто не видит чужие суммы. Баллы замораживаются и вернутся, если не победишь.</p>
+            <p class="hint">Открытый аукцион: лидер и сумма видны всем. Баллы замораживаются и вернутся, если не победишь.</p>
 
             <div class="items">
                 {#each lots as lot (lot.id)}
@@ -163,6 +165,7 @@
                             {#if lot.description}<span class="desc">{lot.description}</span>{/if}
                             <span class="meta">
                                 до {formatEndsAt(lot.endsAt)} · ставок: {lot.bidsCount}
+                                {#if lot.topBid !== null}· лидер: {lot.leaderName} ({lot.topBid}){/if}
                                 {#if lot.myBid !== null}· твоя: {lot.myBid}{/if}
                             </span>
                         </div>

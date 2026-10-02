@@ -11,7 +11,9 @@ import {
     wishRemovedId,
     moderationVersion,
     shopVersion,
-    dareConfirmed
+    dareConfirmed,
+    bingoCellConfirmed,
+    raffleDrawn
 } from './stores';
 import { getToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
@@ -114,8 +116,24 @@ export async function connect(): Promise<void> {
 
     connection.on('LotCancelled', () => shopVersion.update((v) => v + 1));
 
+    connection.on('LotStarted', () => shopVersion.update((v) => v + 1));
+
+    connection.on('BidPlaced', () => shopVersion.update((v) => v + 1));
+
     connection.on('DareConfirmed', (data: { sessionId: string; playerId: string; points: number }) => {
         dareConfirmed.set(data);
+    });
+
+    connection.on('BingoCellConfirmed', (data: { sessionId: string; cellIndex: number; confirmedCount: number }) => {
+        bingoCellConfirmed.set(data);
+    });
+
+    connection.on('RaffleDrawn', (data: {
+        sessionId: string;
+        winner: { id: string; name: string };
+        participants: { id: string; name: string }[];
+    }) => {
+        raffleDrawn.set(data);
     });
 
     // === Шпионаж ===

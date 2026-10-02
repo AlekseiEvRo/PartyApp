@@ -19,6 +19,9 @@ public class PartyPhoto: BaseEntity
 
     public ModerationStatus Status { get; set; } = ModerationStatus.Pending;
 
+    /// <summary>Баллы за одобрение уже начислены (повторно не начисляем).</summary>
+    public bool RewardGranted { get; set; }
+
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<PhotoLike> Likes { get; set; } = new List<PhotoLike>();

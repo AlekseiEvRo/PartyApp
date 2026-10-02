@@ -4,6 +4,7 @@
     import { api } from '../api';
     import { connect, getConnection, reconnectIfNeeded } from '../signalr';
     import { loadPhotoUrl, releasePhotoUrls } from '../photos';
+    import { RAFFLE_SPIN_MS } from '../raffle';
 
     interface ScreenState {
         mode: string;
@@ -49,6 +50,21 @@
         photoSeconds: number;
         leaderboardSeconds: number;
         shopSeconds: number;
+    }
+
+    interface ShopLot {
+        id: string;
+        name: string;
+        minBid: number;
+        endsAt: string;
+        bidsCount: number;
+        topBid: number | null;
+        leaderName: string | null;
+    }
+
+    interface RaffleParticipant {
+        id: string;
+        name: string;
     }
 
     interface Photo {
@@ -122,6 +138,16 @@
     let reactions: FloatingReaction[] = [];
     let reactionTimers: ReturnType<typeof setTimeout>[] = [];
     let shopItems: ShopItem[] = [];
+    let lots: ShopLot[] = [];
+
+    // Лототрон
+    const wheelColors = ['#f5a623', '#e74c3c', '#3498db', '#27ae60', '#9b59b6', '#e67e22', '#1abc9c', '#e84393'];
+    let raffleParticipants: RaffleParticipant[] = [];
+    let raffleWinnerId: string | null = null;
+    let wheelRotation = 0;
+    let wheelSpunFor: string | null = null;
+    let wheelSettled = false;
+    let wheelTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Настройки ротации секций (таймауты задаются в админке)
     let settings: ScreenSettings = { photoSeconds: 8, leaderboardSeconds: 60, shopSeconds: 60 };
@@ -140,6 +166,7 @@
     $: remainingSeconds = computeRemaining(now);
     $: toastRemaining = computeToastRemaining(now);
     $: reactionStartsIn = computeReactionStartsIn(now);
+    $: reactionEnded = computeReactionEnded(now);
     $: currentSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
     // Не показываем данные предыдущего ивента, пока грузятся данные нового
@@ -151,6 +178,57 @@
     $: if (displayMode === 'photos' && slides.length > 1 && now - lastSlideAt >= slideIntervalMs) {
         lastSlideAt = now;
         slideIndex = (slideIndex + 1) % slides.length;
+    }
+
+    // Лототрон: следим за участниками и запускаем колесо один раз на победителя
+    $: if (displayMode === 'event' && eventData?.type === 'raffle') {
+        syncRaffle(eventData.live);
+    }
+
+    function syncRaffle(live: any): void {
+        const participants: RaffleParticipant[] = live?.participants ?? [];
+        if (participants.length !== raffleParticipants.length) {
+            raffleParticipants = participants;
+        }
+
+        const winner = live?.winner ?? null;
+        if (winner && wheelSpunFor !== winner.id) {
+            wheelSpunFor = winner.id;
+            raffleWinnerId = winner.id;
+            spinWheel(winner.id);
+        }
+    }
+
+    function spinWheel(winnerId: string): void {
+        const index = raffleParticipants.findIndex((p) => p.id === winnerId);
+        if (index < 0 || raffleParticipants.length === 0) return;
+
+        const segment = 360 / raffleParticipants.length;
+        const center = (index + 0.5) * segment;
+        const target = 360 * 4 + ((360 - center) % 360);
+
+        wheelSettled = false;
+        wheelRotation += target;
+
+        clearTimeout(wheelTimer);
+        wheelTimer = setTimeout(() => (wheelSettled = true), RAFFLE_SPIN_MS + 200);
+    }
+
+    function wheelColor(index: number): string {
+        return wheelColors[index % wheelColors.length];
+    }
+
+    function wheelGradient(count: number): string {
+        if (count <= 1) return wheelColors[0];
+
+        const step = 100 / count;
+        const parts: string[] = [];
+
+        for (let i = 0; i < count; i++) {
+            parts.push(`${wheelColor(i)} ${i * step}% ${(i + 1) * step}%`);
+        }
+
+        return `conic-gradient(${parts.join(', ')})`;
     }
 
     // === Ротация секций: фото → лидерборд → магазин → ... ===
@@ -188,6 +266,9 @@
             connection.on('EventFinished', onEventFinished);
             connection.on('EventLiveUpdated', onEventLiveUpdated);
             connection.on('ScreenSettingsUpdated', onScreenSettingsUpdated);
+            connection.on('BidPlaced', onBidPlaced);
+            connection.on('LotStarted', onLotStarted);
+            connection.on('RaffleDrawn', onRaffleDrawn);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -221,6 +302,10 @@
             connection.off('EventFinished', onEventFinished);
             connection.off('EventLiveUpdated', onEventLiveUpdated);
             connection.off('ScreenSettingsUpdated', onScreenSettingsUpdated);
+            connection.off('BidPlaced', onBidPlaced);
+            connection.off('LotStarted', onLotStarted);
+            connection.off('RaffleDrawn', onRaffleDrawn);
+            clearTimeout(wheelTimer);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
 
@@ -288,6 +373,7 @@
             else if (currentView === 'event') await loadEvent();
             else if (currentView === 'photos') await loadPhotos();
             else if (currentView === 'shop') await loadShopItems();
+            else if (currentView === 'lots') await loadLots();
         } catch (e) {
             console.error('Screen: не удалось обновить содержимое', e);
         }
@@ -334,6 +420,22 @@
 
     async function loadShopItems() {
         shopItems = await api<ShopItem[]>('/api/shop/items');
+    }
+
+    async function loadLots() {
+        lots = await api<ShopLot[]>('/api/shop/lots');
+    }
+
+    function onBidPlaced() {
+        if (currentView === 'lots') void loadLots();
+    }
+
+    function onLotStarted() {
+        if (currentView === 'lots') void loadLots();
+    }
+
+    function onRaffleDrawn() {
+        if (displayMode === 'event') void loadEvent();
     }
 
     async function loadSettings() {
@@ -445,6 +547,16 @@
         return Math.max(0, Math.ceil(diff / 1000));
     }
 
+    /** Закончилось ли окно нажатий в «Кто быстрее». */
+    function computeReactionEnded(clientNow: number): boolean {
+        if (displayMode !== 'event' || eventData?.type !== 'reaction') return false;
+
+        const endsAt = eventData.live?.endsAtUtc;
+        if (!endsAt) return false;
+
+        return clientNow + clockOffset >= new Date(endsAt).getTime();
+    }
+
     function formatClock(timestamp: number): string {
         return new Date(timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     }
@@ -453,6 +565,20 @@
         const minutes = Math.floor(value / 60);
         const seconds = value % 60;
         return minutes > 0 ? `${minutes}:${seconds.toString().padStart(2, '0')}` : `${seconds}`;
+    }
+
+    /** Сколько осталось до конца приёма ставок. */
+    function formatLotsRemaining(endsAt: string): string {
+        const leftMs = new Date(endsAt).getTime() - (now + clockOffset);
+        if (leftMs <= 0) return 'приём закрыт';
+
+        const totalSeconds = Math.ceil(leftMs / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+
+        return minutes > 0
+            ? `${minutes} мин ${seconds.toString().padStart(2, '0')} с`
+            : `${seconds} с`;
     }
 
     // Обёртка для crossfade: слайд всегда один, но анимации нужен keyed each
@@ -535,7 +661,25 @@
                     <p class="muted">Нажми кнопку в приложении — расскажи тост!</p>
                 {/if}
             {:else if eventData?.type === 'reaction'}
-                {#if reactionStartsIn > 0}
+                {#if reactionEnded}
+                    <h2>⚡ Результаты реакции</h2>
+                    {#if eventData.live?.results?.length}
+                        <ul class="reaction-results">
+                            {#each eventData.live.results as row, i}
+                                <li>
+                                    <span class="place">
+                                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                                    </span>
+                                    <span class="item-name">{row.playerName}</span>
+                                    <span class="reaction-time">{(row.elapsedMs / 1000).toFixed(2)} с</span>
+                                    <span class="points">+{row.points}</span>
+                                </li>
+                            {/each}
+                        </ul>
+                    {:else}
+                        <p class="muted">Никто не успел нажать</p>
+                    {/if}
+                {:else if reactionStartsIn > 0}
                     <p class="muted">Приготовься…</p>
                     <div class="timer">{reactionStartsIn}</div>
                 {:else}
@@ -548,7 +692,9 @@
                 </p>
             {:else if eventData?.type === 'bingo'}
                 <p class="muted">
-                    Отмечено клеток: {eventData.live?.markedCount ?? 0} · играют: {eventData.live?.playersCount ?? 0}
+                    Отмечено клеток: {eventData.live?.markedCount ?? 0}
+                    · подтверждено: {eventData.live?.confirmedCount ?? 0}
+                    · играют: {eventData.live?.playersCount ?? 0}
                 </p>
             {:else if eventData?.type === 'emoji_song'}
                 <div class="song-grid">
@@ -572,6 +718,36 @@
                     </ul>
                 {:else}
                     <p class="muted">🔮 Собрано предсказаний: {eventData.live?.count ?? 0}</p>
+                {/if}
+            {:else if eventData?.type === 'raffle'}
+                {#if raffleParticipants.length > 0}
+                    <div class="wheel-wrap">
+                        <div class="wheel-pointer">▼</div>
+                        <div
+                            class="wheel"
+                            style="background: {wheelGradient(raffleParticipants.length)}; transform: rotate({wheelRotation}deg)"
+                        ></div>
+                    </div>
+
+                    <div class="wheel-names">
+                        {#each raffleParticipants.slice(0, 24) as participant, i}
+                            <span class="wheel-name" class:winner={wheelSettled && raffleWinnerId === participant.id}>
+                                <i style="background: {wheelColor(i)}"></i>{participant.name}
+                            </span>
+                        {/each}
+                    </div>
+
+                    {#if wheelSettled && raffleWinnerId}
+                        <h2 class="wheel-result">
+                            🏆 {raffleParticipants.find((p) => p.id === raffleWinnerId)?.name}
+                        </h2>
+                    {:else if raffleWinnerId}
+                        <p class="muted">🎡 Крутим…</p>
+                    {:else}
+                        <p class="muted">🎟 Участников: {raffleParticipants.length}</p>
+                    {/if}
+                {:else}
+                    <p class="muted">🎟 Пока никто не участвует</p>
                 {/if}
             {/if}
         </main>
@@ -607,6 +783,28 @@
                             <span class="item-stock">
                                 {item.stock === null ? '∞' : item.stock === 0 ? 'нет в наличии' : `осталось ${item.stock}`}
                             </span>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+        </main>
+    {:else if currentView === 'lots'}
+        <main class="lots">
+            <h1>🔨 Ставки</h1>
+
+            {#if lots.length === 0}
+                <p class="muted">Активных лотов нет</p>
+            {:else}
+                <ul>
+                    {#each lots as lot (lot.id)}
+                        <li>
+                            <span class="item-name">{lot.name}</span>
+                            {#if lot.topBid !== null}
+                                <span class="lot-leader">{lot.leaderName}: {lot.topBid}</span>
+                            {:else}
+                                <span class="lot-leader empty">от {lot.minBid}</span>
+                            {/if}
+                            <span class="lot-time">{formatLotsRemaining(lot.endsAt)}</span>
                         </li>
                     {/each}
                 </ul>
@@ -859,6 +1057,40 @@
         text-align: center;
     }
 
+    /* Ставки */
+    .lots ul {
+        list-style: none;
+        width: min(1100px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1.2vh;
+    }
+
+    .lots li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.4vh 2vw;
+        font-size: clamp(18px, 2vw, 34px);
+    }
+
+    .lot-leader {
+        color: #f5a623;
+        font-weight: bold;
+        white-space: nowrap;
+    }
+
+    .lot-leader.empty { color: var(--muted, #aaa); font-weight: normal; }
+
+    .lot-time {
+        color: var(--green, #27ae60);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        font-size: clamp(15px, 1.6vw, 28px);
+    }
+
     .predictions {
         list-style: none;
         width: min(1100px, 92vw);
@@ -879,6 +1111,93 @@
     }
 
     .predictions b { color: #f5a623; }
+
+    /* Лототрон */
+    .wheel-wrap {
+        position: relative;
+        width: min(52vh, 70vw);
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1vh;
+    }
+
+    .wheel {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        box-shadow: 0 0 60px rgba(0, 0, 0, 0.55), inset 0 0 0 8px rgba(15, 15, 35, 0.9);
+        transition: transform 5s cubic-bezier(0.15, 0.9, 0.15, 1);
+    }
+
+    .wheel-pointer {
+        position: absolute;
+        top: -3vh;
+        z-index: 2;
+        font-size: clamp(24px, 4vw, 56px);
+        color: #f5a623;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
+    }
+
+    .wheel-names {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6vh 1.4vw;
+        justify-content: center;
+        max-width: 92vw;
+    }
+
+    .wheel-name {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+        font-size: clamp(12px, 1.2vw, 20px);
+        color: #ddd;
+        white-space: nowrap;
+    }
+
+    .wheel-name i {
+        width: 0.9em;
+        height: 0.9em;
+        border-radius: 3px;
+        display: inline-block;
+    }
+
+    .wheel-name.winner { color: #f5a623; font-weight: bold; }
+
+    .wheel-result { color: #f5a623; margin-top: 1.5vh; }
+
+    /* Результаты реакции */
+    .reaction-results {
+        list-style: none;
+        width: min(1100px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1.1vh;
+        max-height: 58vh;
+        overflow: hidden;
+    }
+
+    .reaction-results li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.2vh 2vw;
+        font-size: clamp(17px, 1.9vw, 32px);
+    }
+
+    .reaction-results .place { width: 2em; text-align: center; }
+
+    .reaction-time {
+        color: var(--green, #27ae60);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .reaction-results .points { color: #f5a623; font-weight: bold; white-space: nowrap; }
 
     /* Призы */
     .shop ul {        list-style: none;

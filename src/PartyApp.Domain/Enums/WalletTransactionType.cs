@@ -10,5 +10,6 @@ public enum WalletTransactionType
     TransferOut = 50,
     ShopPurchase = 60,
     AuctionBid = 70,
-    Refund = 80
+    Refund = 80,
+    PhotoReward = 90
 }

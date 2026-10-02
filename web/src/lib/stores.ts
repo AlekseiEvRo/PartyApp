@@ -41,6 +41,16 @@ export const shopVersion = writable(0);
 // Подтверждённый админом фант: игрок сразу видит начисленные баллы
 export const dareConfirmed = writable<{ sessionId: string; playerId: string; points: number } | null>(null);
 
+// Админ подтвердил клетку бинго — карточки игроков обновляются
+export const bingoCellConfirmed = writable<{ sessionId: string; cellIndex: number; confirmedCount: number } | null>(null);
+
+// Лототрон: победитель выбран — колесо на экране и карточки игроков обновляются
+export const raffleDrawn = writable<{
+    sessionId: string;
+    winner: { id: string; name: string };
+    participants: { id: string; name: string }[];
+} | null>(null);
+
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
     toast.set({ message, type });
     setTimeout(() => toast.set(null), 3000);

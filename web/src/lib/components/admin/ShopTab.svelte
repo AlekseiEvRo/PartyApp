@@ -26,7 +26,8 @@
         name: string;
         description: string | null;
         minBid: number;
-        endsAt: string;
+        durationMinutes: number;
+        endsAt: string | null;
         status: string;
         winnerName: string | null;
         winningBid: number | null;
@@ -47,17 +48,14 @@
     let itemStock = '';
     let itemActive = true;
 
-    // Форма лота
+    // Форма лота: длительность в часах и минутах, старт — отдельной кнопкой
     let lotName = '';
     let lotDescription = '';
     let lotMinBid = 10;
-    let lotEndsAt = toLocalInput(new Date(Date.now() + 60 * 60 * 1000));
+    let lotHours = 0;
+    let lotMinutes = 30;
 
     onMount(load);
-
-    function toLocalInput(date: Date): string {
-        return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    }
 
     async function load() {
         error = '';
@@ -156,8 +154,10 @@
     }
 
     async function createLot() {
-        if (!lotName.trim() || !lotEndsAt) {
-            showToast('Заполни название и время окончания', 'error');
+        const durationMinutes = Number(lotHours) * 60 + Number(lotMinutes);
+
+        if (!lotName.trim() || durationMinutes <= 0) {
+            showToast('Заполни название и длительность приёма ставок', 'error');
             return;
         }
 
@@ -168,15 +168,29 @@
                 name: lotName,
                 description: lotDescription.trim() || null,
                 minBid: Number(lotMinBid),
-                endsAt: new Date(lotEndsAt).toISOString()
+                durationMinutes
             });
-            showToast('Лот создан');
+            showToast('Лот создан. Нажми «Начать», когда будете готовы');
             lotName = '';
             lotDescription = '';
             lotMinBid = 10;
             await load();
         } catch (e) {
             showToast(e instanceof Error ? e.message : 'Не удалось создать лот', 'error');
+        } finally {
+            busy = false;
+        }
+    }
+
+    async function startLot(lot: AdminLot) {
+        busy = true;
+
+        try {
+            await api(`/api/shop/lots/${lot.id}/start`, 'POST');
+            showToast(`🔨 Лот «${lot.name}» запущен!`);
+            await load();
+        } catch (e) {
+            showToast(e instanceof Error ? e.message : 'Не удалось запустить лот', 'error');
         } finally {
             busy = false;
         }
@@ -230,6 +244,8 @@
 
     function statusLabel(status: string): string {
         switch (status) {
+            case 'Draft':
+                return 'черновик';
             case 'Finished':
                 return 'завершён';
             case 'Cancelled':
@@ -298,7 +314,8 @@
     <input type="text" bind:value={lotName} maxlength="120" placeholder="Название лота" />
     <input type="text" bind:value={lotDescription} maxlength="500" placeholder="Описание (необязательно)" />
     <input type="number" bind:value={lotMinBid} min="1" placeholder="Мин. ставка" />
-    <input type="datetime-local" bind:value={lotEndsAt} />
+    <input type="number" bind:value={lotHours} min="0" max="24" placeholder="Часы" title="Длительность: часы" />
+    <input type="number" bind:value={lotMinutes} min="0" max="59" placeholder="Минуты" title="Длительность: минуты" />
     <button class="btn accent" on:click={createLot} disabled={busy}>Создать лот</button>
 </div>
 
@@ -308,7 +325,13 @@
             <div class="info">
                 <span class="name">{lot.name}</span>
                 <span class="meta">
-                    {statusLabel(lot.status)} · до {formatTime(lot.endsAt)} · от {lot.minBid}
+                    {statusLabel(lot.status)}
+                    {#if lot.status === 'Draft'}
+                        · приём {lot.durationMinutes} мин
+                    {:else if lot.endsAt}
+                        · до {formatTime(lot.endsAt)}
+                    {/if}
+                    · от {lot.minBid}
                     {#if lot.winnerName}· победил {lot.winnerName} ({lot.winningBid}){/if}
                 </span>
                 {#if lot.bids.length > 0}
@@ -319,12 +342,15 @@
                     </span>
                 {/if}
             </div>
-            {#if lot.status === 'Open'}
-                <div class="actions">
+            <div class="actions">
+                {#if lot.status === 'Draft'}
+                    <button class="btn accent" on:click={() => startLot(lot)} disabled={busy}>Начать</button>
+                    <button class="btn danger" on:click={() => cancelLot(lot)} disabled={busy}>Отменить</button>
+                {:else if lot.status === 'Open'}
                     <button class="btn" on:click={() => closeLot(lot)} disabled={busy}>Закрыть</button>
                     <button class="btn danger" on:click={() => cancelLot(lot)} disabled={busy}>Отменить</button>
-                </div>
-            {/if}
+                {/if}
+            </div>
         </li>
     {/each}
 </ul>
@@ -366,8 +392,7 @@
     }
 
     .form input[type='text'],
-    .form input[type='number'],
-    .form input[type='datetime-local'] {
+    .form input[type='number'] {
         background: var(--bg-soft, #12122e);
         border: 1px solid #2a2a5e;
         border-radius: 8px;

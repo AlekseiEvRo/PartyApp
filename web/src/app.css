@@ -178,9 +178,16 @@ img, svg, video { max-width: 100%; }
     transition: background 0.15s, color 0.15s;
 }
 
-.bingo-cell:hover:not(.marked) { border-color: var(--accent); }
+.bingo-cell:hover:not(.marked):not(.confirmed) { border-color: var(--accent); }
 
 .bingo-cell.marked {
+    background: var(--card-soft);
+    color: #fff;
+    border-color: var(--accent);
+    cursor: default;
+}
+
+.bingo-cell.confirmed {
     background: var(--green);
     color: #fff;
     cursor: default;
@@ -216,3 +223,9 @@ img, svg, video { max-width: 100%; }
 }
 
 .predictions b { color: var(--accent); }
+
+.raffle-winner {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--accent);
+}

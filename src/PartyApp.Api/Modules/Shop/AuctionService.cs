@@ -46,6 +46,53 @@ public class AuctionService
         _logger = logger;
     }
 
+    /// <summary>Запускает лот: с этого момента идёт приём ставок.</summary>
+    public async Task<LotCloseOutcome> StartLotAsync(Guid lotId, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            Lot? lot = await db.Lots.SingleOrDefaultAsync(l => l.Id == lotId, ct);
+            if (lot is null)
+                return new LotCloseOutcome(false, "Лот не найден");
+
+            if (lot.Status != LotStatus.Draft)
+                return new LotCloseOutcome(false, "Лот уже запущен");
+
+            if (lot.DurationMinutes <= 0)
+                return new LotCloseOutcome(false, "Не задана длительность лота");
+
+            lot.Status = LotStatus.Open;
+            lot.EndsAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(lot.DurationMinutes);
+            await db.SaveChangesAsync(ct);
+
+            await _hub.Clients.All.SendAsync("LotStarted", new
+            {
+                lotId = lot.Id,
+                name = lot.Name,
+                minBid = lot.MinBid,
+                endsAt = lot.EndsAt
+            }, ct);
+
+            _logger.LogInformation(
+                "Lot started: {LotId} «{Name}», ends at {EndsAt}",
+                lot.Id, lot.Name, lot.EndsAt);
+
+            return new LotCloseOutcome(true, "Лот запущен", new
+            {
+                lotId = lot.Id,
+                endsAt = lot.EndsAt
+            });
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     public async Task<BidOutcome> PlaceBidAsync(
         Guid lotId,
         Guid playerId,
@@ -65,10 +112,13 @@ public class AuctionService
             if (lot is null)
                 return new BidOutcome(false, "Лот не найден");
 
+            if (lot.Status == LotStatus.Draft)
+                return new BidOutcome(false, "Приём ставок ещё не открыт");
+
             if (lot.Status != LotStatus.Open)
                 return new BidOutcome(false, "Аукцион уже завершён");
 
-            if (_timeProvider.GetUtcNow().UtcDateTime >= lot.EndsAt)
+            if (lot.EndsAt is null || _timeProvider.GetUtcNow().UtcDateTime >= lot.EndsAt.Value)
                 return new BidOutcome(false, "Приём ставок закончился");
 
             if (amount < lot.MinBid)
@@ -107,6 +157,21 @@ public class AuctionService
 
             await db.SaveChangesAsync(ct);
 
+            // Открытый аукцион: экран и игроки сразу видят нового лидера
+            string leaderName = await db.Users
+                .Where(u => u.Id == playerId)
+                .Select(u => u.DisplayName)
+                .FirstOrDefaultAsync(ct) ?? "Игрок";
+
+            await _hub.Clients.All.SendAsync("BidPlaced", new
+            {
+                lotId,
+                lotName = lot.Name,
+                leaderName,
+                amount,
+                endsAt = lot.EndsAt
+            }, ct);
+
             _logger.LogInformation(
                 "Bid placed: lot={LotId}, player={PlayerId}, amount={Amount}",
                 lotId, playerId, amount);
@@ -134,6 +199,9 @@ public class AuctionService
 
             if (lot is null)
                 return new LotCloseOutcome(false, "Лот не найден");
+
+            if (lot.Status == LotStatus.Draft)
+                return new LotCloseOutcome(false, "Лот ещё не запущен");
 
             if (lot.Status != LotStatus.Open)
                 return new LotCloseOutcome(false, "Лот уже закрыт");
@@ -210,7 +278,7 @@ public class AuctionService
             if (lot is null)
                 return new LotCloseOutcome(false, "Лот не найден");
 
-            if (lot.Status != LotStatus.Open)
+            if (lot.Status is not (LotStatus.Draft or LotStatus.Open))
                 return new LotCloseOutcome(false, "Лот уже закрыт");
 
             lot.Status = LotStatus.Cancelled;
@@ -247,7 +315,7 @@ public class AuctionService
             DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
 
             ids = await db.Lots.AsNoTracking()
-                .Where(l => l.Status == LotStatus.Open && l.EndsAt <= now)
+                .Where(l => l.Status == LotStatus.Open && l.EndsAt != null && l.EndsAt <= now)
                 .Select(l => l.Id)
                 .ToListAsync(ct);
         }

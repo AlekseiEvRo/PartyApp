@@ -1,6 +1,8 @@
 <script lang="ts">
     import { api } from '../api';
-    import { showToast, balance, user, dareConfirmed } from '../stores';
+    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, raffleDrawn } from '../stores';
+    import { serverNow } from '../time';
+    import { RAFFLE_SPIN_MS } from '../raffle';
     import { onMount } from 'svelte';
 
     export let event: any;
@@ -17,6 +19,9 @@
     // «Кто быстрее»
     let reactionLeft = 0;
     let reacted = false;
+    let reactionEnded = false;
+    let myReactionMs: number | null = null;
+    let myReactionPoints = 0;
 
     // Фанты: один фант на игрока, баллы начисляет админ после проверки
     let dareTask: string | null = null;
@@ -28,7 +33,9 @@
     let bingoSize = 5;
     let bingoCells: string[] = [];
     let bingoMarked = new Set<number>();
+    let bingoConfirmed = new Set<number>();
     let bingoLines = 0;
+    let bingoRefreshPending = false;
 
     // Песни по эмодзи
     let songs: any[] = [];
@@ -42,7 +49,12 @@
     let predictionPrompt = 'Что случится на вечеринке?';
     let revealedPredictions: any[] | null = null;
 
-    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions'];
+    // Лототрон
+    let raffleJoined = false;
+    let raffleParticipants = 0;
+    let raffleWinner: { id: string; name: string } | null = null;
+
+    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions', 'raffle'];
 
     onMount(async () => {
         if (!dataTypes.includes(event.type)) return;
@@ -56,14 +68,13 @@
                 questions = dataConfig.questions || [];
             } else if (event.type === 'reaction') {
                 reacted = playerData?.reacted ?? false;
+                myReactionMs = playerData?.elapsedMs ?? null;
+                myReactionPoints = playerData?.points ?? 0;
                 startReactionCountdown();
             } else if (event.type === 'dare') {
                 applyDare(playerData?.dare ?? null);
             } else if (event.type === 'bingo') {
-                bingoSize = dataConfig.size ?? 5;
-                bingoCells = dataConfig.cells ?? [];
-                bingoMarked = new Set<number>(playerData?.markedCells ?? []);
-                bingoLines = playerData?.lines ?? 0;
+                applyBingoState(playerData);
             } else if (event.type === 'emoji_song') {
                 songs = dataConfig.songs ?? [];
                 songAnswered = new Set<number>(playerData?.answered ?? []);
@@ -72,6 +83,10 @@
                 predictionPrompt = dataConfig.prompt ?? predictionPrompt;
                 predictionSent = playerData?.text ?? null;
                 revealedPredictions = data.live?.revealed ?? null;
+            } else if (event.type === 'raffle') {
+                raffleJoined = playerData?.joined ?? false;
+                raffleParticipants = data.live?.participants?.length ?? playerData?.participants ?? 0;
+                raffleWinner = data.live?.winner ?? null;
             }
         } catch { /* карточка просто останется без данных */ }
     });
@@ -83,6 +98,43 @@
         && $dareConfirmed.playerId === $user?.userId) {
         confirmedDareApplied = true;
         applyConfirmedDare($dareConfirmed.points);
+    }
+
+    // Админ подтвердил клетку бинго — обновляем сетку и линии
+    $: if (event.type === 'bingo'
+        && $bingoCellConfirmed
+        && $bingoCellConfirmed.sessionId === event.sessionId
+        && !bingoRefreshPending) {
+        bingoRefreshPending = true;
+        showToast('✅ Ведущий подтвердил событие в бинго!', 'info');
+        void refreshBingoState().finally(() => (bingoRefreshPending = false));
+    }
+
+    // Лототрон: победитель и уведомление — только после анимации колеса
+    $: if (event.type === 'raffle'
+        && $raffleDrawn
+        && $raffleDrawn.sessionId === event.sessionId) {
+        handleRaffleDrawn($raffleDrawn);
+    }
+
+    let raffleHandledKey: string | null = null;
+
+    function handleRaffleDrawn(data: {
+        sessionId: string;
+        winner: { id: string; name: string };
+        participants: { id: string; name: string }[];
+    }): void {
+        const key = `${data.sessionId}:${data.winner.id}`;
+        if (raffleHandledKey === key) return;
+
+        raffleHandledKey = key;
+        raffleParticipants = data.participants.length;
+
+        // Даём колесу на экране докрутиться, потом объявляем результат
+        setTimeout(() => {
+            raffleWinner = data.winner;
+            showToast(`🏆 Лототрон: победил ${data.winner.name}!`, 'info');
+        }, RAFFLE_SPIN_MS);
     }
 
     async function submit(payload: any) {
@@ -112,7 +164,7 @@
         cooldownUntil = untilIso;
         const until = new Date(untilIso).getTime();
         const tick = () => {
-            const left = Math.ceil((until - Date.now()) / 1000);
+            const left = Math.ceil((until - serverNow()) / 1000);
             if (left <= 0) {
                 cooldownUntil = null;
                 cooldownLeft = 0;
@@ -131,11 +183,17 @@
     }
 
     function startReactionCountdown() {
-        const startAt = new Date(event.startedAt).getTime() + (dataConfig.delaySec ?? 5) * 1000;
+        const delaySec = dataConfig.delaySec ?? 5;
+        const timeLimitSec = dataConfig.timeLimitSec ?? 15;
+        const startAt = new Date(event.startedAt).getTime() + delaySec * 1000;
+        const endAt = startAt + timeLimitSec * 1000;
 
         const tick = () => {
-            reactionLeft = Math.max(0, Math.ceil((startAt - Date.now()) / 1000));
-            if (reactionLeft > 0) setTimeout(tick, 200);
+            const nowMs = serverNow();
+            reactionLeft = Math.max(0, Math.ceil((startAt - nowMs) / 1000));
+            reactionEnded = nowMs >= endAt;
+
+            if (!reactionEnded && !reacted) setTimeout(tick, 200);
         };
 
         tick();
@@ -146,6 +204,8 @@
         if (result) {
             reacted = true;
             reactionLeft = 0;
+            myReactionMs = result.data?.elapsedMs ?? null;
+            myReactionPoints = result.pointsAwarded ?? 0;
         }
     }
 
@@ -178,8 +238,23 @@
         const result = await submit({ cellIndex: index });
         if (result?.data) {
             bingoMarked = new Set<number>(result.data.markedCells ?? []);
-            bingoLines = result.data.lines ?? bingoLines;
         }
+    }
+
+    /** Состояние бинго: отметки, подтверждённые клетки и линии. */
+    function applyBingoState(state: any): void {
+        bingoSize = dataConfig.size ?? 5;
+        bingoCells = dataConfig.cells ?? [];
+        bingoMarked = new Set<number>(state?.markedCells ?? []);
+        bingoConfirmed = new Set<number>(state?.confirmedCells ?? []);
+        bingoLines = state?.lines ?? 0;
+    }
+
+    async function refreshBingoState(): Promise<void> {
+        try {
+            const data = await api<any>(`/api/events/${event.sessionId}/data`);
+            applyBingoState(data.player ?? null);
+        } catch { /* обновимся при следующем действии */ }
     }
 
     async function answerSong(index: number) {
@@ -209,6 +284,14 @@
         if (result?.data?.text) {
             predictionSent = result.data.text;
             predictionText = '';
+        }
+    }
+
+    async function joinRaffle() {
+        const result = await submit({});
+        if (result?.data?.joined) {
+            raffleJoined = true;
+            raffleParticipants = result.data.participants ?? raffleParticipants;
         }
     }
 
@@ -264,7 +347,13 @@
 
     {:else if event.type === 'reaction'}
         {#if reacted}
-            <p class="desc">⚡ Ты уже нажал! Ждём остальных.</p>
+            <p class="desc">
+                ⚡ Твой результат:
+                {myReactionMs !== null ? `${(myReactionMs / 1000).toFixed(2)} с` : 'засчитано'}
+                {myReactionPoints > 0 ? `(+${myReactionPoints})` : ''}
+            </p>
+        {:else if reactionEnded}
+            <p class="desc">⌛ Время вышло — в этот раз не успел</p>
         {:else}
             <button class="btn reaction-btn" disabled={reactionLeft > 0} on:click={react}>
                 {reactionLeft > 0 ? `⏳ ${reactionLeft}с` : '⚡ ЖМИ!'}
@@ -290,12 +379,15 @@
                 {#each range(bingoSize * bingoSize) as i}
                     <button
                         class="bingo-cell"
-                        class:marked={bingoMarked.has(i)}
+                        class:marked={bingoMarked.has(i) && !bingoConfirmed.has(i)}
+                        class:confirmed={bingoConfirmed.has(i)}
                         on:click={() => markBingo(i)}
                     >{bingoCells[i]}</button>
                 {/each}
             </div>
-            <p class="event-counter">Собрано линий: {bingoLines}</p>
+            <p class="event-counter">
+                Подтверждено клеток: {bingoConfirmed.size} · линий: {bingoLines}
+            </p>
         {/if}
 
     {:else if event.type === 'emoji_song'}
@@ -340,6 +432,19 @@
                 <input type="text" placeholder="Твоё предсказание" maxlength="200" bind:value={predictionText} />
                 <button class="btn" on:click={submitPrediction}>🔮 Отправить</button>
             </div>
+        {/if}
+
+    {:else if event.type === 'raffle'}
+        {#if raffleWinner}
+            <p class="desc raffle-winner">🏆 Победитель: {raffleWinner.name}</p>
+        {:else if raffleJoined}
+            <p class="desc dare-task">🎟 Ты участвуешь!</p>
+            <p class="event-counter">Участников: {raffleParticipants} · ждём розыгрыша</p>
+        {:else}
+            <button class="btn" on:click={joinRaffle}>🎟 Участвовать</button>
+            {#if raffleParticipants > 0}
+                <p class="event-counter">Уже участвуют: {raffleParticipants}</p>
+            {/if}
         {/if}
 
     {:else}

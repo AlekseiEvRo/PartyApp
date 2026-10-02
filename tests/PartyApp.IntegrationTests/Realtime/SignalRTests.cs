@@ -448,9 +448,11 @@ public class SignalRTests : IDisposable
                 name = "Торт",
                 description = (string?)null,
                 minBid = 10,
-                endsAt = DateTime.UtcNow.AddMinutes(30)
+                durationMinutes = 30
             });
         Guid lotId = (await PartyAppApi.ReadJsonAsync(created)).GetProperty("id").GetGuid();
+        (await _api.Client.PostAsync($"/api/shop/lots/{lotId}/start", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
 
         _api.Authorize(player);
         await using HubConnection connection = await ConnectAsync(player);
