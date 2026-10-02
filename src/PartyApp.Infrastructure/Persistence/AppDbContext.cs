@@ -26,6 +26,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<RewardSettings> RewardSettings => Set<RewardSettings>();
     public DbSet<DareAssignment> DareAssignments => Set<DareAssignment>();
     public DbSet<BingoCellConfirmation> BingoCellConfirmations => Set<BingoCellConfirmation>();
+    public DbSet<BingoCellRejection> BingoCellRejections => Set<BingoCellRejection>();
+    public DbSet<BingoLineAward> BingoLineAwards => Set<BingoLineAward>();
     public DbSet<RaffleDraw> RaffleDraws => Set<RaffleDraw>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     

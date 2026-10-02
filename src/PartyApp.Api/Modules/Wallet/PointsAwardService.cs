@@ -130,6 +130,119 @@ public class PointsAwardService : IPointsAwardService
     }
 
     /// <summary>
+    /// Переводит баллы между игроками одной транзакцией БД: списание условным
+    /// UPDATE (уйти в минус нельзя), начисление получателю и две транзакции.
+    /// </summary>
+    public async Task<TransferOutcome?> TransferAsync(
+        Guid fromUserId,
+        Guid toUserId,
+        int amount,
+        string? comment = null,
+        CancellationToken ct = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Сумма перевода должна быть больше 0");
+
+        if (fromUserId == toUserId)
+            throw new ArgumentException("Нельзя перевести баллы самому себе", nameof(toUserId));
+
+        using var scope = _scopeFactory.CreateScope();
+        AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        User? sender = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == fromUserId, ct);
+        User? recipient = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == toUserId, ct);
+
+        if (sender is null || recipient is null)
+            return null;
+
+        Domain.Entities.Wallet? senderWallet = await db.Wallets.AsNoTracking()
+            .SingleOrDefaultAsync(w => w.UserId == fromUserId, ct);
+
+        if (senderWallet is null)
+            return null;
+
+        Domain.Entities.Wallet? recipientWallet = await db.Wallets.AsNoTracking()
+            .SingleOrDefaultAsync(w => w.UserId == toUserId, ct);
+
+        string commentSuffix = string.IsNullOrWhiteSpace(comment) ? string.Empty : $": {comment.Trim()}";
+        string senderDescription = TrimDescription($"Перевод игроку {recipient.DisplayName}{commentSuffix}");
+        string recipientDescription = TrimDescription($"Перевод от {sender.DisplayName}{commentSuffix}");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        int spent = await db.Wallets
+            .Where(w => w.Id == senderWallet.Id && w.Balance >= amount)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(w => w.Balance, w => w.Balance - amount), ct);
+
+        if (spent == 0)
+        {
+            await transaction.RollbackAsync(ct);
+            return null;
+        }
+
+        if (recipientWallet is null)
+        {
+            // Кошелёк создаётся при регистрации, но поддержим и отсутствующий.
+            recipientWallet = new Domain.Entities.Wallet { UserId = toUserId, Balance = amount };
+            db.Wallets.Add(recipientWallet);
+        }
+        else
+        {
+            await db.Wallets
+                .Where(w => w.Id == recipientWallet.Id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(w => w.Balance, w => w.Balance + amount), ct);
+        }
+
+        db.WalletTransactions.Add(new WalletTransaction
+        {
+            WalletId = senderWallet.Id,
+            Amount = -amount,
+            Type = WalletTransactionType.TransferOut,
+            Description = senderDescription
+        });
+
+        db.WalletTransactions.Add(new WalletTransaction
+        {
+            WalletId = recipientWallet.Id,
+            Amount = amount,
+            Type = WalletTransactionType.TransferIn,
+            Description = recipientDescription
+        });
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+
+        int senderBalance = await db.Wallets.AsNoTracking()
+            .Where(w => w.Id == senderWallet.Id)
+            .Select(w => w.Balance)
+            .SingleAsync(ct);
+
+        int recipientBalance = await db.Wallets.AsNoTracking()
+            .Where(w => w.Id == recipientWallet.Id)
+            .Select(w => w.Balance)
+            .SingleAsync(ct);
+
+        await NotifyBalanceChangedAsync(fromUserId, senderBalance, -amount, senderDescription, ct);
+        await NotifyBalanceChangedAsync(toUserId, recipientBalance, amount, recipientDescription, ct);
+
+        _logger.LogInformation(
+            "Transfer: from={FromUserId}, to={ToUserId}, amount={Amount}",
+            fromUserId,
+            toUserId,
+            amount);
+
+        return new TransferOutcome(senderBalance, recipientBalance);
+    }
+
+    private static string TrimDescription(string description)
+    {
+        const int maxLength = 500;
+        return description.Length <= maxLength ? description : description[..maxLength];
+    }
+
+    /// <summary>
     /// Сообщает клиенту и push-ом, что баланс изменился.
     /// Вызывается отдельно, если кошелёк сохранён в общем DbContext вызывающего кода.
     /// </summary>

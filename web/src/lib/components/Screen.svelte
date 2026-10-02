@@ -169,6 +169,14 @@
     $: reactionEnded = computeReactionEnded(now);
     $: currentSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
+    // Бинго на большом экране: та же сетка, что у игроков, с решениями админа
+    $: bingoLive = eventData?.type === 'bingo' ? (eventData.live ?? {}) : {};
+    $: bingoSize = Number(bingoLive.size ?? 0);
+    $: bingoCells = Array.isArray(bingoLive.cells) ? bingoLive.cells : [];
+    $: bingoConfirmedSet = new Set<number>(bingoLive.confirmedCells ?? []);
+    $: bingoRejectedSet = new Set<number>(bingoLive.rejectedCells ?? []);
+    $: bingoGridReady = bingoSize > 0 && bingoCells.length >= bingoSize * bingoSize;
+
     // Не показываем данные предыдущего ивента, пока грузятся данные нового
     $: if (eventData && eventData.sessionId !== displaySessionId) {
         eventData = null;
@@ -691,10 +699,33 @@
                     🎲 Ждут проверки: {eventData.live?.pending ?? 0} · выполнено: {eventData.live?.confirmed ?? 0}
                 </p>
             {:else if eventData?.type === 'bingo'}
-                <p class="muted">
-                    Отмечено клеток: {eventData.live?.markedCount ?? 0}
-                    · подтверждено: {eventData.live?.confirmedCount ?? 0}
-                    · играют: {eventData.live?.playersCount ?? 0}
+                {#if bingoGridReady}
+                    <div class="bingo-screen" style="grid-template-columns: repeat({bingoSize}, 1fr)">
+                        {#each bingoCells.slice(0, bingoSize * bingoSize) as cell, i}
+                            <div
+                                class="bingo-screen-cell"
+                                class:confirmed={bingoConfirmedSet.has(i)}
+                                class:rejected={bingoRejectedSet.has(i)}
+                            >
+                                <span class="bingo-screen-text">{cell}</span>
+                                {#if bingoConfirmedSet.has(i)}
+                                    <span class="bingo-screen-badge">✅</span>
+                                {:else if bingoRejectedSet.has(i)}
+                                    <span class="bingo-screen-badge">🙅</span>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                {:else}
+                    <p class="muted">Бинго ещё не настроено</p>
+                {/if}
+
+                <p class="muted bingo-screen-stats">
+                    ✏️ отмечено: {eventData.live?.markedCount ?? 0}
+                    · ✅ {eventData.live?.confirmedCount ?? 0}
+                    · 🙅 {eventData.live?.rejectedCount ?? 0}
+                    · 🏆 линий: {eventData.live?.awardedLines ?? 0}
+                    · 🎮 игроков: {eventData.live?.playersCount ?? 0}
                 </p>
             {:else if eventData?.type === 'emoji_song'}
                 <div class="song-grid">
@@ -1056,6 +1087,52 @@
         font-size: clamp(13px, 1.2vw, 20px);
         text-align: center;
     }
+
+    /* Бинго */
+    .bingo-screen {
+        display: grid;
+        gap: 0.8vw;
+        width: min(1600px, 94vw);
+        max-height: 60vh;
+    }
+
+    .bingo-screen-cell {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.3vh 0.8vw;
+        min-height: clamp(64px, 9vh, 130px);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        font-size: clamp(11px, 1.05vw, 19px);
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+        transition: background 0.25s, border-color 0.25s;
+    }
+
+    .bingo-screen-cell.confirmed {
+        background: rgba(39, 174, 96, 0.35);
+        border-color: rgba(39, 174, 96, 0.85);
+    }
+
+    .bingo-screen-cell.rejected {
+        background: rgba(231, 76, 60, 0.12);
+        border-color: rgba(231, 76, 60, 0.4);
+        color: var(--muted, #aaa);
+    }
+
+    .bingo-screen-cell.rejected .bingo-screen-text { text-decoration: line-through; }
+
+    .bingo-screen-badge {
+        position: absolute;
+        top: 0.4vh;
+        right: 0.5vw;
+        font-size: clamp(12px, 1.15vw, 22px);
+    }
+
+    .bingo-screen-stats { margin-top: 2.5vh; }
 
     /* Ставки */
     .lots ul {

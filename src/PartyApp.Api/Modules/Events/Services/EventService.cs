@@ -195,6 +195,24 @@ public class EventService : IEventService
         db.PlayerSubmissions.Add(submission);
         await db.SaveChangesAsync(ct);
 
+        // Пост-обработка после сохранения действия (например, розыгрыш линий бинго).
+        // Сбой не должен ломать ответ игроку — само действие уже записано.
+        if (result.Success)
+        {
+            try
+            {
+                await handler.AfterSubmissionAsync(session, session.Definition, playerId, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Post-submission hook failed: session={SessionId}, type={Type}",
+                    sessionId,
+                    session.Definition.Type);
+            }
+        }
+
         return new SubmissionOutcome(result.Success, result.PointsAwarded, result.Message, result.Data);
     }
 

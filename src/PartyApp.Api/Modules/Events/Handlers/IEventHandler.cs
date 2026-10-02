@@ -61,4 +61,12 @@ public interface IEventHandler
     /// </summary>
     Task<object?> GetPlayerDataAsync(EventSession session, EventDefinition definition, Guid playerId, CancellationToken ct = default)
         => Task.FromResult<object?>(null);
+
+    /// <summary>
+    /// Вызывается после успешного сохранения действия игрока. Можно использовать
+    /// для отложенных проверок: например, бинго так разыгрывает собранные линии.
+    /// Сбой здесь не ломает ответ игроку.
+    /// </summary>
+    Task AfterSubmissionAsync(EventSession session, EventDefinition definition, Guid playerId, CancellationToken ct = default)
+        => Task.CompletedTask;
 }

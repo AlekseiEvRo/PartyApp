@@ -3,8 +3,8 @@ using PartyApp.Api.Modules.Events.Services;
 namespace PartyApp.Api.Modules.Events;
 
 /// <summary>
-/// Подтверждение клеток бинго админом: только реально случившиеся события
-/// приносят игрокам баллы и линии.
+/// Решения админа по клеткам бинго: подтверждение («было») и отклонение («не было»).
+/// Только подтверждённые клетки приносят баллы; отклонение освобождает слоты предсказаний.
 /// </summary>
 public static class BingoEndpoints
 {
@@ -33,6 +33,19 @@ public static class BingoEndpoints
                 CancellationToken ct) =>
             {
                 BingoConfirmOutcome outcome = await bingo.ConfirmCellAsync(sessionId, cellIndex, ct);
+
+                return outcome.Success
+                    ? Results.Ok(outcome.Data ?? new { success = true })
+                    : Results.Conflict(new { error = outcome.Message });
+            });
+
+        group.MapPost("/{sessionId:guid}/cells/{cellIndex:int}/reject", async (
+                Guid sessionId,
+                int cellIndex,
+                BingoService bingo,
+                CancellationToken ct) =>
+            {
+                BingoConfirmOutcome outcome = await bingo.RejectCellAsync(sessionId, cellIndex, ct);
 
                 return outcome.Success
                     ? Results.Ok(outcome.Data ?? new { success = true })

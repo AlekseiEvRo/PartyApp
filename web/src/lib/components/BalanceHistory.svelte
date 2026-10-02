@@ -3,6 +3,9 @@
     import { api } from '../api';
 
     export let open = false;
+    export let url = '/api/wallet/transactions';
+    export let title = '⭐ История баллов';
+    export let emptyText = 'Пока нет начислений — участвуй в ивентах и получай баллы!';
 
     interface Transaction {
         id: string;
@@ -26,7 +29,7 @@
     let loading = false;
     let error = '';
 
-    $: if (open) {
+    $: if (open && url) {
         void load();
     }
 
@@ -36,7 +39,7 @@
 
         try {
             const page = await api<TransactionsPage>(
-                `/api/wallet/transactions?limit=${pageSize}&offset=0`
+                `${url}?limit=${pageSize}&offset=0`
             );
             items = page.items;
             total = page.total;
@@ -53,7 +56,7 @@
 
         try {
             const page = await api<TransactionsPage>(
-                `/api/wallet/transactions?limit=${pageSize}&offset=${items.length}`
+                `${url}?limit=${pageSize}&offset=${items.length}`
             );
             items = [...items, ...page.items];
             total = page.total;
@@ -111,7 +114,7 @@
     <div class="overlay" on:click={onBackdropClick} role="presentation">
         <div class="modal">
             <div class="modal-header">
-                <h3>⭐ История баллов</h3>
+                <h3>{title}</h3>
                 <button class="close" on:click={close} aria-label="Закрыть">✕</button>
             </div>
 
@@ -120,7 +123,7 @@
             {:else if loading && items.length === 0}
                 <p class="hint">Загружаем…</p>
             {:else if items.length === 0}
-                <p class="hint">Пока нет начислений — участвуй в ивентах и получай баллы!</p>
+                <p class="hint">{emptyText}</p>
             {:else}
                 <ul class="list">
                     {#each items as item (item.id)}
