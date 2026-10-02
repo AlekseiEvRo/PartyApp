@@ -2,6 +2,7 @@
     import { api } from '../api';
     import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, raffleDrawn } from '../stores';
     import { serverNow } from '../time';
+    import { RAFFLE_SPIN_MS } from '../raffle';
     import { onMount } from 'svelte';
 
     export let event: any;
@@ -18,6 +19,9 @@
     // «Кто быстрее»
     let reactionLeft = 0;
     let reacted = false;
+    let reactionEnded = false;
+    let myReactionMs: number | null = null;
+    let myReactionPoints = 0;
 
     // Фанты: один фант на игрока, баллы начисляет админ после проверки
     let dareTask: string | null = null;
@@ -64,6 +68,8 @@
                 questions = dataConfig.questions || [];
             } else if (event.type === 'reaction') {
                 reacted = playerData?.reacted ?? false;
+                myReactionMs = playerData?.elapsedMs ?? null;
+                myReactionPoints = playerData?.points ?? 0;
                 startReactionCountdown();
             } else if (event.type === 'dare') {
                 applyDare(playerData?.dare ?? null);
@@ -104,13 +110,31 @@
         void refreshBingoState().finally(() => (bingoRefreshPending = false));
     }
 
-    // Лототрон: победитель выбран — показываем результат всем
+    // Лототрон: победитель и уведомление — только после анимации колеса
     $: if (event.type === 'raffle'
         && $raffleDrawn
         && $raffleDrawn.sessionId === event.sessionId) {
-        raffleWinner = $raffleDrawn.winner;
-        raffleParticipants = $raffleDrawn.participants.length;
-        showToast(`🏆 Лототрон: победил ${$raffleDrawn.winner.name}!`, 'info');
+        handleRaffleDrawn($raffleDrawn);
+    }
+
+    let raffleHandledKey: string | null = null;
+
+    function handleRaffleDrawn(data: {
+        sessionId: string;
+        winner: { id: string; name: string };
+        participants: { id: string; name: string }[];
+    }): void {
+        const key = `${data.sessionId}:${data.winner.id}`;
+        if (raffleHandledKey === key) return;
+
+        raffleHandledKey = key;
+        raffleParticipants = data.participants.length;
+
+        // Даём колесу на экране докрутиться, потом объявляем результат
+        setTimeout(() => {
+            raffleWinner = data.winner;
+            showToast(`🏆 Лототрон: победил ${data.winner.name}!`, 'info');
+        }, RAFFLE_SPIN_MS);
     }
 
     async function submit(payload: any) {
@@ -159,11 +183,17 @@
     }
 
     function startReactionCountdown() {
-        const startAt = new Date(event.startedAt).getTime() + (dataConfig.delaySec ?? 5) * 1000;
+        const delaySec = dataConfig.delaySec ?? 5;
+        const timeLimitSec = dataConfig.timeLimitSec ?? 15;
+        const startAt = new Date(event.startedAt).getTime() + delaySec * 1000;
+        const endAt = startAt + timeLimitSec * 1000;
 
         const tick = () => {
-            reactionLeft = Math.max(0, Math.ceil((startAt - serverNow()) / 1000));
-            if (reactionLeft > 0) setTimeout(tick, 200);
+            const nowMs = serverNow();
+            reactionLeft = Math.max(0, Math.ceil((startAt - nowMs) / 1000));
+            reactionEnded = nowMs >= endAt;
+
+            if (!reactionEnded && !reacted) setTimeout(tick, 200);
         };
 
         tick();
@@ -174,6 +204,8 @@
         if (result) {
             reacted = true;
             reactionLeft = 0;
+            myReactionMs = result.data?.elapsedMs ?? null;
+            myReactionPoints = result.pointsAwarded ?? 0;
         }
     }
 
@@ -315,7 +347,13 @@
 
     {:else if event.type === 'reaction'}
         {#if reacted}
-            <p class="desc">⚡ Ты уже нажал! Ждём остальных.</p>
+            <p class="desc">
+                ⚡ Твой результат:
+                {myReactionMs !== null ? `${(myReactionMs / 1000).toFixed(2)} с` : 'засчитано'}
+                {myReactionPoints > 0 ? `(+${myReactionPoints})` : ''}
+            </p>
+        {:else if reactionEnded}
+            <p class="desc">⌛ Время вышло — в этот раз не успел</p>
         {:else}
             <button class="btn reaction-btn" disabled={reactionLeft > 0} on:click={react}>
                 {reactionLeft > 0 ? `⏳ ${reactionLeft}с` : '⚡ ЖМИ!'}

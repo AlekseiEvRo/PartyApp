@@ -82,24 +82,38 @@ public class ReactionHandler : IEventHandler
         return SubmissionResult.Ok(
             points,
             $"⚡ {elapsedMs:0} мс!",
-            new { elapsedMs = (int)elapsedMs, points });
+            new { elapsedMs = (int)elapsedMs, points },
+            durationMs: (int)elapsedMs);
     }
 
     public async Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
     {
         var config = JsonSerializer.Deserialize<ReactionConfig>(definition.ConfigJson, EventJsonOptions.Default);
         int delaySec = Math.Max(0, config?.DelaySec ?? 5);
+        int timeLimitSec = config?.TimeLimitSec > 0 ? config.TimeLimitSec : 15;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        int reactedCount = await db.PlayerSubmissions
-            .CountAsync(s => s.SessionId == session.Id && s.Score > 0, ct);
+        var results = await db.PlayerSubmissions
+            .Where(s => s.SessionId == session.Id && s.Score > 0 && s.DurationMs != null)
+            .OrderBy(s => s.DurationMs)
+            .Select(s => new
+            {
+                playerName = s.Player.DisplayName,
+                elapsedMs = s.DurationMs ?? 0,
+                points = s.Score ?? 0
+            })
+            .ToListAsync(ct);
+
+        DateTime startUtc = session.StartedAt.AddSeconds(delaySec);
 
         return new
         {
-            startsAtUtc = session.StartedAt.AddSeconds(delaySec),
-            reactedCount
+            startsAtUtc = startUtc,
+            endsAtUtc = startUtc.AddSeconds(timeLimitSec),
+            reactedCount = results.Count,
+            results
         };
     }
 
@@ -109,7 +123,21 @@ public class ReactionHandler : IEventHandler
         Guid playerId,
         CancellationToken ct = default)
     {
-        return new { reacted = await HasReactedAsync(session.Id, playerId, ct) };
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var mine = await db.PlayerSubmissions
+            .Where(s => s.SessionId == session.Id && s.PlayerId == playerId && s.Score > 0)
+            .OrderBy(s => s.SubmittedAt)
+            .Select(s => new { elapsedMs = s.DurationMs, points = s.Score ?? 0 })
+            .FirstOrDefaultAsync(ct);
+
+        return new
+        {
+            reacted = mine is not null,
+            elapsedMs = mine?.elapsedMs,
+            points = mine?.points ?? 0
+        };
     }
 
     private async Task<bool> HasReactedAsync(Guid sessionId, Guid playerId, CancellationToken ct)

@@ -4,6 +4,7 @@
     import { api } from '../api';
     import { connect, getConnection, reconnectIfNeeded } from '../signalr';
     import { loadPhotoUrl, releasePhotoUrls } from '../photos';
+    import { RAFFLE_SPIN_MS } from '../raffle';
 
     interface ScreenState {
         mode: string;
@@ -165,6 +166,7 @@
     $: remainingSeconds = computeRemaining(now);
     $: toastRemaining = computeToastRemaining(now);
     $: reactionStartsIn = computeReactionStartsIn(now);
+    $: reactionEnded = computeReactionEnded(now);
     $: currentSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
     // Не показываем данные предыдущего ивента, пока грузятся данные нового
@@ -209,7 +211,7 @@
         wheelRotation += target;
 
         clearTimeout(wheelTimer);
-        wheelTimer = setTimeout(() => (wheelSettled = true), 5200);
+        wheelTimer = setTimeout(() => (wheelSettled = true), RAFFLE_SPIN_MS + 200);
     }
 
     function wheelColor(index: number): string {
@@ -545,6 +547,16 @@
         return Math.max(0, Math.ceil(diff / 1000));
     }
 
+    /** Закончилось ли окно нажатий в «Кто быстрее». */
+    function computeReactionEnded(clientNow: number): boolean {
+        if (displayMode !== 'event' || eventData?.type !== 'reaction') return false;
+
+        const endsAt = eventData.live?.endsAtUtc;
+        if (!endsAt) return false;
+
+        return clientNow + clockOffset >= new Date(endsAt).getTime();
+    }
+
     function formatClock(timestamp: number): string {
         return new Date(timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     }
@@ -649,7 +661,25 @@
                     <p class="muted">Нажми кнопку в приложении — расскажи тост!</p>
                 {/if}
             {:else if eventData?.type === 'reaction'}
-                {#if reactionStartsIn > 0}
+                {#if reactionEnded}
+                    <h2>⚡ Результаты реакции</h2>
+                    {#if eventData.live?.results?.length}
+                        <ul class="reaction-results">
+                            {#each eventData.live.results as row, i}
+                                <li>
+                                    <span class="place">
+                                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                                    </span>
+                                    <span class="item-name">{row.playerName}</span>
+                                    <span class="reaction-time">{(row.elapsedMs / 1000).toFixed(2)} с</span>
+                                    <span class="points">+{row.points}</span>
+                                </li>
+                            {/each}
+                        </ul>
+                    {:else}
+                        <p class="muted">Никто не успел нажать</p>
+                    {/if}
+                {:else if reactionStartsIn > 0}
                     <p class="muted">Приготовься…</p>
                     <div class="timer">{reactionStartsIn}</div>
                 {:else}
@@ -701,7 +731,7 @@
 
                     <div class="wheel-names">
                         {#each raffleParticipants.slice(0, 24) as participant, i}
-                            <span class="wheel-name" class:winner={raffleWinnerId === participant.id}>
+                            <span class="wheel-name" class:winner={wheelSettled && raffleWinnerId === participant.id}>
                                 <i style="background: {wheelColor(i)}"></i>{participant.name}
                             </span>
                         {/each}
@@ -711,6 +741,8 @@
                         <h2 class="wheel-result">
                             🏆 {raffleParticipants.find((p) => p.id === raffleWinnerId)?.name}
                         </h2>
+                    {:else if raffleWinnerId}
+                        <p class="muted">🎡 Крутим…</p>
                     {:else}
                         <p class="muted">🎟 Участников: {raffleParticipants.length}</p>
                     {/if}
@@ -1135,6 +1167,37 @@
     .wheel-name.winner { color: #f5a623; font-weight: bold; }
 
     .wheel-result { color: #f5a623; margin-top: 1.5vh; }
+
+    /* Результаты реакции */
+    .reaction-results {
+        list-style: none;
+        width: min(1100px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1.1vh;
+        max-height: 58vh;
+        overflow: hidden;
+    }
+
+    .reaction-results li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.2vh 2vw;
+        font-size: clamp(17px, 1.9vw, 32px);
+    }
+
+    .reaction-results .place { width: 2em; text-align: center; }
+
+    .reaction-time {
+        color: var(--green, #27ae60);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .reaction-results .points { color: #f5a623; font-weight: bold; white-space: nowrap; }
 
     /* Призы */
     .shop ul {        list-style: none;

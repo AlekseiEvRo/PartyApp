@@ -78,6 +78,8 @@ public class ReactionHandlerTests : IDisposable
 
         result.Success.Should().BeTrue();
         result.PointsAwarded.Should().Be(10);
+        result.DurationMs.Should().NotBeNull();
+        result.DurationMs!.Value.Should().BeInRange(0, 50);
     }
 
     [Fact]
@@ -152,22 +154,38 @@ public class ReactionHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task GetLiveData_ReturnsSignalTimeAndReactedCount()
+    public async Task GetLiveData_ReturnsSortedResultsAndWindow()
     {
-        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        (EventDefinition definition, EventSession session, Guid first) = await SeedEventAsync();
         session.StartedAt = _timeProvider.GetUtcNow().UtcDateTime;
+
+        User second = TestData.User("second");
+        _host.Db.Users.Add(second);
+        await _host.Db.SaveChangesAsync();
 
         _host.Db.PlayerSubmissions.Add(new PlayerSubmission
         {
-            SessionId = session.Id, PlayerId = playerId, PayloadJson = "{}", Score = 5
+            SessionId = session.Id, PlayerId = first, PayloadJson = "{}", Score = 4, DurationMs = 640
+        });
+        _host.Db.PlayerSubmissions.Add(new PlayerSubmission
+        {
+            SessionId = session.Id, PlayerId = second.Id, PayloadJson = "{}", Score = 9, DurationMs = 120
         });
         await _host.Db.SaveChangesAsync();
 
         JsonElement live = Json(await _handler.GetLiveDataAsync(session, definition));
 
-        live.GetProperty("reactedCount").GetInt32().Should().Be(1);
+        live.GetProperty("reactedCount").GetInt32().Should().Be(2);
         live.GetProperty("startsAtUtc").GetDateTime().Should()
             .BeCloseTo(session.StartedAt.AddSeconds(5), TimeSpan.FromSeconds(1));
+        live.GetProperty("endsAtUtc").GetDateTime().Should()
+            .BeCloseTo(session.StartedAt.AddSeconds(20), TimeSpan.FromSeconds(1));
+
+        JsonElement results = live.GetProperty("results");
+        results[0].GetProperty("playerName").GetString().Should().Be("second");
+        results[0].GetProperty("elapsedMs").GetInt32().Should().Be(120);
+        results[0].GetProperty("points").GetInt32().Should().Be(9);
+        results[1].GetProperty("elapsedMs").GetInt32().Should().Be(640);
     }
 
     private static System.Text.Json.JsonElement Json(object? value)
