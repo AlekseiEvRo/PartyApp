@@ -61,6 +61,11 @@
         leaderName: string | null;
     }
 
+    interface RaffleParticipant {
+        id: string;
+        name: string;
+    }
+
     interface Photo {
         id: string;
         uploadedByName: string;
@@ -134,6 +139,15 @@
     let shopItems: ShopItem[] = [];
     let lots: ShopLot[] = [];
 
+    // Лототрон
+    const wheelColors = ['#f5a623', '#e74c3c', '#3498db', '#27ae60', '#9b59b6', '#e67e22', '#1abc9c', '#e84393'];
+    let raffleParticipants: RaffleParticipant[] = [];
+    let raffleWinnerId: string | null = null;
+    let wheelRotation = 0;
+    let wheelSpunFor: string | null = null;
+    let wheelSettled = false;
+    let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+
     // Настройки ротации секций (таймауты задаются в админке)
     let settings: ScreenSettings = { photoSeconds: 8, leaderboardSeconds: 60, shopSeconds: 60 };
     let rotationPhase = 'photos';
@@ -162,6 +176,57 @@
     $: if (displayMode === 'photos' && slides.length > 1 && now - lastSlideAt >= slideIntervalMs) {
         lastSlideAt = now;
         slideIndex = (slideIndex + 1) % slides.length;
+    }
+
+    // Лототрон: следим за участниками и запускаем колесо один раз на победителя
+    $: if (displayMode === 'event' && eventData?.type === 'raffle') {
+        syncRaffle(eventData.live);
+    }
+
+    function syncRaffle(live: any): void {
+        const participants: RaffleParticipant[] = live?.participants ?? [];
+        if (participants.length !== raffleParticipants.length) {
+            raffleParticipants = participants;
+        }
+
+        const winner = live?.winner ?? null;
+        if (winner && wheelSpunFor !== winner.id) {
+            wheelSpunFor = winner.id;
+            raffleWinnerId = winner.id;
+            spinWheel(winner.id);
+        }
+    }
+
+    function spinWheel(winnerId: string): void {
+        const index = raffleParticipants.findIndex((p) => p.id === winnerId);
+        if (index < 0 || raffleParticipants.length === 0) return;
+
+        const segment = 360 / raffleParticipants.length;
+        const center = (index + 0.5) * segment;
+        const target = 360 * 4 + ((360 - center) % 360);
+
+        wheelSettled = false;
+        wheelRotation += target;
+
+        clearTimeout(wheelTimer);
+        wheelTimer = setTimeout(() => (wheelSettled = true), 5200);
+    }
+
+    function wheelColor(index: number): string {
+        return wheelColors[index % wheelColors.length];
+    }
+
+    function wheelGradient(count: number): string {
+        if (count <= 1) return wheelColors[0];
+
+        const step = 100 / count;
+        const parts: string[] = [];
+
+        for (let i = 0; i < count; i++) {
+            parts.push(`${wheelColor(i)} ${i * step}% ${(i + 1) * step}%`);
+        }
+
+        return `conic-gradient(${parts.join(', ')})`;
     }
 
     // === Ротация секций: фото → лидерборд → магазин → ... ===
@@ -201,6 +266,7 @@
             connection.on('ScreenSettingsUpdated', onScreenSettingsUpdated);
             connection.on('BidPlaced', onBidPlaced);
             connection.on('LotStarted', onLotStarted);
+            connection.on('RaffleDrawn', onRaffleDrawn);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -236,6 +302,8 @@
             connection.off('ScreenSettingsUpdated', onScreenSettingsUpdated);
             connection.off('BidPlaced', onBidPlaced);
             connection.off('LotStarted', onLotStarted);
+            connection.off('RaffleDrawn', onRaffleDrawn);
+            clearTimeout(wheelTimer);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
 
@@ -362,6 +430,10 @@
 
     function onLotStarted() {
         if (currentView === 'lots') void loadLots();
+    }
+
+    function onRaffleDrawn() {
+        if (displayMode === 'event') void loadEvent();
     }
 
     async function loadSettings() {
@@ -616,6 +688,34 @@
                     </ul>
                 {:else}
                     <p class="muted">🔮 Собрано предсказаний: {eventData.live?.count ?? 0}</p>
+                {/if}
+            {:else if eventData?.type === 'raffle'}
+                {#if raffleParticipants.length > 0}
+                    <div class="wheel-wrap">
+                        <div class="wheel-pointer">▼</div>
+                        <div
+                            class="wheel"
+                            style="background: {wheelGradient(raffleParticipants.length)}; transform: rotate({wheelRotation}deg)"
+                        ></div>
+                    </div>
+
+                    <div class="wheel-names">
+                        {#each raffleParticipants.slice(0, 24) as participant, i}
+                            <span class="wheel-name" class:winner={raffleWinnerId === participant.id}>
+                                <i style="background: {wheelColor(i)}"></i>{participant.name}
+                            </span>
+                        {/each}
+                    </div>
+
+                    {#if wheelSettled && raffleWinnerId}
+                        <h2 class="wheel-result">
+                            🏆 {raffleParticipants.find((p) => p.id === raffleWinnerId)?.name}
+                        </h2>
+                    {:else}
+                        <p class="muted">🎟 Участников: {raffleParticipants.length}</p>
+                    {/if}
+                {:else}
+                    <p class="muted">🎟 Пока никто не участвует</p>
                 {/if}
             {/if}
         </main>
@@ -979,6 +1079,62 @@
     }
 
     .predictions b { color: #f5a623; }
+
+    /* Лототрон */
+    .wheel-wrap {
+        position: relative;
+        width: min(52vh, 70vw);
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1vh;
+    }
+
+    .wheel {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        box-shadow: 0 0 60px rgba(0, 0, 0, 0.55), inset 0 0 0 8px rgba(15, 15, 35, 0.9);
+        transition: transform 5s cubic-bezier(0.15, 0.9, 0.15, 1);
+    }
+
+    .wheel-pointer {
+        position: absolute;
+        top: -3vh;
+        z-index: 2;
+        font-size: clamp(24px, 4vw, 56px);
+        color: #f5a623;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
+    }
+
+    .wheel-names {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6vh 1.4vw;
+        justify-content: center;
+        max-width: 92vw;
+    }
+
+    .wheel-name {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+        font-size: clamp(12px, 1.2vw, 20px);
+        color: #ddd;
+        white-space: nowrap;
+    }
+
+    .wheel-name i {
+        width: 0.9em;
+        height: 0.9em;
+        border-radius: 3px;
+        display: inline-block;
+    }
+
+    .wheel-name.winner { color: #f5a623; font-weight: bold; }
+
+    .wheel-result { color: #f5a623; margin-top: 1.5vh; }
 
     /* Призы */
     .shop ul {        list-style: none;

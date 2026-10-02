@@ -133,6 +133,13 @@ public class EventHandlerDefaultConfigTests
         EmojiSongHandler songs = new(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance);
         PredictionsHandler predictions = new(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance);
 
+        RaffleHandler raffle = new(
+            ScopeFactory,
+            new RaffleService(ScopeFactory, new RecordingHubContext(), NullLogger<RaffleService>.Instance),
+            NullLogger<RaffleHandler>.Instance);
+
+        Parse(raffle.DefaultConfigJson).GetProperty("prize").GetString().Should().NotBeNullOrWhiteSpace();
+
         JsonElement predictionsConfig = Parse(predictions.DefaultConfigJson);
         predictionsConfig.GetProperty("points").GetInt32().Should().BePositive();
         predictionsConfig.GetProperty("prompt").GetString().Should().NotBeNullOrWhiteSpace();
@@ -183,7 +190,11 @@ public class EventHandlerDefaultConfigTests
                 new BingoService(ScopeFactory, PointsAward, new RecordingHubContext(), NullLogger<BingoService>.Instance),
                 NullLogger<BingoHandler>.Instance),
             new EmojiSongHandler(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance),
-            new PredictionsHandler(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance)
+            new PredictionsHandler(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance),
+            new RaffleHandler(
+                ScopeFactory,
+                new RaffleService(ScopeFactory, new RecordingHubContext(), NullLogger<RaffleService>.Instance),
+                NullLogger<RaffleHandler>.Instance)
         };
 
         handlers.Select(h => h.EventType).Should().OnlyHaveUniqueItems();

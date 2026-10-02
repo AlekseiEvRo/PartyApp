@@ -12,7 +12,8 @@ import {
     moderationVersion,
     shopVersion,
     dareConfirmed,
-    bingoCellConfirmed
+    bingoCellConfirmed,
+    raffleDrawn
 } from './stores';
 import { getToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
@@ -125,6 +126,14 @@ export async function connect(): Promise<void> {
 
     connection.on('BingoCellConfirmed', (data: { sessionId: string; cellIndex: number; confirmedCount: number }) => {
         bingoCellConfirmed.set(data);
+    });
+
+    connection.on('RaffleDrawn', (data: {
+        sessionId: string;
+        winner: { id: string; name: string };
+        participants: { id: string; name: string }[];
+    }) => {
+        raffleDrawn.set(data);
     });
 
     // === Шпионаж ===

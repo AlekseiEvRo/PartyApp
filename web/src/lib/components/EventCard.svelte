@@ -1,6 +1,6 @@
 <script lang="ts">
     import { api } from '../api';
-    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed } from '../stores';
+    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, raffleDrawn } from '../stores';
     import { serverNow } from '../time';
     import { onMount } from 'svelte';
 
@@ -45,7 +45,12 @@
     let predictionPrompt = 'Что случится на вечеринке?';
     let revealedPredictions: any[] | null = null;
 
-    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions'];
+    // Лототрон
+    let raffleJoined = false;
+    let raffleParticipants = 0;
+    let raffleWinner: { id: string; name: string } | null = null;
+
+    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions', 'raffle'];
 
     onMount(async () => {
         if (!dataTypes.includes(event.type)) return;
@@ -72,6 +77,10 @@
                 predictionPrompt = dataConfig.prompt ?? predictionPrompt;
                 predictionSent = playerData?.text ?? null;
                 revealedPredictions = data.live?.revealed ?? null;
+            } else if (event.type === 'raffle') {
+                raffleJoined = playerData?.joined ?? false;
+                raffleParticipants = data.live?.participants?.length ?? playerData?.participants ?? 0;
+                raffleWinner = data.live?.winner ?? null;
             }
         } catch { /* карточка просто останется без данных */ }
     });
@@ -93,6 +102,15 @@
         bingoRefreshPending = true;
         showToast('✅ Ведущий подтвердил событие в бинго!', 'info');
         void refreshBingoState().finally(() => (bingoRefreshPending = false));
+    }
+
+    // Лототрон: победитель выбран — показываем результат всем
+    $: if (event.type === 'raffle'
+        && $raffleDrawn
+        && $raffleDrawn.sessionId === event.sessionId) {
+        raffleWinner = $raffleDrawn.winner;
+        raffleParticipants = $raffleDrawn.participants.length;
+        showToast(`🏆 Лототрон: победил ${$raffleDrawn.winner.name}!`, 'info');
     }
 
     async function submit(payload: any) {
@@ -237,6 +255,14 @@
         }
     }
 
+    async function joinRaffle() {
+        const result = await submit({});
+        if (result?.data?.joined) {
+            raffleJoined = true;
+            raffleParticipants = result.data.participants ?? raffleParticipants;
+        }
+    }
+
     function range(count: number): number[] {
         return Array.from({ length: count }, (_, i) => i);
     }
@@ -368,6 +394,19 @@
                 <input type="text" placeholder="Твоё предсказание" maxlength="200" bind:value={predictionText} />
                 <button class="btn" on:click={submitPrediction}>🔮 Отправить</button>
             </div>
+        {/if}
+
+    {:else if event.type === 'raffle'}
+        {#if raffleWinner}
+            <p class="desc raffle-winner">🏆 Победитель: {raffleWinner.name}</p>
+        {:else if raffleJoined}
+            <p class="desc dare-task">🎟 Ты участвуешь!</p>
+            <p class="event-counter">Участников: {raffleParticipants} · ждём розыгрыша</p>
+        {:else}
+            <button class="btn" on:click={joinRaffle}>🎟 Участвовать</button>
+            {#if raffleParticipants > 0}
+                <p class="event-counter">Уже участвуют: {raffleParticipants}</p>
+            {/if}
         {/if}
 
     {:else}

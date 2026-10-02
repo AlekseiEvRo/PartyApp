@@ -180,6 +180,7 @@ builder.Services.AddSingleton<ScreenService>();
 builder.Services.AddSingleton<AuctionService>();
 builder.Services.AddHostedService<AuctionClosingService>();
 builder.Services.AddSingleton<BingoService>();
+builder.Services.AddSingleton<RaffleService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 
@@ -492,6 +493,21 @@ using (var scope = app.Services.CreateScope())
         });
     }
     
+    // Seed: лототрон
+    if (!db.EventDefinitions.Any(d => d.Type == "raffle"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "raffle",
+            DisplayName = "Лототрон",
+            Description = "Жми «Участвовать», и ведущий запустит колесо — победитель получит приз!",
+            ConfigJson = """{"prize":"Приз"}""",
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+    
     db.SaveChanges();
 }
 
@@ -547,6 +563,7 @@ app.MapPushEndpoints();
 app.MapEventsEndpoints();
 app.MapDareEndpoints();
 app.MapBingoEndpoints();
+app.MapRaffleEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
 app.MapWalletEndpoints();

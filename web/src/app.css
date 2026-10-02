@@ -223,3 +223,9 @@ img, svg, video { max-width: 100%; }
 }
 
 .predictions b { color: var(--accent); }
+
+.raffle-winner {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--accent);
+}
