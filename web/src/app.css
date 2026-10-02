@@ -136,3 +136,83 @@ img, svg, video { max-width: 100%; }
     .event-card { padding: 16px; }
     .row .btn { flex: 1 1 100%; }
 }
+
+/* === Новые ивенты === */
+
+.reaction-btn { font-size: 20px; padding: 14px 28px; }
+
+.dare-task {
+    background: rgba(245, 166, 35, 0.12);
+    border: 1px solid rgba(245, 166, 35, 0.4);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    margin-bottom: 10px;
+}
+
+.btn.dare-done:disabled {
+    background: var(--green);
+    color: #fff;
+    opacity: 1;
+}
+
+.event-counter { color: var(--muted); font-size: 13px; align-self: center; }
+
+.bingo {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.bingo-cell {
+    background: var(--card-soft);
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 8px 4px;
+    font-size: 11px;
+    line-height: 1.25;
+    min-height: 64px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    transition: background 0.15s, color 0.15s;
+}
+
+.bingo-cell:hover:not(.marked) { border-color: var(--accent); }
+
+.bingo-cell.marked {
+    background: var(--green);
+    color: #fff;
+    cursor: default;
+}
+
+.song {
+    background: var(--bg-soft, #12122e);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+}
+
+.song-emoji { font-size: 30px; margin-bottom: 8px; }
+
+.song-result { font-size: 14px; color: var(--green); }
+
+.song-result.wrong { color: var(--red); }
+
+.predictions {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.predictions li {
+    background: var(--bg-soft, #12122e);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+.predictions b { color: var(--accent); }

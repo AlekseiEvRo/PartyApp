@@ -53,10 +53,15 @@ public static class EventsEndpoints
         
         group.MapGet("/{sessionId:guid}/data", async (
                 Guid sessionId,
+                ClaimsPrincipal user,
                 IEventService eventService,
                 CancellationToken ct) =>
             {
-                var data = await eventService.GetEventDataAsync(sessionId, ct);
+                Guid? playerId = Guid.TryParse(user.FindFirst("sub")?.Value, out Guid parsed)
+                    ? parsed
+                    : null;
+
+                var data = await eventService.GetEventDataAsync(sessionId, playerId, ct);
                 if (data is null)
                     return Results.NotFound(new { error = "Ивент не найден" });
 

@@ -9,6 +9,7 @@
     import WishesTab from './WishesTab.svelte';
     import ScreenTab from './ScreenTab.svelte';
     import ShopTab from './ShopTab.svelte';
+    import DareTab from './DareTab.svelte';
     import { user } from '../../stores';
     import { forceRefreshApp } from '../../pwa';
 
@@ -17,6 +18,7 @@
     const tabs = [
         { id: 'dashboard', label: '📊 Дашборд' },
         { id: 'events', label: '🎮 Ивенты' },
+        { id: 'dare', label: '🎲 Фанты' },
         { id: 'qr', label: '📷 QR-коды' },
         { id: 'grant', label: '💰 Начисление' },
         { id: 'leaderboard', label: '🏆 Лидерборд' },
@@ -74,6 +76,8 @@
             <DashboardTab />
         {:else if activeTab === 'events'}
             <EventsTab />
+        {:else if activeTab === 'dare'}
+            <DareTab />
         {:else if activeTab === 'qr'}
             <QrTab />
         {:else if activeTab === 'grant'}

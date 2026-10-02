@@ -38,6 +38,9 @@ export const moderationVersion = writable(0);
 // Магазин: товары, покупки и лоты — открытые экраны обновляются без перезагрузки
 export const shopVersion = writable(0);
 
+// Подтверждённый админом фант: игрок сразу видит начисленные баллы
+export const dareConfirmed = writable<{ sessionId: string; playerId: string; points: number } | null>(null);
+
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
     toast.set({ message, type });
     setTimeout(() => toast.set(null), 3000);

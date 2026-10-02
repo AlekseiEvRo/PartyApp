@@ -32,7 +32,8 @@
         type: string;
         displayName: string;
         config: Record<string, any>;
-        live?: { speakerName?: string | null; busyUntilUtc?: string | null } | null;
+        live?: Record<string, any> | null;
+        player?: Record<string, any> | null;
     }
 
     interface ShopItem {
@@ -138,6 +139,7 @@
     $: currentView = displayMode === 'rotation' ? rotationPhase : displayMode;
     $: remainingSeconds = computeRemaining(now);
     $: toastRemaining = computeToastRemaining(now);
+    $: reactionStartsIn = computeReactionStartsIn(now);
     $: currentSlide = slides.length > 0 ? slides[slideIndex % slides.length] : null;
 
     // Не показываем данные предыдущего ивента, пока грузятся данные нового
@@ -432,6 +434,17 @@
         return remaining > 0 ? Math.ceil(remaining) : null;
     }
 
+    /** Сколько секунд осталось до сигнала в «Кто быстрее», либо 0. */
+    function computeReactionStartsIn(clientNow: number): number {
+        if (displayMode !== 'event' || eventData?.type !== 'reaction') return 0;
+
+        const startsAt = eventData.live?.startsAtUtc;
+        if (!startsAt) return 0;
+
+        const diff = new Date(startsAt).getTime() - (clientNow + clockOffset);
+        return Math.max(0, Math.ceil(diff / 1000));
+    }
+
     function formatClock(timestamp: number): string {
         return new Date(timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     }
@@ -486,7 +499,7 @@
                 <p class="description">{eventInfo.description}</p>
             {/if}
 
-            {#if remainingSeconds !== null}
+            {#if remainingSeconds !== null && eventData?.type !== 'reaction'}
                 <div class="timer" class:over={remainingSeconds === 0}>
                     {remainingSeconds > 0 ? formatSeconds(remainingSeconds) : 'Время вышло'}
                 </div>
@@ -520,6 +533,45 @@
                     </div>
                 {:else}
                     <p class="muted">Нажми кнопку в приложении — расскажи тост!</p>
+                {/if}
+            {:else if eventData?.type === 'reaction'}
+                {#if reactionStartsIn > 0}
+                    <p class="muted">Приготовься…</p>
+                    <div class="timer">{reactionStartsIn}</div>
+                {:else}
+                    <div class="reaction-live">⚡ ЖМИ!</div>
+                    <p class="muted">Уже нажали: {eventData.live?.reactedCount ?? 0}</p>
+                {/if}
+            {:else if eventData?.type === 'dare'}
+                <p class="muted">
+                    🎲 Ждут проверки: {eventData.live?.pending ?? 0} · выполнено: {eventData.live?.confirmed ?? 0}
+                </p>
+            {:else if eventData?.type === 'bingo'}
+                <p class="muted">
+                    Отмечено клеток: {eventData.live?.markedCount ?? 0} · играют: {eventData.live?.playersCount ?? 0}
+                </p>
+            {:else if eventData?.type === 'emoji_song'}
+                <div class="song-grid">
+                    {#each eventData.live?.songs ?? [] as song}
+                        <div class="song-card">
+                            <span class="song-emoji">{song.emoji}</span>
+                            <span class="song-hint">{song.hint}</span>
+                        </div>
+                    {/each}
+                </div>
+                <p class="muted">
+                    Угадано: {eventData.live?.guessedCount ?? 0} · играют: {eventData.live?.playersCount ?? 0}
+                </p>
+            {:else if eventData?.type === 'predictions'}
+                {#if eventData.live?.revealed?.length}
+                    <h2>🔮 Предсказания</h2>
+                    <ul class="predictions">
+                        {#each eventData.live.revealed.slice(0, 10) as prediction}
+                            <li><b>{prediction.playerName}</b>: {prediction.text}</li>
+                        {/each}
+                    </ul>
+                {:else}
+                    <p class="muted">🔮 Собрано предсказаний: {eventData.live?.count ?? 0}</p>
                 {/if}
             {/if}
         </main>
@@ -772,9 +824,64 @@
         font-variant-numeric: tabular-nums;
     }
 
-    /* Призы */
-    .shop ul {
+    /* Новые ивенты */
+    .reaction-live {
+        font-size: clamp(48px, 9vw, 180px);
+        font-weight: bold;
+        color: #f5a623;
+        animation: pulse 0.8s ease-in-out infinite;
+    }
+
+    .song-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(220px, 40vw), 1fr));
+        gap: 2vh 2vw;
+        width: min(1300px, 92vw);
+        max-height: 55vh;
+        overflow: hidden;
+    }
+
+    .song-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.8vh;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 16px;
+        padding: 2vh 1vw;
+    }
+
+    .song-card .song-emoji { font-size: clamp(34px, 4vw, 64px); }
+
+    .song-card .song-hint {
+        color: var(--muted, #aaa);
+        font-size: clamp(13px, 1.2vw, 20px);
+        text-align: center;
+    }
+
+    .predictions {
         list-style: none;
+        width: min(1100px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1.2vh;
+        max-height: 62vh;
+        overflow: hidden;
+    }
+
+    .predictions li {
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.2vh 2vw;
+        font-size: clamp(16px, 1.8vw, 30px);
+        text-align: left;
+        overflow-wrap: anywhere;
+    }
+
+    .predictions b { color: #f5a623; }
+
+    /* Призы */
+    .shop ul {        list-style: none;
         width: min(1000px, 92vw);
         display: flex;
         flex-direction: column;

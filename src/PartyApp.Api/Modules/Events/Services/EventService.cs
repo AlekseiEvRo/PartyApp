@@ -197,7 +197,7 @@ public class EventService : IEventService
         return new SubmissionOutcome(result.Success, result.PointsAwarded, result.Message, result.Data);
     }
 
-    public async Task<object?> GetEventDataAsync(Guid sessionId, CancellationToken ct = default)
+    public async Task<object?> GetEventDataAsync(Guid sessionId, Guid? playerId = null, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -210,11 +210,16 @@ public class EventService : IEventService
             return null;
 
         // «Живые» данные обработчика (например, кто сейчас говорит тост)
+        // и личные данные игрока (отмеченные клетки, отвеченные песни и т.п.)
         object? live = null;
+        object? player = null;
         if (_handlerFactory.HasHandler(session.Definition.Type))
         {
             var handler = _handlerFactory.GetHandler(session.Definition.Type);
             live = await handler.GetLiveDataAsync(session, session.Definition, ct);
+
+            if (playerId.HasValue)
+                player = await handler.GetPlayerDataAsync(session, session.Definition, playerId.Value, ct);
         }
 
         // Возвращаем конфиг как объект
@@ -227,7 +232,8 @@ public class EventService : IEventService
                 type = session.Definition.Type,
                 displayName = session.Definition.DisplayName,
                 config,
-                live
+                live,
+                player
             };
         }
         catch
@@ -238,7 +244,8 @@ public class EventService : IEventService
                 type = session.Definition.Type,
                 displayName = session.Definition.DisplayName,
                 config = new { },
-                live
+                live,
+                player
             };
         }
     }

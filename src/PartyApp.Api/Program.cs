@@ -372,6 +372,124 @@ using (var scope = app.Services.CreateScope())
             CreatedById = null
         });
     }
+
+    // Seed: реакция «Кто быстрее»
+    if (!db.EventDefinitions.Any(d => d.Type == "reaction"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "reaction",
+            DisplayName = "Кто быстрее",
+            Description = "Дождись сигнала и жми кнопку быстрее всех. Чем быстрее — тем больше баллов!",
+            ConfigJson = """{"delaySec":5,"timeLimitSec":15,"points":10}""",
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+
+    // Seed: фанты
+    if (!db.EventDefinitions.Any(d => d.Type == "dare"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "dare",
+            DisplayName = "Фанты",
+            Description = "Вытяни случайное задание и выполни его — получишь баллы!",
+            ConfigJson = """
+                         {
+                             "points": 5,
+                             "tasks": [
+                                 "Скажи тост без слов — только жестами",
+                                 "Спой припев любимой песни именинника",
+                                 "Расскажи смешную историю про именинника",
+                                 "Изобрази любое животное, пока не угадают",
+                                 "Сделай комплимент каждому за столом",
+                                 "Покажи танец на 15 секунд",
+                                 "Придумай новое прозвище имениннику",
+                                 "Скажи скороговорку три раза подряд без ошибок",
+                                 "Признайся в самой нелепой покупке в жизни",
+                                 "Назови пять причин, почему именинник крут"
+                             ]
+                         }
+                         """,
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+
+    // Seed: бинго
+    if (!db.EventDefinitions.Any(d => d.Type == "bingo"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "bingo",
+            DisplayName = "Бинго вечеринки",
+            Description = "Отмечай то, что происходит на вечеринке. Собирай линии — получай бонусы!",
+            ConfigJson = """
+                         {
+                             "size": 5,
+                             "pointsPerCell": 1,
+                             "lineBonus": 10,
+                             "cells": [
+                                 "Именинник скажет тост", "Кто-то опрокинет напиток", "Прозвучит песня 2000-х", "Кто-то уснёт до полуночи", "Будет общее фото",
+                                 "Кто-то принесёт торт", "Будет спор о музыке", "Кто-то выйдет на улицу покурить", "Именинника обнимут 10 раз", "Кто-то расскажет историю из детства",
+                                 "Будет танцевальный баттл", "Кто-то скажет «а помнишь…»", "Раздастся смех до слёз", "Кто-то попросит добавки", "Будет запущено конфетти",
+                                 "Кто-то сделает селфи", "Прозвучит комплимент имениннику", "Кто-то спрячет телефон", "Будет тост за родителей", "Кто-то не найдёт свой бокал",
+                                 "Разговор про работу", "Кто-то предложит сыграть в игру", "Будет караоке", "Кто-то уйдёт «на пять минут»", "Именинник загадает желание"
+                             ]
+                         }
+                         """,
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+
+    // Seed: песни по эмодзи
+    if (!db.EventDefinitions.Any(d => d.Type == "emoji_song"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "emoji_song",
+            DisplayName = "Угадай песню по эмодзи",
+            Description = "Введи название песни, зашифрованной эмодзи. Одна попытка на песню!",
+            ConfigJson = """
+                         {
+                             "pointsPerCorrect": 5,
+                             "songs": [
+                                 { "emoji": "🌞🌻", "answer": "Солнечный круг", "hint": "Детская песня про небо" },
+                                 { "emoji": "🎄🌲❄️", "answer": "В лесу родилась ёлочка", "hint": "Новогодняя классика" },
+                                 { "emoji": "🐻🍯🌳", "answer": "Винни-Пух", "hint": "Песенка плюшевого медведя" },
+                                 { "emoji": "🤖🚀", "answer": "Трава у дома", "hint": "Земля в иллюминаторе" },
+                                 { "emoji": "🍦🚶‍♀️", "answer": "Как здорово, что все мы здесь сегодня собрались", "hint": "Песня у костра" },
+                                 { "emoji": "🎉🥳🎂", "answer": "С днём рождения", "hint": "И без этой песни никак" },
+                                 { "emoji": "❄️😊🛷", "answer": "Три белых коня", "hint": "Зимняя песня из «Чародеев»" },
+                                 { "emoji": "🌊🏄‍♂️", "answer": "Комарово", "hint": "На недельку, до второго" }
+                             ]
+                         }
+                         """,
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+    
+    // Seed: предсказания имениннику
+    if (!db.EventDefinitions.Any(d => d.Type == "predictions"))
+    {
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "predictions",
+            DisplayName = "Предсказания имениннику",
+            Description = "Напиши предсказание для именинника — все раскроются в конце вечеринки!",
+            ConfigJson = """{"points":3,"prompt":"Что случится на вечеринке?"}""",
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
     
     db.SaveChanges();
 }
@@ -422,6 +540,7 @@ app.MapAuthEndpoints();
 app.MapNotificationsEndpoints();
 app.MapPushEndpoints();
 app.MapEventsEndpoints();
+app.MapDareEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
 app.MapWalletEndpoints();

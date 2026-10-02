@@ -7,6 +7,7 @@ using FluentAssertions;
 
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.EntityFrameworkCore;
 
 using PartyApp.Domain.Entities;
 using PartyApp.IntegrationTests.Infrastructure;
@@ -409,16 +410,26 @@ public class SignalRTests : IDisposable
         _api.Authorize(player);
         await using HubConnection connection = await ConnectAsync(player);
 
+        // Ждём именно событие выдачи: покупка тоже шлёт PurchaseUpdated,
+        // и она может прийти уже после регистрации обработчика
+        TaskCompletionSource<JsonElement> fulfilled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using IDisposable subscription = connection.On<JsonElement>("PurchaseUpdated", payload =>
+        {
+            if (payload.GetProperty("isFulfilled").GetBoolean())
+                fulfilled.TrySetResult(payload);
+        });
+
         HttpResponseMessage buy = await _api.Client.PostAsync($"/api/shop/items/{itemId}/buy", null);
         Guid purchaseId = (await PartyAppApi.ReadJsonAsync(buy)).GetProperty("purchaseId").GetGuid();
-
-        Task<JsonElement> message = WaitForAsync(connection, "PurchaseUpdated");
 
         _api.Authorize(admin);
         (await _api.Client.PostAsync($"/api/shop/purchases/{purchaseId}/fulfill", null)).StatusCode
             .Should().Be(HttpStatusCode.OK);
 
-        JsonElement payload = await message;
+        Task finished = await Task.WhenAny(fulfilled.Task, Task.Delay(Timeout));
+        finished.Should().Be(fulfilled.Task, "админ выдал приз, игрок должен получить PurchaseUpdated");
+
+        JsonElement payload = await fulfilled.Task;
         payload.GetProperty("purchaseId").GetGuid().Should().Be(purchaseId);
         payload.GetProperty("isFulfilled").GetBoolean().Should().BeTrue();
     }
@@ -457,5 +468,42 @@ public class SignalRTests : IDisposable
         payload.GetProperty("lotId").GetGuid().Should().Be(lotId);
         payload.GetProperty("winnerName").GetString().Should().Be(player.DisplayName);
         payload.GetProperty("winningBid").GetInt32().Should().Be(25);
+    }
+
+    [Fact]
+    public async Task DareConfirmed_IsBroadcastWhenAdminConfirms()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+
+        var definition = await _factory.DbAsync(db => db.EventDefinitions
+            .AsNoTracking()
+            .SingleAsync(d => d.Type == "dare"));
+
+        _api.Authorize(admin);
+        HttpResponseMessage start = await _api.Client.PostAsync($"/api/events/{definition.Id}/start", null);
+        Guid sessionId = (await PartyAppApi.ReadJsonAsync(start)).GetProperty("sessionId").GetGuid();
+
+        _api.Authorize(player);
+        await using HubConnection connection = await ConnectAsync(player);
+
+        HttpResponseMessage draw = await _api.Client.PostAsJsonAsync(
+            $"/api/events/{sessionId}/submit", new { payloadJson = "{}" });
+        draw.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _api.Authorize(admin);
+        JsonElement pending = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync("/api/events/dare/pending"));
+        Guid assignmentId = pending[0].GetProperty("id").GetGuid();
+
+        Task<JsonElement> message = WaitForAsync(connection, "DareConfirmed");
+
+        (await _api.Client.PostAsync($"/api/events/dare/{assignmentId}/confirm", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("playerId").GetGuid().Should().Be(player.Id);
+        payload.GetProperty("points").GetInt32().Should().Be(5);
+        payload.GetProperty("sessionId").GetGuid().Should().Be(sessionId);
     }
 }

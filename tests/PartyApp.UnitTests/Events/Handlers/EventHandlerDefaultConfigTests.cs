@@ -122,6 +122,40 @@ public class EventHandlerDefaultConfigTests
     }
 
     [Fact]
+    public void NewHandlers_DefaultConfigs_AreUsable()
+    {
+        ReactionHandler reaction = new(
+            ScopeFactory, PointsAward, TimeProvider.System, NullLogger<ReactionHandler>.Instance);
+        DareHandler dare = new(ScopeFactory, NullLogger<DareHandler>.Instance);
+        BingoHandler bingo = new(ScopeFactory, PointsAward, NullLogger<BingoHandler>.Instance);
+        EmojiSongHandler songs = new(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance);
+        PredictionsHandler predictions = new(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance);
+
+        JsonElement predictionsConfig = Parse(predictions.DefaultConfigJson);
+        predictionsConfig.GetProperty("points").GetInt32().Should().BePositive();
+        predictionsConfig.GetProperty("prompt").GetString().Should().NotBeNullOrWhiteSpace();
+
+        JsonElement reactionConfig = Parse(reaction.DefaultConfigJson);
+        reactionConfig.GetProperty("delaySec").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+        reactionConfig.GetProperty("points").GetInt32().Should().BePositive();
+
+        Parse(dare.DefaultConfigJson).GetProperty("tasks").GetArrayLength().Should().BeGreaterThan(0);
+
+        JsonElement bingoConfig = Parse(bingo.DefaultConfigJson);
+        int size = bingoConfig.GetProperty("size").GetInt32();
+        bingoConfig.GetProperty("cells").GetArrayLength().Should().Be(size * size);
+
+        JsonElement songConfig = Parse(songs.DefaultConfigJson);
+        songConfig.GetProperty("songs").GetArrayLength().Should().BeGreaterThan(0);
+
+        foreach (JsonElement song in songConfig.GetProperty("songs").EnumerateArray())
+        {
+            song.GetProperty("emoji").GetString().Should().NotBeNullOrWhiteSpace();
+            song.GetProperty("answer").GetString().Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
+    [Fact]
     public void AllHandlers_ExposeUniqueEventTypeAndValidDefaultConfig()
     {
         IEventHandler[] handlers =
@@ -138,7 +172,13 @@ public class EventHandlerDefaultConfigTests
                 PointsAward,
                 new RecordingHubContext(),
                 TimeProvider.System,
-                NullLogger<QuickCheckinHandler>.Instance)
+                NullLogger<QuickCheckinHandler>.Instance),
+            new ReactionHandler(
+                ScopeFactory, PointsAward, TimeProvider.System, NullLogger<ReactionHandler>.Instance),
+            new DareHandler(ScopeFactory, NullLogger<DareHandler>.Instance),
+            new BingoHandler(ScopeFactory, PointsAward, NullLogger<BingoHandler>.Instance),
+            new EmojiSongHandler(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance),
+            new PredictionsHandler(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance)
         };
 
         handlers.Select(h => h.EventType).Should().OnlyHaveUniqueItems();
