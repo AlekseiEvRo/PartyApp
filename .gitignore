@@ -15,7 +15,6 @@ uploads/
 
 # Frontend build output (web -> npm run build -> wwwroot)
 src/PartyApp.Api/wwwroot/*
-!src/PartyApp.Api/wwwroot/admin.html
 !src/PartyApp.Api/wwwroot/signalr-test.html
 
 # dotenv files
