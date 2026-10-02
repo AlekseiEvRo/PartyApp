@@ -238,7 +238,9 @@ public class EventEndpointsTests : IClassFixture<PartyAppFactory>
         List<JsonElement> types = (await PartyAppApi.ReadJsonAsync(response)).EnumerateArray().ToList();
 
         types.Select(t => t.GetProperty("type").GetString())
-            .Should().BeEquivalentTo("quiz", "word_rush", "promo_code", "qr_scan", "quick_checkin");
+            .Should().BeEquivalentTo(
+                "quiz", "word_rush", "promo_code", "qr_scan", "quick_checkin",
+                "reaction", "dare", "bingo", "emoji_song");
 
         foreach (JsonElement type in types)
         {

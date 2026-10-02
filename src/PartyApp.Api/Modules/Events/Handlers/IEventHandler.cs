@@ -54,4 +54,11 @@ public interface IEventHandler
     /// </summary>
     Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
         => Task.FromResult<object?>(null);
+
+    /// <summary>
+    /// Личные данные игрока в ивенте (отмеченные клетки бинго, отвеченные песни и т.п.).
+    /// Возвращаются в GET /api/events/{sessionId}/data полем player. По умолчанию — ничего.
+    /// </summary>
+    Task<object?> GetPlayerDataAsync(EventSession session, EventDefinition definition, Guid playerId, CancellationToken ct = default)
+        => Task.FromResult<object?>(null);
 }

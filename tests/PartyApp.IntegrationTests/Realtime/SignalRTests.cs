@@ -409,16 +409,26 @@ public class SignalRTests : IDisposable
         _api.Authorize(player);
         await using HubConnection connection = await ConnectAsync(player);
 
+        // Ждём именно событие выдачи: покупка тоже шлёт PurchaseUpdated,
+        // и она может прийти уже после регистрации обработчика
+        TaskCompletionSource<JsonElement> fulfilled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using IDisposable subscription = connection.On<JsonElement>("PurchaseUpdated", payload =>
+        {
+            if (payload.GetProperty("isFulfilled").GetBoolean())
+                fulfilled.TrySetResult(payload);
+        });
+
         HttpResponseMessage buy = await _api.Client.PostAsync($"/api/shop/items/{itemId}/buy", null);
         Guid purchaseId = (await PartyAppApi.ReadJsonAsync(buy)).GetProperty("purchaseId").GetGuid();
-
-        Task<JsonElement> message = WaitForAsync(connection, "PurchaseUpdated");
 
         _api.Authorize(admin);
         (await _api.Client.PostAsync($"/api/shop/purchases/{purchaseId}/fulfill", null)).StatusCode
             .Should().Be(HttpStatusCode.OK);
 
-        JsonElement payload = await message;
+        Task finished = await Task.WhenAny(fulfilled.Task, Task.Delay(Timeout));
+        finished.Should().Be(fulfilled.Task, "админ выдал приз, игрок должен получить PurchaseUpdated");
+
+        JsonElement payload = await fulfilled.Task;
         payload.GetProperty("purchaseId").GetGuid().Should().Be(purchaseId);
         payload.GetProperty("isFulfilled").GetBoolean().Should().BeTrue();
     }
