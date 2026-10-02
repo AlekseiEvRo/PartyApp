@@ -88,6 +88,9 @@ public class AuthService : IAuthService
         if (result == PasswordVerificationResult.Failed)
             throw new AuthException("Неверный логин или пароль");
 
+        if (!user.IsActive)
+            throw new AuthException("Аккаунт заблокирован администратором");
+
         return BuildAuthResponse(user);
     }
 
@@ -97,7 +100,8 @@ public class AuthService : IAuthService
             user.Id,
             user.Username,
             user.DisplayName,
-            user.Role.ToString());
+            user.Role.ToString(),
+            user.SecurityStamp);
 
         return new AuthResponse(
             token,

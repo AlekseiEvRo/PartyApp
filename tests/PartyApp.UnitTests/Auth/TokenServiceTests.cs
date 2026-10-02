@@ -15,6 +15,7 @@ public class TokenServiceTests
     private const string SigningKey = "TestSigningKeyThatIsLongEnoughForHmacSha256_42";
     private const string Issuer = "test-issuer";
     private const string Audience = "test-audience";
+    private const string SecurityStamp = "stamp-42";
 
     private static TokenService CreateService(params (string Key, string? Value)[] overrides)
     {
@@ -56,7 +57,7 @@ public class TokenServiceTests
     {
         Guid userId = Guid.NewGuid();
 
-        (string token, _) = CreateService().GenerateToken(userId, "alice", "Алиса", "Admin");
+        (string token, _) = CreateService().GenerateToken(userId, "alice", "Алиса", "Admin", SecurityStamp);
 
         JwtSecurityToken jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
         jwt.Claims.Should().Contain(c => c.Type == "sub" && c.Value == userId.ToString());
@@ -66,12 +67,21 @@ public class TokenServiceTests
     }
 
     [Fact]
+    public void GenerateToken_ContainsSecurityStamp()
+    {
+        (string token, _) = CreateService().GenerateToken(Guid.NewGuid(), "alice", "Алиса", "Player", SecurityStamp);
+
+        new JwtSecurityTokenHandler().ReadJwtToken(token).Claims
+            .Should().Contain(c => c.Type == "stamp" && c.Value == SecurityStamp);
+    }
+
+    [Fact]
     public void GenerateToken_ContainsSingleUniqueJti()
     {
         TokenService service = CreateService();
 
-        (string first, _) = service.GenerateToken(Guid.NewGuid(), "alice", "Алиса", "Player");
-        (string second, _) = service.GenerateToken(Guid.NewGuid(), "alice", "Алиса", "Player");
+        (string first, _) = service.GenerateToken(Guid.NewGuid(), "alice", "Алиса", "Player", SecurityStamp);
+        (string second, _) = service.GenerateToken(Guid.NewGuid(), "alice", "Алиса", "Player", SecurityStamp);
 
         List<string> jtis = new JwtSecurityTokenHandler().ReadJwtToken(first).Claims
             .Where(c => c.Type == JwtRegisteredClaimNames.Jti)
@@ -89,7 +99,7 @@ public class TokenServiceTests
     {
         DateTime before = DateTime.UtcNow;
 
-        (string token, DateTime expiresAtUtc) = CreateService().GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player");
+        (string token, DateTime expiresAtUtc) = CreateService().GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player", SecurityStamp);
 
         JwtSecurityToken jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
         jwt.Issuer.Should().Be(Issuer);
@@ -104,7 +114,7 @@ public class TokenServiceTests
         DateTime before = DateTime.UtcNow;
 
         (_, DateTime expiresAtUtc) = CreateService(("Jwt:AccessTokenLifetimeMinutes", "5"))
-            .GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player");
+            .GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player", SecurityStamp);
 
         expiresAtUtc.Should().BeCloseTo(before.AddMinutes(5), TimeSpan.FromSeconds(10));
     }
@@ -117,7 +127,7 @@ public class TokenServiceTests
             ("Jwt:Audience", null),
             ("Jwt:AccessTokenLifetimeMinutes", null));
 
-        (string token, DateTime expiresAtUtc) = service.GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player");
+        (string token, DateTime expiresAtUtc) = service.GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player", SecurityStamp);
 
         JwtSecurityToken jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
         jwt.Issuer.Should().Be("party-app");
@@ -130,7 +140,7 @@ public class TokenServiceTests
     {
         TokenService service = CreateService(("Jwt:SigningKey", null));
 
-        Action act = () => service.GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player");
+        Action act = () => service.GenerateToken(Guid.NewGuid(), "bob", "Боб", "Player", SecurityStamp);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*SigningKey*");
     }
@@ -138,7 +148,7 @@ public class TokenServiceTests
     [Fact]
     public void GenerateToken_ProducesTokenAcceptedByMatchingValidationParameters()
     {
-        (string token, _) = CreateService().GenerateToken(Guid.NewGuid(), "carol", "Кэрол", "Player");
+        (string token, _) = CreateService().GenerateToken(Guid.NewGuid(), "carol", "Кэрол", "Player", SecurityStamp);
 
         JwtSecurityTokenHandler handler = new();
 
@@ -150,7 +160,7 @@ public class TokenServiceTests
     [Fact]
     public void GenerateToken_ProducesTokenRejectedByDifferentKey()
     {
-        (string token, _) = CreateService().GenerateToken(Guid.NewGuid(), "carol", "Кэрол", "Player");
+        (string token, _) = CreateService().GenerateToken(Guid.NewGuid(), "carol", "Кэрол", "Player", SecurityStamp);
         string otherKey = "AnotherSigningKeyThatIsLongEnoughForHmacSha256!!";
 
         JwtSecurityTokenHandler handler = new();
@@ -165,7 +175,7 @@ public class TokenServiceTests
     {
         Guid userId = Guid.NewGuid();
 
-        (string token, _) = CreateService().GenerateToken(userId, "dave", "Дэйв", "Player");
+        (string token, _) = CreateService().GenerateToken(userId, "dave", "Дэйв", "Player", SecurityStamp);
 
         string sub = new JwtSecurityTokenHandler().ReadJwtToken(token).Claims
             .Single(c => c.Type == "sub").Value;

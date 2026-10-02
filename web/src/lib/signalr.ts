@@ -17,7 +17,7 @@ import {
     bingoLineAwarded,
     raffleDrawn
 } from './stores';
-import { getToken } from './api';
+import { getToken, setToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
 
 let connection: signalR.HubConnection | null = null;
@@ -168,6 +168,17 @@ export async function connect(): Promise<void> {
         } else {
             showToast(`Ничья. Слово было: ${result.secretWord}`, 'info');
         }
+    });
+
+    // === Сессия ===
+    // Админ сменил роль, кикнул или заблокировал — токен больше не действует
+    connection.on('SessionRevoked', (data: { reason?: string }) => {
+        showToast(`🔒 ${data?.reason ?? 'Сессия завершена'}`, 'error');
+        setToken(null);
+
+        setTimeout(() => {
+            location.reload();
+        }, 1500);
     });
 
     // === Состояние соединения ===

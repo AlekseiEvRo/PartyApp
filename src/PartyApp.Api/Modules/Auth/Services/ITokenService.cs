@@ -6,5 +6,6 @@ public interface ITokenService
         Guid userId,
         string username,
         string displayName,
-        string role);
+        string role,
+        string securityStamp);
 }

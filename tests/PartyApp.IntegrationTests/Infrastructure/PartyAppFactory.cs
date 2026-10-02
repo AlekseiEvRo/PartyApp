@@ -28,6 +28,10 @@ public class PartyAppFactory : WebApplicationFactory<Program>
 
     public PartyAppFactory()
     {
+        // Ключ должен быть виден ещё до старта хоста, иначе JwtSigningKeyStore
+        // успеет сгенерировать файл в тестовом каталоге.
+        Environment.SetEnvironmentVariable("Jwt__SigningKey", TestJwt.SigningKey);
+
         _directory = Path.Combine(Path.GetTempPath(), "party-integration-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_directory);
 
@@ -66,11 +70,14 @@ public class PartyAppFactory : WebApplicationFactory<Program>
                 ["Party:WelcomeBonus"] = "100",
                 ["Dictionary:FilePath"] = _dictionaryPath,
                 ["Push:KeysFile"] = Path.Combine(_directory, "vapid.json"),
+                ["Jwt:KeysFile"] = Path.Combine(_directory, "jwt.json"),
                 ["Files:UploadRoot"] = Path.Combine(_directory, "uploads"),
                 ["Wishes:RequireModeration"] = "true",
                 ["Toast:CooldownSeconds"] = "30",
                 ["Toast:Points"] = "1",
                 ["RateLimiting:Enabled"] = "false",
+                ["Backup:Enabled"] = "false",
+                ["Serilog:LogFile"] = Path.Combine(_directory, "logs", "party-.log"),
                 ["Serilog:MinimumLevel:Default"] = "Warning"
             };
 

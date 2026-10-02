@@ -11,10 +11,12 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 using PartyApp.Api.Common.Middleware;
+using PartyApp.Api.Common.Security;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Admin;
 using PartyApp.Api.Modules.Auth;
 using PartyApp.Api.Modules.Auth.Services;
+using PartyApp.Api.Modules.Backup;
 using PartyApp.Api.Modules.Events;
 using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Events.Services;
@@ -36,11 +38,27 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Serilog
+// Ключ подписи JWT: конфиг → App_Data/jwt.json → генерация (см. JwtSigningKeyStore).
+// Кладём его в конфигурацию, чтобы им пользовались и валидация, и TokenService.
+JwtSigningKey jwtSigningKey = JwtSigningKeyStore.Resolve(builder.Configuration);
+builder.Configuration["Jwt:SigningKey"] = jwtSigningKey.Key;
+
+// Serilog: консоль + файл с суточной ротацией (переживает перезапуск и нужен для разбора инцидентов)
 builder.Host.UseSerilog((context, loggerConfig) =>
 {
     loggerConfig.ReadFrom.Configuration(context.Configuration);
     loggerConfig.WriteTo.Console();
+
+    string logFile = context.Configuration["Serilog:LogFile"] ?? "App_Data/logs/party-.log";
+    if (!Path.IsPathRooted(logFile))
+        logFile = Path.Combine(context.HostingEnvironment.ContentRootPath, logFile);
+
+    loggerConfig.WriteTo.File(
+        logFile,
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14,
+        shared: true,
+        flushToDiskInterval: TimeSpan.FromSeconds(5));
 });
 
 // EF Core + SQLite
@@ -76,8 +94,8 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"] ?? "party-app-clients",
         IssuerSigningKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(
-                builder.Configuration["Jwt:SigningKey"] ?? "SuperSecretKeyForDevelopmentOnly12345!"
-            )
+                builder.Configuration["Jwt:SigningKey"]
+                ?? throw new InvalidOperationException("Jwt:SigningKey is not configured"))
         ),
 
         NameClaimType = "name",
@@ -97,6 +115,27 @@ builder.Services.AddAuthentication(options =>
             }
 
             return Task.CompletedTask;
+        },
+
+        // Проверяем отметку безопасности: смена роли, пароля или блокировка
+        // делают ранее выданные токены недействительными, поэтому «кик» работает сразу.
+        OnTokenValidated = async context =>
+        {
+            string? sub = context.Principal?.FindFirst("sub")?.Value;
+            string? stamp = context.Principal?.FindFirst("stamp")?.Value;
+
+            if (!Guid.TryParse(sub, out Guid userId) || string.IsNullOrEmpty(stamp))
+            {
+                context.Fail("Токен без отметки безопасности — войди заново");
+                return;
+            }
+
+            AppDbContext db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+            bool sessionValid = await db.Users.AsNoTracking()
+                .AnyAsync(u => u.Id == userId && u.IsActive && u.SecurityStamp == stamp, context.HttpContext.RequestAborted);
+
+            if (!sessionValid)
+                context.Fail("Сессия недействительна — войди заново");
         }
     };
 });
@@ -176,9 +215,12 @@ builder.Services.AddSingleton<SpyGameService>();
 builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();
 builder.Services.AddSingleton<IPointsAwardService, PointsAwardService>();
 builder.Services.AddScoped<ModerationNotifier>();
+builder.Services.AddScoped<AdminAuditService>();
+builder.Services.AddScoped<BackupService>();
 builder.Services.AddSingleton<ScreenService>();
 builder.Services.AddSingleton<AuctionService>();
 builder.Services.AddHostedService<AuctionClosingService>();
+builder.Services.AddHostedService<BackupBackgroundService>();
 builder.Services.AddSingleton<BingoService>();
 builder.Services.AddSingleton<RaffleService>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -262,6 +304,8 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+app.Logger.LogInformation("Ключ подписи JWT: {JwtKeySource}", jwtSigningKey.Source);
 
 // Применяем миграции при старте
 using (var scope = app.Services.CreateScope())
@@ -549,8 +593,20 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-// Health
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+// Health: приложение живо и база доступна
+app.MapGet("/health", async (AppDbContext db, CancellationToken ct) =>
+{
+    bool databaseReady = await db.Database.CanConnectAsync(ct);
+
+    if (!databaseReady)
+    {
+        return Results.Json(
+            new { status = "degraded", database = "unavailable" },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    return Results.Ok(new { status = "ok", database = "ok" });
+});
 
 // Серверное время: клиенты синхронизируют отсчёты, чтобы таймеры
 // на телефонах и на большом экране совпадали
@@ -567,6 +623,7 @@ app.MapBingoEndpoints();
 app.MapRaffleEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
+app.MapBackupEndpoints();
 app.MapWalletEndpoints();
 app.MapSpyGameEndpoints();
 app.MapPhotoEndpoints();
