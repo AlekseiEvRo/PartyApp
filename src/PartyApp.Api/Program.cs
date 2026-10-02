@@ -179,6 +179,7 @@ builder.Services.AddScoped<ModerationNotifier>();
 builder.Services.AddSingleton<ScreenService>();
 builder.Services.AddSingleton<AuctionService>();
 builder.Services.AddHostedService<AuctionClosingService>();
+builder.Services.AddSingleton<BingoService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 
@@ -545,6 +546,7 @@ app.MapNotificationsEndpoints();
 app.MapPushEndpoints();
 app.MapEventsEndpoints();
 app.MapDareEndpoints();
+app.MapBingoEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
 app.MapWalletEndpoints();

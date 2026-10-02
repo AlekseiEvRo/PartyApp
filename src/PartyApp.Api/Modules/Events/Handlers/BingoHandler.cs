@@ -1,6 +1,5 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using PartyApp.Api.Modules.Wallet;
+using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
 
@@ -8,22 +7,22 @@ namespace PartyApp.Api.Modules.Events.Handlers;
 
 /// <summary>
 /// Обработчик ивента "bingo". Игроки отмечают клетки-предсказания;
-/// за клетку — баллы, за собранную линию (строку, столбец, диагональ) — бонус.
-/// Линии считаются на сервере по сохранённым отметкам.
+/// баллы начисляются только за клетки, которые админ подтвердил как
+/// реально случившиеся события (см. <see cref="BingoService"/>).
 /// </summary>
 public class BingoHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IPointsAwardService _pointsAward;
+    private readonly BingoService _bingo;
     private readonly ILogger<BingoHandler> _logger;
 
     public BingoHandler(
         IServiceScopeFactory scopeFactory,
-        IPointsAwardService pointsAward,
+        BingoService bingo,
         ILogger<BingoHandler> logger)
     {
         _scopeFactory = scopeFactory;
-        _pointsAward = pointsAward;
+        _bingo = bingo;
         _logger = logger;
     }
 
@@ -51,28 +50,13 @@ public class BingoHandler : IEventHandler
         string payloadJson,
         CancellationToken ct = default)
     {
-        var config = JsonSerializer.Deserialize<BingoConfig>(definition.ConfigJson, EventJsonOptions.Default);
-        int size = config?.Size is >= 3 and <= 7 ? config.Size : 5;
-        int totalCells = size * size;
-        var cells = config?.Cells ?? new List<string>();
-        int pointsPerCell = config?.PointsPerCell > 0 ? config.PointsPerCell : 1;
-        int lineBonus = config?.LineBonus > 0 ? config.LineBonus : 10;
+        BingoService.BingoConfig config = BingoService.ParseConfig(definition.ConfigJson);
+        int totalCells = config.Size * config.Size;
 
-        if (cells.Count < totalCells)
+        if (config.Cells.Count < totalCells)
             return SubmissionResult.Fail($"Бинго не настроено: нужно {totalCells} клеток");
 
-        int cellIndex = -1;
-        if (!string.IsNullOrEmpty(payloadJson))
-        {
-            try
-            {
-                var payload = JsonSerializer.Deserialize<JsonElement>(payloadJson, EventJsonOptions.Default);
-                if (payload.TryGetProperty("cellIndex", out var indexProp))
-                    cellIndex = indexProp.GetInt32();
-            }
-            catch { /* ignore */ }
-        }
-
+        int cellIndex = BingoService.ExtractCellIndex(payloadJson) ?? -1;
         if (cellIndex < 0 || cellIndex >= totalCells)
             return SubmissionResult.Fail("Неверная клетка");
 
@@ -83,67 +67,29 @@ public class BingoHandler : IEventHandler
 
         marked.Add(cellIndex);
 
-        int newLines = CountLinesThrough(marked, cellIndex, size);
-        int points = pointsPerCell + newLines * lineBonus;
-
-        await _pointsAward.AwardAsync(
-            playerId,
-            points,
-            newLines > 0 ? $"Бинго: линия (+{newLines * lineBonus})" : "Бинго: клетка",
-            sessionId: session.Id,
-            ct: ct);
-
         _logger.LogInformation(
             "Bingo: player {PlayerId} marked cell {CellIndex} in session {SessionId}",
             playerId, cellIndex, session.Id);
 
+        // Баллы не начисляем: их даст админ, когда подтвердит, что событие было
         return SubmissionResult.Ok(
-            points,
-            newLines > 0 ? $"🎉 Линия! Бонус +{newLines * lineBonus}" : "Клетка отмечена",
-            new
-            {
-                markedCells = marked.OrderBy(i => i).ToArray(),
-                lines = CountAllLines(marked, size),
-                newLines
-            });
+            0,
+            "Отмечено! Ждём подтверждения ведущего",
+            new { markedCells = marked.OrderBy(i => i).ToArray() });
     }
 
-    public async Task<object?> GetLiveDataAsync(
-        EventSession session,
-        EventDefinition definition,
-        CancellationToken ct = default)
+    public Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        int markedCount = await db.PlayerSubmissions
-            .CountAsync(s => s.SessionId == session.Id && s.Score > 0, ct);
-
-        int playersCount = await db.PlayerSubmissions
-            .Where(s => s.SessionId == session.Id && s.Score > 0)
-            .Select(s => s.PlayerId)
-            .Distinct()
-            .CountAsync(ct);
-
-        return new { markedCount, playersCount };
+        return _bingo.GetLiveStateAsync(session.Id, ct);
     }
 
-    public async Task<object?> GetPlayerDataAsync(
+    public Task<object?> GetPlayerDataAsync(
         EventSession session,
         EventDefinition definition,
         Guid playerId,
         CancellationToken ct = default)
     {
-        var config = JsonSerializer.Deserialize<BingoConfig>(definition.ConfigJson, EventJsonOptions.Default);
-        int size = config?.Size is >= 3 and <= 7 ? config.Size : 5;
-
-        HashSet<int> marked = await GetMarkedCellsAsync(session.Id, playerId, ct);
-
-        return new
-        {
-            markedCells = marked.OrderBy(i => i).ToArray(),
-            lines = CountAllLines(marked, size)
-        };
+        return _bingo.GetPlayerStateAsync(session.Id, playerId, ct);
     }
 
     private async Task<HashSet<int>> GetMarkedCellsAsync(Guid sessionId, Guid playerId, CancellationToken ct)
@@ -160,47 +106,11 @@ public class BingoHandler : IEventHandler
 
         foreach (string payloadJson in payloads)
         {
-            try
-            {
-                var payload = JsonSerializer.Deserialize<JsonElement>(payloadJson, EventJsonOptions.Default);
-                if (payload.TryGetProperty("cellIndex", out var indexProp) && indexProp.TryGetInt32(out int index))
-                    marked.Add(index);
-            }
-            catch { /* ignore */ }
+            int? cell = BingoService.ExtractCellIndex(payloadJson);
+            if (cell is not null)
+                marked.Add(cell.Value);
         }
 
         return marked;
-    }
-
-    /// <summary>Линии, проходящие через клетку и полностью отмеченные сейчас.</summary>
-    private static int CountLinesThrough(HashSet<int> marked, int cellIndex, int size)
-    {
-        return AllLines(size)
-            .Count(line => line.Contains(cellIndex) && line.All(marked.Contains));
-    }
-
-    private static int CountAllLines(HashSet<int> marked, int size)
-    {
-        return AllLines(size).Count(line => line.All(marked.Contains));
-    }
-
-    private static IEnumerable<int[]> AllLines(int size)
-    {
-        for (int row = 0; row < size; row++)
-            yield return Enumerable.Range(row * size, size).ToArray();
-
-        for (int col = 0; col < size; col++)
-            yield return Enumerable.Range(0, size).Select(row => row * size + col).ToArray();
-
-        yield return Enumerable.Range(0, size).Select(i => i * size + i).ToArray();
-        yield return Enumerable.Range(0, size).Select(i => i * size + (size - 1 - i)).ToArray();
-    }
-
-    private class BingoConfig
-    {
-        public int Size { get; set; } = 5;
-        public int PointsPerCell { get; set; } = 1;
-        public int LineBonus { get; set; } = 10;
-        public List<string> Cells { get; set; } = new();
     }
 }

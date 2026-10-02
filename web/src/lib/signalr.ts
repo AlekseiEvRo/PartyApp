@@ -11,7 +11,8 @@ import {
     wishRemovedId,
     moderationVersion,
     shopVersion,
-    dareConfirmed
+    dareConfirmed,
+    bingoCellConfirmed
 } from './stores';
 import { getToken } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
@@ -120,6 +121,10 @@ export async function connect(): Promise<void> {
 
     connection.on('DareConfirmed', (data: { sessionId: string; playerId: string; points: number }) => {
         dareConfirmed.set(data);
+    });
+
+    connection.on('BingoCellConfirmed', (data: { sessionId: string; cellIndex: number; confirmedCount: number }) => {
+        bingoCellConfirmed.set(data);
     });
 
     // === Шпионаж ===

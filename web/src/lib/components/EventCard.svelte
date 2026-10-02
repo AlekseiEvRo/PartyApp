@@ -1,6 +1,6 @@
 <script lang="ts">
     import { api } from '../api';
-    import { showToast, balance, user, dareConfirmed } from '../stores';
+    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed } from '../stores';
     import { serverNow } from '../time';
     import { onMount } from 'svelte';
 
@@ -29,7 +29,9 @@
     let bingoSize = 5;
     let bingoCells: string[] = [];
     let bingoMarked = new Set<number>();
+    let bingoConfirmed = new Set<number>();
     let bingoLines = 0;
+    let bingoRefreshPending = false;
 
     // Песни по эмодзи
     let songs: any[] = [];
@@ -61,10 +63,7 @@
             } else if (event.type === 'dare') {
                 applyDare(playerData?.dare ?? null);
             } else if (event.type === 'bingo') {
-                bingoSize = dataConfig.size ?? 5;
-                bingoCells = dataConfig.cells ?? [];
-                bingoMarked = new Set<number>(playerData?.markedCells ?? []);
-                bingoLines = playerData?.lines ?? 0;
+                applyBingoState(playerData);
             } else if (event.type === 'emoji_song') {
                 songs = dataConfig.songs ?? [];
                 songAnswered = new Set<number>(playerData?.answered ?? []);
@@ -84,6 +83,16 @@
         && $dareConfirmed.playerId === $user?.userId) {
         confirmedDareApplied = true;
         applyConfirmedDare($dareConfirmed.points);
+    }
+
+    // Админ подтвердил клетку бинго — обновляем сетку и линии
+    $: if (event.type === 'bingo'
+        && $bingoCellConfirmed
+        && $bingoCellConfirmed.sessionId === event.sessionId
+        && !bingoRefreshPending) {
+        bingoRefreshPending = true;
+        showToast('✅ Ведущий подтвердил событие в бинго!', 'info');
+        void refreshBingoState().finally(() => (bingoRefreshPending = false));
     }
 
     async function submit(payload: any) {
@@ -179,8 +188,23 @@
         const result = await submit({ cellIndex: index });
         if (result?.data) {
             bingoMarked = new Set<number>(result.data.markedCells ?? []);
-            bingoLines = result.data.lines ?? bingoLines;
         }
+    }
+
+    /** Состояние бинго: отметки, подтверждённые клетки и линии. */
+    function applyBingoState(state: any): void {
+        bingoSize = dataConfig.size ?? 5;
+        bingoCells = dataConfig.cells ?? [];
+        bingoMarked = new Set<number>(state?.markedCells ?? []);
+        bingoConfirmed = new Set<number>(state?.confirmedCells ?? []);
+        bingoLines = state?.lines ?? 0;
+    }
+
+    async function refreshBingoState(): Promise<void> {
+        try {
+            const data = await api<any>(`/api/events/${event.sessionId}/data`);
+            applyBingoState(data.player ?? null);
+        } catch { /* обновимся при следующем действии */ }
     }
 
     async function answerSong(index: number) {
@@ -291,12 +315,15 @@
                 {#each range(bingoSize * bingoSize) as i}
                     <button
                         class="bingo-cell"
-                        class:marked={bingoMarked.has(i)}
+                        class:marked={bingoMarked.has(i) && !bingoConfirmed.has(i)}
+                        class:confirmed={bingoConfirmed.has(i)}
                         on:click={() => markBingo(i)}
                     >{bingoCells[i]}</button>
                 {/each}
             </div>
-            <p class="event-counter">Собрано линий: {bingoLines}</p>
+            <p class="event-counter">
+                Подтверждено клеток: {bingoConfirmed.size} · линий: {bingoLines}
+            </p>
         {/if}
 
     {:else if event.type === 'emoji_song'}

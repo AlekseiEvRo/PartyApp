@@ -2,11 +2,13 @@ using System.Text.Json;
 
 using FluentAssertions;
 
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using NSubstitute;
 
 using PartyApp.Api.Modules.Events.Handlers;
+using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.UnitTests.Testing;
@@ -21,23 +23,18 @@ public class BingoHandlerTests : IDisposable
 
     private readonly IPointsAwardService _award = Substitute.For<IPointsAwardService>();
     private readonly SqliteTestHost _host = new();
+    private readonly BingoService _bingo;
     private readonly BingoHandler _handler;
 
     public BingoHandlerTests()
     {
-        _handler = new BingoHandler(_host.ScopeFactory, _award, NullLogger<BingoHandler>.Instance);
+        _bingo = new BingoService(
+            _host.ScopeFactory, _award, new RecordingHubContext(), NullLogger<BingoService>.Instance);
+        _handler = new BingoHandler(_host.ScopeFactory, _bingo, NullLogger<BingoHandler>.Instance);
     }
 
     public void Dispose() => _host.Dispose();
 
-    private static (EventDefinition Definition, EventSession Session) CreateEvent(string configJson = SmallConfig)
-    {
-        EventDefinition definition = TestData.Definition("bingo", configJson);
-        EventSession session = TestData.Session(definition, Guid.NewGuid());
-        return (definition, session);
-    }
-
-    /// <summary>Сохраняет игрока, определение и сессию — нужны для FK при подсеве сабмитов.</summary>
     private async Task<(EventDefinition Definition, EventSession Session, Guid PlayerId)> SeedEventAsync(
         string configJson = SmallConfig)
     {
@@ -60,37 +57,38 @@ public class BingoHandlerTests : IDisposable
             SessionId = sessionId,
             PlayerId = playerId,
             PayloadJson = $$"""{"cellIndex":{{cellIndex}}}""",
-            Score = 2
+            Score = 0
         });
         await _host.Db.SaveChangesAsync();
     }
 
-    private static System.Text.Json.JsonElement Json(object? value)
+    private static JsonElement Json(object? value)
     {
-        return System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
-            System.Text.Json.JsonSerializer.Serialize(value));
+        return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(value));
     }
 
     [Fact]
-    public async Task FirstCell_IsMarkedAndAwarded()
+    public async Task FirstCell_IsMarkedWithoutPoints()
     {
-        (EventDefinition definition, EventSession session) = CreateEvent();
-        Guid playerId = Guid.NewGuid();
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
 
         SubmissionResult result = await _handler.HandleSubmissionAsync(
             session, definition, playerId, """{"cellIndex":0}""");
 
         result.Success.Should().BeTrue();
-        result.PointsAwarded.Should().Be(2);
+        result.PointsAwarded.Should().Be(0); // баллы — только после подтверждения админом
+        result.Message.Should().Contain("подтверждения");
+
         Json(result.Data).GetProperty("markedCells").EnumerateArray()
             .Select(e => e.GetInt32()).Should().Equal(0);
+
+        await _award.DidNotReceiveWithAnyArgs().AwardAsync(default, default, default!, default, default, default);
     }
 
     [Fact]
     public async Task DuplicateCell_IsRejected()
     {
         (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
-
         await SeedCellAsync(session.Id, playerId, 4);
 
         SubmissionResult result = await _handler.HandleSubmissionAsync(
@@ -100,50 +98,15 @@ public class BingoHandlerTests : IDisposable
         result.Message.Should().Contain("Уже отмечено");
     }
 
-    [Fact]
-    public async Task CompletedLine_AddsBonus()
-    {
-        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
-
-        await SeedCellAsync(session.Id, playerId, 0);
-        await SeedCellAsync(session.Id, playerId, 1);
-
-        SubmissionResult result = await _handler.HandleSubmissionAsync(
-            session, definition, playerId, """{"cellIndex":2}""");
-
-        result.Success.Should().BeTrue();
-        result.PointsAwarded.Should().Be(2 + 10); // клетка + линия
-        Json(result.Data).GetProperty("lines").GetInt32().Should().Be(1);
-        Json(result.Data).GetProperty("newLines").GetInt32().Should().Be(1);
-    }
-
-    [Fact]
-    public async Task TwoLinesAtOnce_AddDoubleBonus()
-    {
-        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
-
-        // Центр (4) завершает и строку (3,4,5), и столбец (1,4,7)
-        await SeedCellAsync(session.Id, playerId, 3);
-        await SeedCellAsync(session.Id, playerId, 5);
-        await SeedCellAsync(session.Id, playerId, 1);
-        await SeedCellAsync(session.Id, playerId, 7);
-
-        SubmissionResult result = await _handler.HandleSubmissionAsync(
-            session, definition, playerId, """{"cellIndex":4}""");
-
-        result.PointsAwarded.Should().Be(2 + 20);
-        Json(result.Data).GetProperty("newLines").GetInt32().Should().Be(2);
-    }
-
     [Theory]
     [InlineData(-1)]
     [InlineData(9)]
     public async Task InvalidCell_IsRejected(int cellIndex)
     {
-        (EventDefinition definition, EventSession session) = CreateEvent();
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
 
         SubmissionResult result = await _handler.HandleSubmissionAsync(
-            session, definition, Guid.NewGuid(), $$"""{"cellIndex":{{cellIndex}}}""");
+            session, definition, playerId, $$"""{"cellIndex":{{cellIndex}}}""");
 
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("клетка");
@@ -152,43 +115,31 @@ public class BingoHandlerTests : IDisposable
     [Fact]
     public async Task WithoutEnoughCells_IsRejected()
     {
-        (EventDefinition definition, EventSession session) = CreateEvent("""{"size":5,"cells":["1","2"]}""");
+        (EventDefinition definition, EventSession session, Guid playerId) =
+            await SeedEventAsync("""{"size":5,"cells":["1","2"]}""");
 
         SubmissionResult result = await _handler.HandleSubmissionAsync(
-            session, definition, Guid.NewGuid(), """{"cellIndex":0}""");
+            session, definition, playerId, """{"cellIndex":0}""");
 
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("25");
     }
 
     [Fact]
-    public async Task GetLiveData_CountsMarksAndPlayers()
+    public async Task PlayerData_SeparatesMarksFromConfirmedCells()
     {
         (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
         await SeedCellAsync(session.Id, playerId, 0);
         await SeedCellAsync(session.Id, playerId, 1);
 
-        JsonElement live = Json(await _handler.GetLiveDataAsync(session, definition));
+        BingoConfirmOutcome confirmed = await _bingo.ConfirmCellAsync(session.Id, 0);
+        confirmed.Success.Should().BeTrue();
 
-        live.GetProperty("markedCount").GetInt32().Should().Be(2);
-        live.GetProperty("playersCount").GetInt32().Should().Be(1);
-    }
+        JsonElement data = Json(await _handler.GetPlayerDataAsync(session, definition, playerId));
 
-    [Fact]
-    public async Task GetPlayerData_ReturnsMarksAndLines()
-    {
-        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
-
-        await SeedCellAsync(session.Id, playerId, 0);
-        await SeedCellAsync(session.Id, playerId, 1);
-
-        AssertPlayerData(await _handler.GetPlayerDataAsync(session, definition, playerId));
-    }
-
-    private static void AssertPlayerData(object? data)
-    {
-        System.Text.Json.JsonElement json = Json(data);
-        json.GetProperty("markedCells").GetArrayLength().Should().Be(2);
-        json.GetProperty("lines").GetInt32().Should().Be(0);
+        data.GetProperty("markedCells").EnumerateArray().Select(e => e.GetInt32())
+            .Should().BeEquivalentTo(new[] { 0, 1 });
+        data.GetProperty("confirmedCells").EnumerateArray().Select(e => e.GetInt32())
+            .Should().Equal(0);
     }
 }

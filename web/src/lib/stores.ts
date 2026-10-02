@@ -41,6 +41,9 @@ export const shopVersion = writable(0);
 // Подтверждённый админом фант: игрок сразу видит начисленные баллы
 export const dareConfirmed = writable<{ sessionId: string; playerId: string; points: number } | null>(null);
 
+// Админ подтвердил клетку бинго — карточки игроков обновляются
+export const bingoCellConfirmed = writable<{ sessionId: string; cellIndex: number; confirmedCount: number } | null>(null);
+
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
     toast.set({ message, type });
     setTimeout(() => toast.set(null), 3000);

@@ -590,7 +590,9 @@
                 </p>
             {:else if eventData?.type === 'bingo'}
                 <p class="muted">
-                    Отмечено клеток: {eventData.live?.markedCount ?? 0} · играют: {eventData.live?.playersCount ?? 0}
+                    Отмечено клеток: {eventData.live?.markedCount ?? 0}
+                    · подтверждено: {eventData.live?.confirmedCount ?? 0}
+                    · играют: {eventData.live?.playersCount ?? 0}
                 </p>
             {:else if eventData?.type === 'emoji_song'}
                 <div class="song-grid">

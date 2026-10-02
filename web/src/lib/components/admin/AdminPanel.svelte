@@ -10,6 +10,7 @@
     import ScreenTab from './ScreenTab.svelte';
     import ShopTab from './ShopTab.svelte';
     import DareTab from './DareTab.svelte';
+    import BingoTab from './BingoTab.svelte';
     import { user } from '../../stores';
     import { forceRefreshApp } from '../../pwa';
 
@@ -19,6 +20,7 @@
         { id: 'dashboard', label: '📊 Дашборд' },
         { id: 'events', label: '🎮 Ивенты' },
         { id: 'dare', label: '🎲 Фанты' },
+        { id: 'bingo', label: '🎯 Бинго' },
         { id: 'qr', label: '📷 QR-коды' },
         { id: 'grant', label: '💰 Начисление' },
         { id: 'leaderboard', label: '🏆 Лидерборд' },
@@ -78,6 +80,8 @@
             <EventsTab />
         {:else if activeTab === 'dare'}
             <DareTab />
+        {:else if activeTab === 'bingo'}
+            <BingoTab />
         {:else if activeTab === 'qr'}
             <QrTab />
         {:else if activeTab === 'grant'}
