@@ -1,6 +1,6 @@
 <script lang="ts">
     import { api } from '../api';
-    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, raffleDrawn } from '../stores';
+    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, bingoCellRejected, bingoLineAwarded, raffleDrawn } from '../stores';
     import { serverNow } from '../time';
     import { RAFFLE_SPIN_MS } from '../raffle';
     import { onMount } from 'svelte';
@@ -29,13 +29,19 @@
     let darePoints = 0;
     let confirmedDareApplied = false;
 
-    // Бинго
+    // Бинго: предсказания, подтверждения, отклонения и линии
     let bingoSize = 5;
     let bingoCells: string[] = [];
     let bingoMarked = new Set<number>();
-    let bingoConfirmed = new Set<number>();
+    let bingoPending = new Set<number>();
+    let bingoPredicted = new Set<number>();
+    let bingoLate = new Set<number>();
+    let bingoRejected = new Set<number>();
+    let bingoAllConfirmed = new Set<number>();
+    let bingoPendingCount = 0;
+    let bingoMaxPredictions = 3;
     let bingoLines = 0;
-    let bingoRefreshPending = false;
+    let bingoWonLines = 0;
 
     // Песни по эмодзи
     let songs: any[] = [];
@@ -100,14 +106,41 @@
         applyConfirmedDare($dareConfirmed.points);
     }
 
-    // Админ подтвердил клетку бинго — обновляем сетку и линии
+    // Админ подтвердил клетку бинго — обновляем сетку и линии.
+    // Обрабатываем каждое событие ровно один раз по ссылке на объект из стора:
+    // сбрасываемый флаг в условии снова запускал бы этот же блок (бесконечный цикл).
+    let handledBingoConfirm: any = null;
+
     $: if (event.type === 'bingo'
         && $bingoCellConfirmed
         && $bingoCellConfirmed.sessionId === event.sessionId
-        && !bingoRefreshPending) {
-        bingoRefreshPending = true;
+        && handledBingoConfirm !== $bingoCellConfirmed) {
+        handledBingoConfirm = $bingoCellConfirmed;
         showToast('✅ Ведущий подтвердил событие в бинго!', 'info');
-        void refreshBingoState().finally(() => (bingoRefreshPending = false));
+        void refreshBingoState();
+    }
+
+    // Админ отклонил клетку бинго — слот предсказания освобождён
+    let handledBingoReject: any = null;
+
+    $: if (event.type === 'bingo'
+        && $bingoCellRejected
+        && $bingoCellRejected.sessionId === event.sessionId
+        && handledBingoReject !== $bingoCellRejected) {
+        handledBingoReject = $bingoCellRejected;
+        showToast('🙅 Ведущий: этого события не было — слот предсказания освобождён', 'info');
+        void refreshBingoState();
+    }
+
+    // Разыграна линия бинго — бонус получил самый быстрый
+    let handledBingoLine: any = null;
+
+    $: if (event.type === 'bingo'
+        && $bingoLineAwarded
+        && $bingoLineAwarded.sessionId === event.sessionId
+        && handledBingoLine !== $bingoLineAwarded) {
+        handledBingoLine = $bingoLineAwarded;
+        handleBingoLineAwarded($bingoLineAwarded.lineAwards);
     }
 
     // Лототрон: победитель и уведомление — только после анимации колеса
@@ -233,28 +266,64 @@
     }
 
     async function markBingo(index: number) {
-        if (bingoMarked.has(index)) return;
+        if (isBingoCellLocked(index)) return;
 
         const result = await submit({ cellIndex: index });
         if (result?.data) {
             bingoMarked = new Set<number>(result.data.markedCells ?? []);
+            await refreshBingoState();
         }
     }
 
-    /** Состояние бинго: отметки, подтверждённые клетки и линии. */
+    /** Клетку нельзя отметить: уже отмечена, отклонена или исчерпан лимит предсказаний. */
+    function isBingoCellLocked(index: number): boolean {
+        if (bingoMarked.has(index) || bingoRejected.has(index)) return true;
+
+        const isConfirmed = bingoAllConfirmed.has(index);
+        return !isConfirmed && bingoPendingCount >= bingoMaxPredictions;
+    }
+
+    /** Состояние бинго: предсказания, подтверждения, отклонения и линии. */
     function applyBingoState(state: any): void {
         bingoSize = dataConfig.size ?? 5;
         bingoCells = dataConfig.cells ?? [];
         bingoMarked = new Set<number>(state?.markedCells ?? []);
-        bingoConfirmed = new Set<number>(state?.confirmedCells ?? []);
+        bingoPending = new Set<number>(state?.pendingCells ?? []);
+        bingoPredicted = new Set<number>(state?.predictionCells ?? state?.confirmedCells ?? []);
+        bingoLate = new Set<number>(state?.lateCells ?? []);
+        bingoRejected = new Set<number>(state?.rejectedCells ?? []);
+        bingoAllConfirmed = new Set<number>(state?.allConfirmedCells ?? []);
+        bingoPendingCount = state?.pendingCount ?? 0;
+        bingoMaxPredictions = state?.maxPredictions ?? 3;
         bingoLines = state?.lines ?? 0;
+        bingoWonLines = state?.wonLines ?? 0;
     }
 
-    async function refreshBingoState(): Promise<void> {
-        try {
-            const data = await api<any>(`/api/events/${event.sessionId}/data`);
-            applyBingoState(data.player ?? null);
-        } catch { /* обновимся при следующем действии */ }
+    function handleBingoLineAwarded(awards: { lineIndex: number; lineLabel: string; playerId: string; amount: number }[]): void {
+        const mine = awards.find((award) => award.playerId === $user?.userId);
+        if (mine) {
+            showToast(`🏆 Твоя линия «${mine.lineLabel}»! +${mine.amount}`, 'success');
+        }
+
+        void refreshBingoState();
+    }
+
+    // Параллельные обновления (подтверждение + линия + отметка) склеиваем в один запрос
+    let bingoRefreshInFlight: Promise<void> | null = null;
+
+    function refreshBingoState(): Promise<void> {
+        if (bingoRefreshInFlight) return bingoRefreshInFlight;
+
+        bingoRefreshInFlight = (async () => {
+            try {
+                const data = await api<any>(`/api/events/${event.sessionId}/data`);
+                applyBingoState(data.player ?? null);
+            } catch { /* обновимся при следующем действии */ } finally {
+                bingoRefreshInFlight = null;
+            }
+        })();
+
+        return bingoRefreshInFlight;
     }
 
     async function answerSong(index: number) {
@@ -379,14 +448,23 @@
                 {#each range(bingoSize * bingoSize) as i}
                     <button
                         class="bingo-cell"
-                        class:marked={bingoMarked.has(i) && !bingoConfirmed.has(i)}
-                        class:confirmed={bingoConfirmed.has(i)}
+                        class:pending={bingoPending.has(i)}
+                        class:hit={bingoPredicted.has(i)}
+                        class:late={bingoLate.has(i)}
+                        class:rejected={bingoRejected.has(i)}
+                        class:available={!bingoMarked.has(i) && !bingoRejected.has(i) && bingoAllConfirmed.has(i)}
+                        disabled={isBingoCellLocked(i)}
                         on:click={() => markBingo(i)}
                     >{bingoCells[i]}</button>
                 {/each}
             </div>
             <p class="event-counter">
-                Подтверждено клеток: {bingoConfirmed.size} · линий: {bingoLines}
+                Предсказания: {bingoPendingCount}/{bingoMaxPredictions} · линий: {bingoLines}
+                {bingoWonLines > 0 ? ` · выиграно: ${bingoWonLines}` : ''}
+            </p>
+            <p class="event-counter">
+                Отмечай события заранее — за сбывшееся предсказание дадут баллы. Подтверждённые клетки
+                можно отмечать без лимита, но баллов они не приносят.
             </p>
         {/if}
 

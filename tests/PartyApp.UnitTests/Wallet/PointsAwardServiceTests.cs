@@ -252,4 +252,110 @@ public class PointsAwardServiceTests : IDisposable
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
+
+    [Fact]
+    public async Task TransferAsync_MovesPointsAndWritesBothTransactions()
+    {
+        User sender = await SeedUserAsync("sender", walletBalance: 50);
+        User recipient = await SeedUserAsync("recipient", walletBalance: 10);
+
+        TransferOutcome? outcome = await _service.TransferAsync(sender.Id, recipient.Id, 20, "На такси");
+
+        outcome.Should().NotBeNull();
+        outcome!.SenderBalance.Should().Be(30);
+        outcome.RecipientBalance.Should().Be(30);
+
+        (await _host.Db.Wallets.AsNoTracking().SingleAsync(w => w.UserId == sender.Id)).Balance.Should().Be(30);
+        (await _host.Db.Wallets.AsNoTracking().SingleAsync(w => w.UserId == recipient.Id)).Balance.Should().Be(30);
+
+        List<WalletTransaction> transactions = await _host.Db.WalletTransactions.AsNoTracking().ToListAsync();
+        transactions.Should().HaveCount(2);
+
+        WalletTransaction outgoing = transactions.Single(t => t.Type == WalletTransactionType.TransferOut);
+        outgoing.Amount.Should().Be(-20);
+        outgoing.Description.Should().Be("Перевод игроку recipient: На такси");
+
+        WalletTransaction incoming = transactions.Single(t => t.Type == WalletTransactionType.TransferIn);
+        incoming.Amount.Should().Be(20);
+        incoming.Description.Should().Be("Перевод от sender: На такси");
+    }
+
+    [Fact]
+    public async Task TransferAsync_NotifiesBothSides()
+    {
+        User sender = await SeedUserAsync("sender", walletBalance: 50);
+        User recipient = await SeedUserAsync("recipient");
+
+        await _service.TransferAsync(sender.Id, recipient.Id, 15);
+
+        List<RecordingHubContext.HubCall> calls = _hub.CallsFor("BalanceUpdated").ToList();
+        calls.Should().HaveCount(2);
+        calls.Select(c => c.Target)
+            .Should().BeEquivalentTo($"user:{sender.Id}", $"user:{recipient.Id}");
+
+        _push.Calls.Should().HaveCount(2);
+        _push.Calls.Should().ContainSingle(c =>
+            c.UserIds != null && c.UserIds.Contains(sender.Id) && c.Message.Title == "−15 баллов");
+        _push.Calls.Should().ContainSingle(c =>
+            c.UserIds != null && c.UserIds.Contains(recipient.Id) && c.Message.Title == "⭐ +15 баллов");
+    }
+
+    [Fact]
+    public async Task TransferAsync_WithoutEnoughPoints_ReturnsNullAndKeepsBalances()
+    {
+        User sender = await SeedUserAsync("sender", walletBalance: 10);
+        User recipient = await SeedUserAsync("recipient", walletBalance: 5);
+
+        TransferOutcome? outcome = await _service.TransferAsync(sender.Id, recipient.Id, 11);
+
+        outcome.Should().BeNull();
+        (await _host.Db.Wallets.AsNoTracking().SingleAsync(w => w.UserId == sender.Id)).Balance.Should().Be(10);
+        (await _host.Db.Wallets.AsNoTracking().SingleAsync(w => w.UserId == recipient.Id)).Balance.Should().Be(5);
+        (await _host.Db.WalletTransactions.CountAsync()).Should().Be(0);
+        _hub.CallsFor("BalanceUpdated").Should().BeEmpty();
+        _push.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TransferAsync_RecipientWithoutWallet_CreatesIt()
+    {
+        User sender = await SeedUserAsync("sender", walletBalance: 40);
+        User recipient = await SeedUserAsync("recipient");
+
+        TransferOutcome? outcome = await _service.TransferAsync(sender.Id, recipient.Id, 25);
+
+        outcome!.RecipientBalance.Should().Be(25);
+        (await _host.Db.Wallets.AsNoTracking().SingleAsync(w => w.UserId == recipient.Id)).Balance.Should().Be(25);
+    }
+
+    [Fact]
+    public async Task TransferAsync_UnknownSender_ReturnsNull()
+    {
+        User recipient = await SeedUserAsync("recipient", walletBalance: 5);
+
+        TransferOutcome? outcome = await _service.TransferAsync(Guid.NewGuid(), recipient.Id, 5);
+
+        outcome.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TransferAsync_ToSelf_Throws()
+    {
+        User user = await SeedUserAsync(walletBalance: 10);
+
+        Func<Task> act = () => _service.TransferAsync(user.Id, user.Id, 5);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task TransferAsync_WithNonPositiveAmount_Throws()
+    {
+        User sender = await SeedUserAsync("sender", walletBalance: 10);
+        User recipient = await SeedUserAsync("recipient");
+
+        Func<Task> act = () => _service.TransferAsync(sender.Id, recipient.Id, 0);
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
 }

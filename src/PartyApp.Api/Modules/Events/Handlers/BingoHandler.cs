@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
@@ -6,9 +5,9 @@ using PartyApp.Infrastructure.Persistence;
 namespace PartyApp.Api.Modules.Events.Handlers;
 
 /// <summary>
-/// Обработчик ивента "bingo". Игроки отмечают клетки-предсказания;
-/// баллы начисляются только за клетки, которые админ подтвердил как
-/// реально случившиеся события (см. <see cref="BingoService"/>).
+/// Обработчик ивента "bingo". Игроки заранее отмечают клетки-предсказания
+/// (не больше maxPredictions одновременно), админ подтверждает реально
+/// случившиеся события и отклоняет те, которых не было (см. <see cref="BingoService"/>).
 /// </summary>
 public class BingoHandler : IEventHandler
 {
@@ -31,8 +30,9 @@ public class BingoHandler : IEventHandler
     public string DefaultConfigJson => """
         {
             "size": 5,
-            "pointsPerCell": 1,
+            "pointsPerCell": 5,
             "lineBonus": 10,
+            "maxPredictions": 3,
             "cells": [
                 "Именинник скажет тост", "Кто-то опрокинет напиток", "Прозвучит песня 2000-х", "Кто-то уснёт до полуночи", "Будет общее фото",
                 "Кто-то принесёт торт", "Будет спор о музыке", "Кто-то выйдет на улицу покурить", "Именинника обнимут 10 раз", "Кто-то расскажет историю из детства",
@@ -60,22 +60,53 @@ public class BingoHandler : IEventHandler
         if (cellIndex < 0 || cellIndex >= totalCells)
             return SubmissionResult.Fail("Неверная клетка");
 
-        HashSet<int> marked = await GetMarkedCellsAsync(session.Id, playerId, ct);
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        if (marked.Contains(cellIndex))
+        Dictionary<int, DateTime> marks = await BingoService.GetPlayerMarkTimesAsync(db, session.Id, playerId, ct);
+        HashSet<int> confirmed = await BingoService.GetConfirmedCellsAsync(db, session.Id, ct);
+        HashSet<int> rejected = await BingoService.GetRejectedCellsAsync(db, session.Id, ct);
+
+        if (marks.ContainsKey(cellIndex))
             return SubmissionResult.Fail("Уже отмечено");
 
-        marked.Add(cellIndex);
+        if (rejected.Contains(cellIndex))
+            return SubmissionResult.Fail("Ведущий отметил, что этого события не было");
+
+        bool isConfirmed = confirmed.Contains(cellIndex);
+        int pendingCount = marks.Keys.Count(cell => !confirmed.Contains(cell) && !rejected.Contains(cell));
+
+        if (!isConfirmed && pendingCount >= config.MaxPredictions)
+        {
+            return SubmissionResult.Fail(
+                $"Лимит предсказаний: {config.MaxPredictions}. Дождись, пока ведущий подтвердит или отклонит события");
+        }
 
         _logger.LogInformation(
-            "Bingo: player {PlayerId} marked cell {CellIndex} in session {SessionId}",
-            playerId, cellIndex, session.Id);
+            "Bingo: player {PlayerId} marked cell {CellIndex} in session {SessionId} (confirmed={Confirmed})",
+            playerId, cellIndex, session.Id, isConfirmed);
 
-        // Баллы не начисляем: их даст админ, когда подтвердит, что событие было
         return SubmissionResult.Ok(
             0,
-            "Отмечено! Ждём подтверждения ведущего",
-            new { markedCells = marked.OrderBy(i => i).ToArray() });
+            isConfirmed
+                ? "Отмечено. Баллы за такое предсказание не начисляются — событие уже подтвердили"
+                : "Предсказание принято! Ждём решения ведущего",
+            new
+            {
+                markedCells = marks.Keys.Append(cellIndex).OrderBy(i => i).ToArray(),
+                pendingCount = isConfirmed ? pendingCount : pendingCount + 1,
+                maxPredictions = config.MaxPredictions
+            });
+    }
+
+    /// <summary>После отметки проверяем, не закрыл ли игрок линию (см. BingoService).</summary>
+    public Task AfterSubmissionAsync(
+        EventSession session,
+        EventDefinition definition,
+        Guid playerId,
+        CancellationToken ct = default)
+    {
+        return _bingo.CheckLineAwardsAsync(session.Id, ct);
     }
 
     public Task<object?> GetLiveDataAsync(EventSession session, EventDefinition definition, CancellationToken ct = default)
@@ -90,27 +121,5 @@ public class BingoHandler : IEventHandler
         CancellationToken ct = default)
     {
         return _bingo.GetPlayerStateAsync(session.Id, playerId, ct);
-    }
-
-    private async Task<HashSet<int>> GetMarkedCellsAsync(Guid sessionId, Guid playerId, CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        List<string> payloads = await db.PlayerSubmissions
-            .Where(s => s.SessionId == sessionId && s.PlayerId == playerId)
-            .Select(s => s.PayloadJson)
-            .ToListAsync(ct);
-
-        var marked = new HashSet<int>();
-
-        foreach (string payloadJson in payloads)
-        {
-            int? cell = BingoService.ExtractCellIndex(payloadJson);
-            if (cell is not null)
-                marked.Add(cell.Value);
-        }
-
-        return marked;
     }
 }

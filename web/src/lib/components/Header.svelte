@@ -5,11 +5,13 @@
     import { disconnect } from '../signalr';
     import NotificationSettings from './NotificationSettings.svelte';
     import BalanceHistory from './BalanceHistory.svelte';
+    import TransferModal from './TransferModal.svelte';
 
     let showNotifButton = false;
     let notificationsEnabled = false;
     let showSettings = false;
     let showBalanceHistory = false;
+    let showTransfer = false;
 
     onMount(() => {
         const support = getPushSupport();
@@ -66,6 +68,12 @@
             </button>
         {/if}
         <button
+            class="transfer-btn"
+            on:click={() => (showTransfer = true)}
+            title="Перевести баллы"
+            aria-label="Перевести баллы"
+        >💸</button>
+        <button
             class="balance"
             on:click={() => (showBalanceHistory = true)}
             title="История баллов"
@@ -80,6 +88,7 @@
 
 <NotificationSettings open={showSettings} on:close={closeSettings} />
 <BalanceHistory open={showBalanceHistory} on:close={() => (showBalanceHistory = false)} />
+<TransferModal open={showTransfer} on:close={() => (showTransfer = false)} />
 
 <style>
     header {
@@ -140,6 +149,18 @@
     }
 
     .balance:hover { opacity: 0.75; }
+
+    .transfer-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 17px;
+        line-height: 1;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+
+    .transfer-btn:hover { opacity: 0.75; }
 
     .conn { font-size: 12px; }
 

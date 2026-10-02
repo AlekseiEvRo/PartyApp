@@ -44,6 +44,15 @@ export const dareConfirmed = writable<{ sessionId: string; playerId: string; poi
 // Админ подтвердил клетку бинго — карточки игроков обновляются
 export const bingoCellConfirmed = writable<{ sessionId: string; cellIndex: number; confirmedCount: number } | null>(null);
 
+// Админ отклонил клетку бинго — слоты предсказаний освободились
+export const bingoCellRejected = writable<{ sessionId: string; cellIndex: number; rejectedCount: number } | null>(null);
+
+// Разыграна линия бинго: бонус получил самый быстрый
+export const bingoLineAwarded = writable<{
+    sessionId: string;
+    lineAwards: { lineIndex: number; lineLabel: string; playerId: string; amount: number }[];
+} | null>(null);
+
 // Лототрон: победитель выбран — колесо на экране и карточки игроков обновляются
 export const raffleDrawn = writable<{
     sessionId: string;

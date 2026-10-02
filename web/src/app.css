@@ -178,19 +178,44 @@ img, svg, video { max-width: 100%; }
     transition: background 0.15s, color 0.15s;
 }
 
-.bingo-cell:hover:not(.marked):not(.confirmed) { border-color: var(--accent); }
+.bingo-cell:hover:not(:disabled) { border-color: var(--accent); }
 
-.bingo-cell.marked {
+.bingo-cell:disabled { cursor: default; }
+
+/* Предсказание ждёт решения ведущего */
+.bingo-cell.pending {
     background: var(--card-soft);
     color: #fff;
     border-color: var(--accent);
     cursor: default;
 }
 
-.bingo-cell.confirmed {
+/* Предсказание сбылось — баллы начислены */
+.bingo-cell.hit {
     background: var(--green);
     color: #fff;
     cursor: default;
+}
+
+/* Отметка после подтверждения — без баллов */
+.bingo-cell.late {
+    background: var(--card-soft);
+    color: var(--muted);
+    border-color: #555;
+    cursor: default;
+}
+
+/* Ведущий сказал, что события не было */
+.bingo-cell.rejected {
+    background: #2a1a1a;
+    color: #a07b7b;
+    text-decoration: line-through;
+    cursor: default;
+}
+
+/* Подтверждённая клетка без отметки — можно отметить для линии, но без баллов */
+.bingo-cell.available {
+    border: 1px dashed var(--green);
 }
 
 .song {

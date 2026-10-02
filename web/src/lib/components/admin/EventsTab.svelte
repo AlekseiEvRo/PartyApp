@@ -47,6 +47,8 @@
     let formIsActive = true;
     let configTouched = false;
     let configError = '';
+    // Бинго: удобное поле поверх ConfigJson (сам ключ хранится в конфиге)
+    let formMaxPredictions = 3;
 
     const typeLabels: Record<string, string> = {
         quick_checkin: 'Тост за именинника',
@@ -125,6 +127,61 @@
         return info ? formatJson(info.defaultConfigJson) : '{}';
     }
 
+    function readConfigObject(): Record<string, any> | null {
+        try {
+            const parsed = JSON.parse(formConfigJson || '{}');
+            if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return parsed;
+            }
+        } catch { /* невалидный JSON — поля не трогаем */ }
+        return null;
+    }
+
+    /**
+     * Подтягивает maxPredictions из ConfigJson в удобное поле.
+     * useDefault=true (открытие формы, смена типа) подставляет 3, если ключа нет;
+     * при ручном редактировании JSON значение не сбрасывается, если ключ убрали.
+     */
+    function syncBingoMaxPredictions(useDefault = false) {
+        const config = readConfigObject();
+        const value = Math.round(Number(config?.maxPredictions));
+
+        if (Number.isFinite(value) && value > 0) {
+            formMaxPredictions = value;
+        } else if (useDefault) {
+            formMaxPredictions = 3;
+        }
+    }
+
+    /** Переносит поле maxPredictions в ConfigJson перед сохранением. */
+    function applyBingoMaxPredictions(): boolean {
+        if (formType !== 'bingo') return true;
+
+        const config = readConfigObject();
+        if (!config) {
+            configError = 'Невалидный JSON';
+            return false;
+        }
+
+        const value = Math.round(Number(formMaxPredictions));
+        if (!Number.isFinite(value) || value < 1) {
+            configError = 'Лимит предсказаний должен быть больше 0';
+            return false;
+        }
+
+        const size = Number(config.size);
+        const maxAllowed = Number.isFinite(size) && size >= 3 && size <= 7 ? size * size : 25;
+        if (value > maxAllowed) {
+            configError = `Лимит предсказаний не может быть больше числа клеток (${maxAllowed})`;
+            return false;
+        }
+
+        config.maxPredictions = value;
+        formConfigJson = JSON.stringify(config, null, 2);
+        configError = '';
+        return true;
+    }
+
     function openCreateForm() {
         editingId = null;
         formType = types[0]?.type ?? '';
@@ -134,6 +191,7 @@
         formIsActive = true;
         configTouched = false;
         configError = '';
+        syncBingoMaxPredictions(true);
         formOpen = true;
     }
 
@@ -146,6 +204,7 @@
         formIsActive = definition.isActive;
         configTouched = true;
         configError = '';
+        syncBingoMaxPredictions(true);
         formOpen = true;
     }
 
@@ -159,11 +218,13 @@
         if (!editingId && !configTouched) {
             formConfigJson = defaultConfigFor(formType);
         }
+        syncBingoMaxPredictions(true);
     }
 
     function handleConfigInput() {
         configTouched = true;
         configError = '';
+        syncBingoMaxPredictions();
     }
 
     function formatConfig() {
@@ -193,6 +254,10 @@
     async function saveDefinition() {
         if (!formDisplayName.trim()) {
             showToast('Укажи название ивента', 'error');
+            return;
+        }
+        if (!applyBingoMaxPredictions()) {
+            showToast('Проверь настройки бинго', 'error');
             return;
         }
         if (!validateConfig()) {
@@ -307,6 +372,23 @@
             <input id="event-description" type="text" bind:value={formDescription}
                    placeholder="Что увидит игрок" />
         </div>
+
+        {#if formType === 'bingo'}
+            <div class="bingo-settings">
+                <h4>⚙️ Настройки бинго</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="bingo-max-predictions">Максимум предсказаний</label>
+                        <input id="bingo-max-predictions" type="number" min="1" max="25"
+                               bind:value={formMaxPredictions} />
+                        <p class="hint">
+                            Сколько неподтверждённых клеток игрок может отметить одновременно.
+                            Подтверждение или отклонение клетки освобождает слот. Максимум — число клеток поля.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        {/if}
 
         <div class="form-group">
             <label for="event-config">ConfigJson</label>
@@ -437,7 +519,7 @@
     .form-group { flex: 1; min-width: 220px; margin-bottom: 12px; }
     .form-group-small { flex: 0 0 auto; min-width: 80px; }
     .form-group label { display: block; margin-bottom: 6px; color: var(--muted, #aaa); font-size: 14px; }
-    .form-group input[type="text"], .form-group select, .form-group textarea {
+    .form-group input[type="text"], .form-group input[type="number"], .form-group select, .form-group textarea {
         width: 100%; padding: 10px; border-radius: 6px;
         border: 1px solid var(--border, #333); background: var(--bg, #0f0f23); color: #fff;
         font-family: inherit;
@@ -448,6 +530,19 @@
     }
     .form-group input[type="checkbox"] { width: auto; }
     .hint { color: var(--muted, #aaa); font-size: 12px; margin: 6px 0 0; }
+
+    .bingo-settings {
+        border: 1px dashed var(--border, #333);
+        border-radius: 8px;
+        padding: 12px 12px 0;
+        margin-bottom: 12px;
+    }
+
+    .bingo-settings h4 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        color: var(--accent, #f5a623);
+    }
     .error { color: var(--red, #e74c3c); font-size: 13px; margin: 6px 0 0; }
     .warning { color: var(--orange, #f39c12); font-size: 14px; margin: 0 0 12px; }
     .form-actions { display: flex; gap: 8px; flex-wrap: wrap; }

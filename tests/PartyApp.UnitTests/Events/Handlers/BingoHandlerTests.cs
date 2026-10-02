@@ -18,7 +18,7 @@ namespace PartyApp.UnitTests.Events.Handlers;
 public class BingoHandlerTests : IDisposable
 {
     private const string SmallConfig = """
-        {"size":3,"pointsPerCell":2,"lineBonus":10,"cells":["1","2","3","4","5","6","7","8","9"]}
+        {"size":3,"pointsPerCell":2,"lineBonus":10,"maxPredictions":3,"cells":["1","2","3","4","5","6","7","8","9"]}
         """;
 
     private readonly IPointsAwardService _award = Substitute.For<IPointsAwardService>();
@@ -77,10 +77,11 @@ public class BingoHandlerTests : IDisposable
 
         result.Success.Should().BeTrue();
         result.PointsAwarded.Should().Be(0); // баллы — только после подтверждения админом
-        result.Message.Should().Contain("подтверждения");
+        result.Message.Should().Contain("Предсказание");
 
         Json(result.Data).GetProperty("markedCells").EnumerateArray()
             .Select(e => e.GetInt32()).Should().Equal(0);
+        Json(result.Data).GetProperty("pendingCount").GetInt32().Should().Be(1);
 
         await _award.DidNotReceiveWithAnyArgs().AwardAsync(default, default, default!, default, default, default);
     }
@@ -126,6 +127,78 @@ public class BingoHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task PredictionLimit_BlocksExtraUnconfirmedMarks()
+    {
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        await SeedCellAsync(session.Id, playerId, 0);
+        await SeedCellAsync(session.Id, playerId, 1);
+        await SeedCellAsync(session.Id, playerId, 2);
+
+        SubmissionResult blocked = await _handler.HandleSubmissionAsync(
+            session, definition, playerId, """{"cellIndex":3}""");
+
+        blocked.Success.Should().BeFalse();
+        blocked.Message.Should().Contain("Лимит предсказаний");
+    }
+
+    [Fact]
+    public async Task RejectedCell_FreesPredictionSlot()
+    {
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        await SeedCellAsync(session.Id, playerId, 0);
+        await SeedCellAsync(session.Id, playerId, 1);
+        await SeedCellAsync(session.Id, playerId, 2);
+
+        await _bingo.RejectCellAsync(session.Id, 0);
+
+        SubmissionResult result = await _handler.HandleSubmissionAsync(
+            session, definition, playerId, """{"cellIndex":3}""");
+
+        result.Success.Should().BeTrue();
+        Json(result.Data).GetProperty("pendingCount").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
+    public async Task ConfirmedCell_DoesNotConsumeLimitAndGivesNoPoints()
+    {
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        await SeedCellAsync(session.Id, playerId, 0);
+        await SeedCellAsync(session.Id, playerId, 1);
+        await SeedCellAsync(session.Id, playerId, 2);
+
+        // Пустую клетку 8 админ подтвердил заранее
+        await _bingo.ConfirmCellAsync(session.Id, 8);
+
+        // Поздняя отметка подтверждённой клетки проходит и не расходует слот
+        SubmissionResult late = await _handler.HandleSubmissionAsync(
+            session, definition, playerId, """{"cellIndex":8}""");
+
+        late.Success.Should().BeTrue();
+        late.Message.Should().Contain("не начисляются");
+        Json(late.Data).GetProperty("pendingCount").GetInt32().Should().Be(3);
+
+        // Свободных слотов по-прежнему нет: четвёртое предсказание не проходит
+        SubmissionResult blocked = await _handler.HandleSubmissionAsync(
+            session, definition, playerId, """{"cellIndex":3}""");
+
+        blocked.Success.Should().BeFalse();
+        blocked.Message.Should().Contain("Лимит предсказаний");
+    }
+
+    [Fact]
+    public async Task RejectedCell_CannotBeMarked()
+    {
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        await _bingo.RejectCellAsync(session.Id, 0);
+
+        SubmissionResult result = await _handler.HandleSubmissionAsync(
+            session, definition, playerId, """{"cellIndex":0}""");
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("не было");
+    }
+
+    [Fact]
     public async Task PlayerData_SeparatesMarksFromConfirmedCells()
     {
         (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
@@ -141,5 +214,7 @@ public class BingoHandlerTests : IDisposable
             .Should().BeEquivalentTo(new[] { 0, 1 });
         data.GetProperty("confirmedCells").EnumerateArray().Select(e => e.GetInt32())
             .Should().Equal(0);
+        data.GetProperty("pendingCells").EnumerateArray().Select(e => e.GetInt32())
+            .Should().Equal(1);
     }
 }

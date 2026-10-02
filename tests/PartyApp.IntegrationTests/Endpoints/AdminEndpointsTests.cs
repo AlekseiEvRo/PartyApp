@@ -242,5 +242,77 @@ public class AdminEndpointsTests : IClassFixture<PartyAppFactory>
         session.GetProperty("submissionCount").GetInt32().Should().Be(0);
     }
 
+    [Fact]
+    public async Task PlayerTransactions_AsPlayer_ReturnsForbidden()
+    {
+        TestUser player = await _api.RegisterAsync();
+        _api.Authorize(player);
+
+        HttpResponseMessage response = await _api.Client.GetAsync($"/api/admin/players/{player.Id}/transactions");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task PlayerTransactions_AsAdmin_ReturnsHistoryNewestFirst()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        _api.Authorize(admin);
+        await GrantAsync(player.Id, 50, "За тост");
+
+        HttpResponseMessage response = await _api.Client.GetAsync($"/api/admin/players/{player.Id}/transactions");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement json = await PartyAppApi.ReadJsonAsync(response);
+        json.GetProperty("total").GetInt32().Should().Be(2);
+        json.GetProperty("player").GetProperty("displayName").GetString().Should().Be(player.DisplayName);
+
+        JsonElement newest = json.GetProperty("items")[0];
+        newest.GetProperty("amount").GetInt32().Should().Be(50);
+        newest.GetProperty("type").GetString().Should().Be("AdminGrant");
+        newest.GetProperty("description").GetString().Should().Be("За тост");
+
+        JsonElement oldest = json.GetProperty("items")[1];
+        oldest.GetProperty("description").GetString().Should().Be("Приветственный бонус");
+    }
+
+    [Fact]
+    public async Task PlayerTransactions_UnknownPlayer_ReturnsNotFound()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        _api.Authorize(admin);
+
+        HttpResponseMessage response = await _api.Client.GetAsync($"/api/admin/players/{Guid.NewGuid()}/transactions");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task PlayerTransactions_WithoutWallet_ReturnsEmpty()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        await _factory.DbAsync(async db =>
+        {
+            await db.Wallets.Where(w => w.UserId == player.Id).ExecuteDeleteAsync();
+        });
+        _api.Authorize(admin);
+
+        HttpResponseMessage response = await _api.Client.GetAsync($"/api/admin/players/{player.Id}/transactions");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement json = await PartyAppApi.ReadJsonAsync(response);
+        json.GetProperty("total").GetInt32().Should().Be(0);
+        json.GetProperty("items").GetArrayLength().Should().Be(0);
+
+        // Список игроков тоже не должен падать без кошелька
+        HttpResponseMessage playersResponse = await _api.Client.GetAsync("/api/admin/players");
+        playersResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement players = await PartyAppApi.ReadJsonAsync(playersResponse);
+        players.EnumerateArray().Single(p => p.GetProperty("id").GetGuid() == player.Id)
+            .GetProperty("balance").GetInt32().Should().Be(0);
+    }
+
     private sealed record WalletTransactionDto(int Amount, WalletTransactionType Type, string Description, Guid? RelatedSessionId);
 }

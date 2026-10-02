@@ -77,7 +77,7 @@ public class BingoEndpointsTests : IDisposable
         confirm.StatusCode.Should().Be(HttpStatusCode.OK);
         (await PartyAppApi.ReadJsonAsync(confirm)).GetProperty("awardedPlayers").GetInt32().Should().Be(1);
 
-        (await _api.GetBalanceAsync(player)).Should().Be(101); // pointsPerCell из сида
+        (await _api.GetBalanceAsync(player)).Should().Be(105); // pointsPerCell из сида
 
         // Повторно подтвердить нельзя
         _api.Authorize(admin);
@@ -91,5 +91,91 @@ public class BingoEndpointsTests : IDisposable
         data.GetProperty("player").GetProperty("confirmedCells").EnumerateArray()
             .Select(e => e.GetInt32()).Should().Equal(0);
         data.GetProperty("player").GetProperty("lines").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task MarkThenConfirm_LineBonusGoesToFastestAndLateMarksGetNothing()
+    {
+        (Guid sessionId, TestUser admin) = await StartBingoAsync();
+        TestUser fast = await _api.RegisterAsync();
+        TestUser late = await _api.RegisterAsync();
+
+        async Task SubmitAsync(TestUser user, int cellIndex)
+        {
+            _api.Authorize(user);
+            HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+                $"/api/events/{sessionId}/submit", new { payloadJson = $$"""{"cellIndex":{{cellIndex}}}""" });
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // Быстрый предсказывает первые 3 клетки (лимит конкурса — 3)
+        await SubmitAsync(fast, 0);
+        await SubmitAsync(fast, 1);
+        await SubmitAsync(fast, 2);
+
+        _api.Authorize(admin);
+        foreach (int cell in new[] { 0, 1, 2 })
+        {
+            (await _api.Client.PostAsync($"/api/events/bingo/{sessionId}/cells/{cell}/confirm", null))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // Слоты освободились — быстрый дособирает линию
+        await SubmitAsync(fast, 3);
+        await SubmitAsync(fast, 4);
+
+        // Медленный отмечает уже подтверждённые клетки — баллов это не приносит
+        await SubmitAsync(late, 0);
+        await SubmitAsync(late, 1);
+        await SubmitAsync(late, 2);
+
+        _api.Authorize(admin);
+        foreach (int cell in new[] { 3, 4 })
+        {
+            (await _api.Client.PostAsync($"/api/events/bingo/{sessionId}/cells/{cell}/confirm", null))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // 5 предсказаний × 5 баллов + бонус за линию 10 самому быстрому
+        (await _api.GetBalanceAsync(fast)).Should().Be(135);
+        (await _api.GetBalanceAsync(late)).Should().Be(100);
+
+        _api.Authorize(admin);
+        JsonElement adminState = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync($"/api/events/bingo/{sessionId}"));
+        JsonElement lineAward = adminState.GetProperty("lineAwards")[0];
+        lineAward.GetProperty("playerId").GetGuid().Should().Be(fast.Id);
+        lineAward.GetProperty("amount").GetInt32().Should().Be(10);
+        lineAward.GetProperty("lineLabel").GetString().Should().Be("Ряд 1");
+    }
+
+    [Fact]
+    public async Task AdminRejectsCell_FreesPredictionAndBlocksConfirm()
+    {
+        (Guid sessionId, TestUser admin) = await StartBingoAsync();
+        TestUser player = await _api.RegisterAsync();
+
+        _api.Authorize(player);
+        (await _api.Client.PostAsJsonAsync(
+                $"/api/events/{sessionId}/submit", new { payloadJson = """{"cellIndex":0}""" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _api.Authorize(admin);
+        HttpResponseMessage reject = await _api.Client.PostAsync(
+            $"/api/events/bingo/{sessionId}/cells/0/reject", null);
+        reject.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(reject)).GetProperty("freedPredictions").GetInt32().Should().Be(1);
+
+        // Отклонённую клетку нельзя подтвердить
+        (await _api.Client.PostAsync($"/api/events/bingo/{sessionId}/cells/0/confirm", null)).StatusCode
+            .Should().Be(HttpStatusCode.Conflict);
+
+        // Игрок видит отклонение, слот предсказания свободен
+        _api.Authorize(player);
+        JsonElement data = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync($"/api/events/{sessionId}/data"));
+        data.GetProperty("player").GetProperty("rejectedCells").EnumerateArray()
+            .Select(e => e.GetInt32()).Should().Equal(0);
+        data.GetProperty("player").GetProperty("pendingCount").GetInt32().Should().Be(0);
     }
 }

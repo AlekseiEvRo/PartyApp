@@ -13,6 +13,8 @@ import {
     shopVersion,
     dareConfirmed,
     bingoCellConfirmed,
+    bingoCellRejected,
+    bingoLineAwarded,
     raffleDrawn
 } from './stores';
 import { getToken } from './api';
@@ -126,6 +128,17 @@ export async function connect(): Promise<void> {
 
     connection.on('BingoCellConfirmed', (data: { sessionId: string; cellIndex: number; confirmedCount: number }) => {
         bingoCellConfirmed.set(data);
+    });
+
+    connection.on('BingoCellRejected', (data: { sessionId: string; cellIndex: number; rejectedCount: number }) => {
+        bingoCellRejected.set(data);
+    });
+
+    connection.on('BingoLineAwarded', (data: {
+        sessionId: string;
+        lineAwards: { lineIndex: number; lineLabel: string; playerId: string; amount: number }[];
+    }) => {
+        bingoLineAwarded.set(data);
     });
 
     connection.on('RaffleDrawn', (data: {

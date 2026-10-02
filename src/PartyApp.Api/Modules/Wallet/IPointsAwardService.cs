@@ -33,6 +33,19 @@ public interface IPointsAwardService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Переводит баллы от одного игрока другому: одной транзакцией БД атомарно
+    /// списывает у отправителя (не уходя в минус) и начисляет получателю, пишет
+    /// две транзакции TransferOut/TransferIn. Возвращает новые балансы обоих
+    /// или null, если кошелька/баллов у отправителя не хватает.
+    /// </summary>
+    Task<TransferOutcome?> TransferAsync(
+        Guid fromUserId,
+        Guid toUserId,
+        int amount,
+        string? comment = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Сообщает клиенту и push-ом, что баланс изменился.
     /// Вызывается отдельно, если кошелёк сохранён в общем DbContext вызывающего кода.
     /// </summary>
@@ -43,3 +56,6 @@ public interface IPointsAwardService
         string description,
         CancellationToken ct = default);
 }
+
+/// <summary>Новые балансы отправителя и получателя после перевода.</summary>
+public record TransferOutcome(int SenderBalance, int RecipientBalance);

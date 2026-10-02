@@ -132,4 +132,112 @@ public class WalletEndpointsTests : IClassFixture<PartyAppFactory>
             .Select(i => i.GetProperty("id").GetGuid()).ToArray();
         page1Ids.Should().NotIntersectWith(page2Ids);
     }
+
+    [Fact]
+    public async Task Players_ReturnsEveryoneExceptCurrentUser()
+    {
+        TestUser me = await _api.RegisterAsync();
+        TestUser other = await _api.RegisterAsync();
+
+        _api.Authorize(me);
+        HttpResponseMessage response = await _api.Client.GetAsync("/api/wallet/players");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        List<JsonElement> players = (await PartyAppApi.ReadJsonAsync(response)).EnumerateArray().ToList();
+        players.Select(p => p.GetProperty("id").GetGuid()).Should().Contain(other.Id).And.NotContain(me.Id);
+        players.Select(p => p.GetProperty("displayName").GetString()).Should().Contain(other.DisplayName);
+    }
+
+    [Fact]
+    public async Task Transfer_MovesPointsAndWritesBothHistories()
+    {
+        TestUser sender = await _api.RegisterAsync();
+        TestUser recipient = await _api.RegisterAsync();
+        _factory.Push.Clear();
+
+        _api.Authorize(sender);
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/wallet/transfer", new { recipientId = recipient.Id, amount = 30, comment = "На такси" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement json = await PartyAppApi.ReadJsonAsync(response);
+        json.GetProperty("newBalance").GetInt32().Should().Be(70);
+        json.GetProperty("recipientBalance").GetInt32().Should().Be(130);
+
+        (await _api.GetBalanceAsync(sender)).Should().Be(70);
+        (await _api.GetBalanceAsync(recipient)).Should().Be(130);
+
+        _api.Authorize(sender);
+        JsonElement senderHistory = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync("/api/wallet/transactions"));
+        JsonElement outgoing = senderHistory.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("type").GetString() == "TransferOut");
+        outgoing.GetProperty("amount").GetInt32().Should().Be(-30);
+        outgoing.GetProperty("description").GetString()
+            .Should().Be($"Перевод игроку {recipient.DisplayName}: На такси");
+
+        _api.Authorize(recipient);
+        JsonElement recipientHistory = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync("/api/wallet/transactions"));
+        JsonElement incoming = recipientHistory.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("type").GetString() == "TransferIn");
+        incoming.GetProperty("amount").GetInt32().Should().Be(30);
+        incoming.GetProperty("description").GetString()
+            .Should().Be($"Перевод от {sender.DisplayName}: На такси");
+
+        PushCall senderPush = _factory.Push.Calls.Single(c => c.UserIds != null && c.UserIds.Contains(sender.Id));
+        senderPush.Message.Title.Should().Be("−30 баллов");
+        PushCall recipientPush = _factory.Push.Calls.Single(c => c.UserIds != null && c.UserIds.Contains(recipient.Id));
+        recipientPush.Message.Title.Should().Be("⭐ +30 баллов");
+    }
+
+    [Fact]
+    public async Task Transfer_MoreThanBalance_ReturnsBadRequest()
+    {
+        TestUser sender = await _api.RegisterAsync();
+        TestUser recipient = await _api.RegisterAsync();
+
+        _api.Authorize(sender);
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/wallet/transfer", new { recipientId = recipient.Id, amount = 101 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await PartyAppApi.ReadJsonAsync(response)).GetProperty("error").GetString()
+            .Should().Be("Недостаточно баллов для перевода");
+    }
+
+    [Fact]
+    public async Task Transfer_ToSelf_ReturnsBadRequest()
+    {
+        TestUser user = await _api.RegisterAsync();
+        _api.Authorize(user);
+
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/wallet/transfer", new { recipientId = user.Id, amount = 5 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Transfer_UnknownRecipient_ReturnsNotFound()
+    {
+        TestUser user = await _api.RegisterAsync();
+        _api.Authorize(user);
+
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/wallet/transfer", new { recipientId = Guid.NewGuid(), amount = 5 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Transfer_WithoutToken_ReturnsUnauthorized()
+    {
+        using HttpClient client = _factory.CreateClient();
+
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/wallet/transfer", new { recipientId = Guid.NewGuid(), amount = 5 });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }
