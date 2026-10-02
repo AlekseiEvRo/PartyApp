@@ -19,7 +19,8 @@ public class TokenService : ITokenService
         Guid userId,
         string username,
         string displayName,
-        string role)
+        string role,
+        string securityStamp)
     {
         var issuer = _configuration["Jwt:Issuer"] ?? "party-app";
         var audience = _configuration["Jwt:Audience"] ?? "party-app-clients";
@@ -39,6 +40,7 @@ public class TokenService : ITokenService
             new("name", username),
             new("displayName", displayName),
             new("role", role),
+            new("stamp", securityStamp),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

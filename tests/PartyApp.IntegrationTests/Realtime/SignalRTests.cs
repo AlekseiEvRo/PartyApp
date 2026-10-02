@@ -508,4 +508,21 @@ public class SignalRTests : IDisposable
         payload.GetProperty("points").GetInt32().Should().Be(5);
         payload.GetProperty("sessionId").GetGuid().Should().Be(sessionId);
     }
+
+    [Fact]
+    public async Task SessionRevoked_IsDeliveredToKickedPlayer()
+    {
+        TestUser player = await _api.RegisterAsync();
+        TestUser admin = await _api.CreateAdminAsync();
+
+        await using HubConnection connection = await ConnectAsync(player);
+        Task<JsonElement> message = WaitForAsync(connection, "SessionRevoked");
+
+        _api.Authorize(admin);
+        HttpResponseMessage kick = await _api.Client.PostAsync($"/api/admin/players/{player.Id}/kick", null);
+        kick.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("reason").GetString().Should().Be("Сессия завершена администратором");
+    }
 }

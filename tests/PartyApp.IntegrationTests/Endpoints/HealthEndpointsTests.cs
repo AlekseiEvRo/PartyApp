@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 
 using FluentAssertions;
 
@@ -23,6 +24,8 @@ public class HealthEndpointsTests : IClassFixture<PartyAppFactory>
         HttpResponseMessage response = await client.GetAsync("/health");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await PartyAppApi.ReadJsonAsync(response)).GetProperty("status").GetString().Should().Be("ok");
+        JsonElement json = await PartyAppApi.ReadJsonAsync(response);
+        json.GetProperty("status").GetString().Should().Be("ok");
+        json.GetProperty("database").GetString().Should().Be("ok");
     }
 }

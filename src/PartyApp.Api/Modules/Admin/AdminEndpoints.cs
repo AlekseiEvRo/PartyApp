@@ -1,7 +1,11 @@
 ﻿using System.Security.Claims;
 
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
+using PartyApp.Api.Common.Security;
+using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
@@ -12,6 +16,7 @@ namespace PartyApp.Api.Modules.Admin;
 public static class AdminEndpoints
 {
     private const int MaxTransactionsPageSize = 100;
+    private const int MaxAuditPageSize = 200;
 
     public static IEndpointRouteBuilder MapAdminEndpoints(this IEndpointRouteBuilder app)
     {
@@ -31,12 +36,208 @@ public static class AdminEndpoints
                     u.Username,
                     u.DisplayName,
                     Role = u.Role.ToString(),
+                    u.IsActive,
                     Balance = u.Wallet != null ? u.Wallet.Balance : 0,
                     u.CreatedAt
                 })
                 .ToListAsync(ct);
 
             return Results.Ok(players);
+        });
+
+        // Изменение имени, роли и блокировки игрока.
+        // Смена роли/блокировка заодно отзывают все выданные игроку токены.
+        group.MapPatch("/players/{playerId:guid}", async (
+            Guid playerId,
+            UpdatePlayerRequest request,
+            ClaimsPrincipal admin,
+            AppDbContext db,
+            AdminAuditService audit,
+            IHubContext<PartyHub> hub,
+            CancellationToken ct) =>
+        {
+            User? player = await db.Users.SingleOrDefaultAsync(u => u.Id == playerId, ct);
+            if (player is null)
+                return Results.NotFound(new { error = "Игрок не найден" });
+
+            if (request.DisplayName is null && request.Role is null && request.IsActive is null)
+                return Results.BadRequest(new { error = "Нечего обновлять" });
+
+            Guid adminId = GetUserId(admin);
+            bool self = adminId == playerId;
+
+            string? newDisplayName = null;
+            if (request.DisplayName is not null)
+            {
+                newDisplayName = request.DisplayName.Trim();
+                if (newDisplayName.Length == 0)
+                    return Results.BadRequest(new { error = "Имя не может быть пустым" });
+                if (newDisplayName.Length > 50)
+                    return Results.BadRequest(new { error = "Имя не длиннее 50 символов" });
+            }
+
+            UserRole? newRole = null;
+            if (request.Role is not null)
+            {
+                string roleName = request.Role.Trim();
+                bool knownRole = Enum.GetNames<UserRole>()
+                    .Any(name => name.Equals(roleName, StringComparison.OrdinalIgnoreCase));
+
+                if (!knownRole)
+                    return Results.BadRequest(new { error = "Неизвестная роль" });
+
+                newRole = Enum.Parse<UserRole>(roleName, ignoreCase: true);
+
+                if (self && newRole != player.Role)
+                    return Results.BadRequest(new { error = "Нельзя менять собственную роль" });
+            }
+
+            bool? newIsActive = request.IsActive;
+            if (self && newIsActive == false)
+                return Results.BadRequest(new { error = "Нельзя заблокировать себя" });
+
+            bool losesAdmin = player.Role == UserRole.Admin && player.IsActive
+                && ((newRole.HasValue && newRole.Value != UserRole.Admin) || newIsActive == false);
+
+            if (losesAdmin && !await HasOtherActiveAdminAsync(db, playerId, ct))
+                return Results.BadRequest(new { error = "Нельзя оставить систему без администратора" });
+
+            bool revokeSessions = false;
+
+            if (newDisplayName is not null && newDisplayName != player.DisplayName)
+            {
+                audit.Record(adminId, "rename", playerId, $"{player.DisplayName} → {newDisplayName}");
+                player.DisplayName = newDisplayName;
+            }
+
+            if (newRole.HasValue && newRole.Value != player.Role)
+            {
+                audit.Record(adminId, "role_change", playerId, $"{player.Role} → {newRole.Value}");
+                player.Role = newRole.Value;
+                revokeSessions = true;
+            }
+
+            if (newIsActive.HasValue && newIsActive.Value != player.IsActive)
+            {
+                audit.Record(adminId, newIsActive.Value ? "unban" : "ban", playerId);
+                player.IsActive = newIsActive.Value;
+                revokeSessions = true;
+            }
+
+            if (revokeSessions)
+                player.SecurityStamp = NewSecurityStamp();
+
+            await db.SaveChangesAsync(ct);
+
+            if (revokeSessions)
+            {
+                string reason = player.IsActive
+                    ? "Роль изменена — войди заново"
+                    : "Аккаунт заблокирован администратором";
+                await NotifySessionRevokedAsync(hub, playerId, reason);
+            }
+
+            int balance = await db.Wallets.AsNoTracking()
+                .Where(w => w.UserId == playerId)
+                .Select(w => w.Balance)
+                .SingleOrDefaultAsync(ct);
+
+            return Results.Ok(new
+            {
+                player.Id,
+                player.Username,
+                player.DisplayName,
+                Role = player.Role.ToString(),
+                player.IsActive,
+                Balance = balance
+            });
+        });
+
+        // Кик: игрок остаётся активным, но все его токены перестают работать
+        group.MapPost("/players/{playerId:guid}/kick", async (
+            Guid playerId,
+            ClaimsPrincipal admin,
+            AppDbContext db,
+            AdminAuditService audit,
+            IHubContext<PartyHub> hub,
+            CancellationToken ct) =>
+        {
+            User? player = await db.Users.SingleOrDefaultAsync(u => u.Id == playerId, ct);
+            if (player is null)
+                return Results.NotFound(new { error = "Игрок не найден" });
+
+            Guid adminId = GetUserId(admin);
+            if (adminId == playerId)
+                return Results.BadRequest(new { error = "Нельзя кикнуть себя" });
+
+            player.SecurityStamp = NewSecurityStamp();
+            audit.Record(adminId, "kick", playerId);
+            await db.SaveChangesAsync(ct);
+
+            await NotifySessionRevokedAsync(hub, playerId, "Сессия завершена администратором");
+            return Results.Ok(new { success = true });
+        });
+
+        // Сброс пароля: админ получает новый пароль и передаёт его игроку.
+        // Старый пароль и все выданные токены сразу перестают работать.
+        group.MapPost("/players/{playerId:guid}/reset-password", async (
+            Guid playerId,
+            ClaimsPrincipal admin,
+            AppDbContext db,
+            AdminAuditService audit,
+            IPasswordHasher<User> passwordHasher,
+            IHubContext<PartyHub> hub,
+            CancellationToken ct) =>
+        {
+            User? player = await db.Users.SingleOrDefaultAsync(u => u.Id == playerId, ct);
+            if (player is null)
+                return Results.NotFound(new { error = "Игрок не найден" });
+
+            Guid adminId = GetUserId(admin);
+            if (adminId == playerId)
+                return Results.BadRequest(new { error = "Нельзя сбросить пароль себе" });
+
+            string password = PasswordGenerator.Generate();
+            player.PasswordHash = passwordHasher.HashPassword(player, password);
+            player.SecurityStamp = NewSecurityStamp();
+
+            audit.Record(adminId, "password_reset", playerId);
+            await db.SaveChangesAsync(ct);
+
+            await NotifySessionRevokedAsync(hub, playerId, "Пароль изменён администратором");
+            return Results.Ok(new { password });
+        });
+
+        // Журнал действий администраторов
+        group.MapGet("/audit", async (
+            AppDbContext db,
+            int? limit,
+            int? offset,
+            CancellationToken ct) =>
+        {
+            int take = Math.Clamp(limit ?? 50, 1, MaxAuditPageSize);
+            int skip = Math.Max(offset ?? 0, 0);
+
+            var query = db.AdminAuditLogs.AsNoTracking();
+
+            int total = await query.CountAsync(ct);
+            var items = await query
+                .OrderByDescending(a => a.CreatedAt)
+                .Skip(skip)
+                .Take(take)
+                .Select(a => new
+                {
+                    a.Id,
+                    AdminName = a.Admin.DisplayName,
+                    a.TargetUserId,
+                    TargetName = a.TargetUser != null ? a.TargetUser.DisplayName : null,
+                    a.Action,
+                    a.Details,
+                    a.CreatedAt
+                })
+                .ToListAsync(ct);
+
+            return Results.Ok(new { items, total });
         });
 
         // История транзакций конкретного игрока (новые сверху)
@@ -115,6 +316,7 @@ public static class AdminEndpoints
             ClaimsPrincipal admin,
             AppDbContext db,
             IPointsAwardService pointsAward,
+            AdminAuditService audit,
             CancellationToken ct) =>
         {
             var playerId = request.PlayerId;
@@ -136,6 +338,13 @@ public static class AdminEndpoints
                 : WalletTransactionType.AdminDeduct;
 
             var newBalance = await pointsAward.AwardAsync(playerId, amount, reason, transactionType, ct: ct);
+
+            audit.Record(
+                GetUserId(admin),
+                amount > 0 ? "grant_points" : "deduct_points",
+                playerId,
+                $"{amount:+#;-#;0} · {reason}");
+            await db.SaveChangesAsync(ct);
 
             return Results.Ok(new
             {
@@ -173,6 +382,31 @@ public static class AdminEndpoints
 
         return app;
     }
+
+    private static Guid GetUserId(ClaimsPrincipal user)
+    {
+        return Guid.Parse(user.FindFirst("sub")!.Value);
+    }
+
+    private static string NewSecurityStamp()
+    {
+        return Guid.NewGuid().ToString("N");
+    }
+
+    private static Task<bool> HasOtherActiveAdminAsync(AppDbContext db, Guid excludeUserId, CancellationToken ct)
+    {
+        return db.Users.AnyAsync(
+            u => u.Id != excludeUserId && u.Role == UserRole.Admin && u.IsActive,
+            ct);
+    }
+
+    /// <summary>Сообщает клиенту игрока, что его сессия отозвана (кик, бан, смена роли).</summary>
+    private static Task NotifySessionRevokedAsync(IHubContext<PartyHub> hub, Guid playerId, string reason)
+    {
+        return hub.Clients.User(playerId.ToString()).SendAsync("SessionRevoked", new { reason });
+    }
 }
 
 public record GrantPointsRequest(Guid PlayerId, int Amount, string? Reason);
+
+public record UpdatePlayerRequest(string? DisplayName, string? Role, bool? IsActive);

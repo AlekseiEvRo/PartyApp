@@ -30,6 +30,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<BingoLineAward> BingoLineAwards => Set<BingoLineAward>();
     public DbSet<RaffleDraw> RaffleDraws => Set<RaffleDraw>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+    public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

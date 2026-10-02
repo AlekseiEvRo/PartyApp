@@ -12,6 +12,7 @@
     import DareTab from './DareTab.svelte';
     import BingoTab from './BingoTab.svelte';
     import RaffleTab from './RaffleTab.svelte';
+    import AuditTab from './AuditTab.svelte';
     import { user } from '../../stores';
     import { forceRefreshApp } from '../../pwa';
 
@@ -30,7 +31,8 @@
         { id: 'photos', label: '📸 Фото' },
         { id: 'wishes', label: '💌 Пожелания' },
         { id: 'shop', label: '🛍 Магазин' },
-        { id: 'screen', label: '🖥 Экран' }
+        { id: 'screen', label: '🖥 Экран' },
+        { id: 'audit', label: '📜 Журнал' }
     ];
 
     function logout() {
@@ -102,6 +104,8 @@
             <ShopTab />
         {:else if activeTab === 'screen'}
             <ScreenTab />
+        {:else if activeTab === 'audit'}
+            <AuditTab />
         {/if}
     </div>
 </div>

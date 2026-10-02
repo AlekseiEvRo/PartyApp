@@ -57,12 +57,15 @@ nssm set PartyAppApi AppDirectory C:\PartyApp\api
 nssm start PartyAppApi
 ```
 
-Важно: `App_Data` (база, VAPID-ключи) будет создана в рабочей папке приложения
-(`C:\PartyApp\api\App_Data`). Не удаляй её — вместе с `vapid.json` пропадут push-подписки.
+Важно: `App_Data` (база, VAPID- и JWT-ключи, логи, бэкапы) будет создана в рабочей
+папке приложения (`C:\PartyApp\api\App_Data`). Не удаляй её — вместе с `vapid.json`
+пропадут push-подписки, а с `jwt.json` все пользователи будут разлогинены.
+Автобэкапы складываются в `App_Data/backups` (хранятся 5 последних); свежую копию
+можно скачать в админке: «📊 Дашборд» → «💾 Скачать бэкап».
 
 ## 5. Проверка после запуска
 
-1. `https://party-app.online/health` → `{"status":"ok"}`.
+1. `https://party-app.online/health` → `{"status":"ok","database":"ok"}`.
 2. `https://party-app.online/manifest.webmanifest` открывается.
 3. На iPhone: Safari → «Поделиться» → «На экран "Домой"» → запуск с иконки.
 4. В приложении нажать 🔔 → «Включить уведомления» → «Отправить тестовое уведомление».

@@ -175,6 +175,7 @@ public class AuthServiceTests : IDisposable
         jwt.Claims.Single(c => c.Type == "name").Value.Should().Be("alice");
         jwt.Claims.Single(c => c.Type == "displayName").Value.Should().Be("Алиса");
         jwt.Claims.Single(c => c.Type == "role").Value.Should().Be("Player");
+        jwt.Claims.Single(c => c.Type == "stamp").Value.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -219,6 +220,21 @@ public class AuthServiceTests : IDisposable
 
         await act.Should().ThrowAsync<AuthException>()
             .WithMessage("Неверный логин или пароль");
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithInactiveUser_Throws()
+    {
+        await _service.RegisterAsync(Register());
+
+        User user = await _host.Db.Users.SingleAsync();
+        user.IsActive = false;
+        await _host.Db.SaveChangesAsync();
+
+        Func<Task> act = () => _service.LoginAsync(new LoginRequest("alice", "secret123"));
+
+        await act.Should().ThrowAsync<AuthException>()
+            .WithMessage("Аккаунт заблокирован администратором");
     }
 
     [Fact]
