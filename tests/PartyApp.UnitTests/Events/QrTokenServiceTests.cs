@@ -90,8 +90,12 @@ public class QrTokenServiceTests : IDisposable
     [Fact]
     public async Task GetTokensAsync_MapsAllFieldsAndOrdersByCreatedAt()
     {
+        User player = TestData.User("alice");
+        _host.Db.Users.Add(player);
+
         QrToken redeemed = TestData.QrToken("CODE11", points: 30);
         redeemed.RedeemedAt = DateTime.UtcNow;
+        redeemed.RedeemedById = player.Id;
         QrToken active = TestData.QrToken("CODE22", points: 10);
 
         active.CreatedAt = DateTime.UtcNow.AddMinutes(-10);
@@ -105,9 +109,60 @@ public class QrTokenServiceTests : IDisposable
         tokens[0].Points.Should().Be(10);
         tokens[0].IsRedeemed.Should().BeFalse();
         tokens[0].RedeemedAt.Should().BeNull();
+        tokens[0].RedeemedByName.Should().BeNull();
 
         tokens[1].Code.Should().Be("CODE11");
         tokens[1].IsRedeemed.Should().BeTrue();
         tokens[1].RedeemedAt.Should().NotBeNull();
+        tokens[1].RedeemedByName.Should().Be("alice");
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_OnEmptyDatabase_ReturnsZeros()
+    {
+        QrStatsDto stats = await _service.GetStatsAsync();
+
+        stats.Total.Should().Be(0);
+        stats.Redeemed.Should().Be(0);
+        stats.Remaining.Should().Be(0);
+        stats.Players.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_CountsTotalRedeemedAndGroupsByPlayer()
+    {
+        User alice = TestData.User("alice", displayName: "Алиса");
+        User bob = TestData.User("bob", displayName: "Боб");
+        _host.Db.Users.AddRange(alice, bob);
+
+        QrToken aliceFirst = TestData.QrToken("AAAA11", points: 10);
+        aliceFirst.RedeemedById = alice.Id;
+        aliceFirst.RedeemedAt = DateTime.UtcNow;
+
+        QrToken aliceSecond = TestData.QrToken("AAAA22", points: 10);
+        aliceSecond.RedeemedById = alice.Id;
+        aliceSecond.RedeemedAt = DateTime.UtcNow;
+
+        QrToken bobFirst = TestData.QrToken("BBBB11", points: 20);
+        bobFirst.RedeemedById = bob.Id;
+        bobFirst.RedeemedAt = DateTime.UtcNow;
+
+        QrToken available = TestData.QrToken("FREE11", points: 5);
+
+        _host.Db.QrTokens.AddRange(aliceFirst, aliceSecond, bobFirst, available);
+        await _host.Db.SaveChangesAsync();
+
+        QrStatsDto stats = await _service.GetStatsAsync();
+
+        stats.Total.Should().Be(4);
+        stats.Redeemed.Should().Be(3);
+        stats.Remaining.Should().Be(1);
+
+        stats.Players.Should().HaveCount(2);
+        stats.Players[0].PlayerId.Should().Be(alice.Id);
+        stats.Players[0].DisplayName.Should().Be("Алиса");
+        stats.Players[0].Count.Should().Be(2);
+        stats.Players[1].PlayerId.Should().Be(bob.Id);
+        stats.Players[1].Count.Should().Be(1);
     }
 }

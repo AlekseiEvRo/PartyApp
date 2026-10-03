@@ -143,7 +143,7 @@ builder.Services.AddAuthentication(options =>
 // Authorization + политика для админов
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin", "SuperAdmin"));
 });
 
 // === Rate limiting ===
@@ -220,6 +220,7 @@ builder.Services.AddScoped<BackupService>();
 builder.Services.AddSingleton<ScreenService>();
 builder.Services.AddSingleton<AuctionService>();
 builder.Services.AddHostedService<AuctionClosingService>();
+builder.Services.AddHostedService<EventClosingService>();
 builder.Services.AddHostedService<BackupBackgroundService>();
 builder.Services.AddSingleton<BingoService>();
 builder.Services.AddSingleton<RaffleService>();

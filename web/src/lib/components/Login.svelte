@@ -30,13 +30,15 @@
         role: data.role
       });
         // Редирект в зависимости от роли и текущего URL
-        const isAdminRoute = window.location.pathname.startsWith('/admin');
-        if (data.role === 'Admin' && isAdminRoute) {
-            // Остаёмся на /admin
+        const isAdminRoute = window.location.pathname.startsWith('/admin')
+            || window.location.pathname.startsWith('/screen');
+        const admin = data.role === 'Admin' || data.role === 'SuperAdmin';
+        if (admin && isAdminRoute) {
+            // Остаёмся на админском маршруте
             location.reload();
-        } else if (data.role === 'Admin' && !isAdminRoute) {
+        } else if (admin && !isAdminRoute) {
             // Админ зашёл через главную — оставляем на главной
-        } else if (data.role !== 'Admin' && isAdminRoute) {
+        } else if (!admin && isAdminRoute) {
             // Игрок пытается зайти в админку — редирект на главную
             window.location.href = '/';
         }

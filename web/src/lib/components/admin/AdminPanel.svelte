@@ -54,6 +54,7 @@
         <h1>🎉 PartyApp Админка</h1>
         <div class="header-actions">
             <a href="/" class="back-link">🎮 Режим игрока</a>
+            <a href="/screen" target="_blank" rel="noopener" class="tv-link">📺 Режим TV</a>
             <button
                 class="refresh-btn"
                 on:click={forceRefreshApp}
@@ -144,6 +145,18 @@
         transition: background 0.2s;
     }
     .back-link:hover { background: #2ecc71; }
+    .tv-link {
+        background: var(--blue, #3498db);
+        color: #fff;
+        text-decoration: none;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        white-space: nowrap;
+        transition: background 0.2s;
+    }
+    .tv-link:hover { background: #5dade2; }
     .refresh-btn {
         background: var(--accent, #f5a623);
         color: #12122e;

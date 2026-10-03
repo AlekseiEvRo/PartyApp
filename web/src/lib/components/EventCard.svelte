@@ -3,6 +3,7 @@
     import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, bingoCellRejected, bingoLineAwarded, raffleDrawn } from '../stores';
     import { serverNow } from '../time';
     import { RAFFLE_SPIN_MS } from '../raffle';
+    import { getPendingQrCode } from '../qr';
     import { onMount } from 'svelte';
 
     export let event: any;
@@ -63,6 +64,13 @@
     const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions', 'raffle'];
 
     onMount(async () => {
+        // Если код из QR-ссылки не активировался автоматически (например,
+        // не было сети), подставляем его — игрок отправит вручную
+        if (event.type === 'qr_scan') {
+            const pending = getPendingQrCode();
+            if (pending) input = pending;
+        }
+
         if (!dataTypes.includes(event.type)) return;
 
         try {

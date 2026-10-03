@@ -132,6 +132,68 @@ public class EventDefinitionsCrudTests : IClassFixture<PartyAppFactory>
     }
 
     [Fact]
+    public async Task Create_WithDuration_PersistsAndStartSetsEndsAt()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        _api.Authorize(admin);
+
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/events/definitions",
+            new
+            {
+                type = "quiz",
+                displayName = "Квиз на 5 минут",
+                description = (string?)null,
+                configJson = "{}",
+                durationMinutes = 5
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        JsonElement created = await PartyAppApi.ReadJsonAsync(response);
+        created.GetProperty("durationMinutes").GetInt32().Should().Be(5);
+        Guid id = created.GetProperty("id").GetGuid();
+
+        HttpResponseMessage start = await _api.Client.PostAsync($"/api/events/{id}/start", null);
+        start.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement started = await PartyAppApi.ReadJsonAsync(start);
+        started.GetProperty("endsAt").GetDateTime().Should()
+            .BeCloseTo(DateTime.UtcNow.AddMinutes(5), TimeSpan.FromSeconds(10));
+
+        Guid sessionId = started.GetProperty("sessionId").GetGuid();
+        JsonElement available = (await PartyAppApi.ReadJsonAsync(
+                await _api.Client.GetAsync("/api/events/available")))
+            .EnumerateArray()
+            .Single(e => e.GetProperty("sessionId").GetGuid() == sessionId);
+        available.GetProperty("endsAt").GetDateTime().Should()
+            .BeCloseTo(DateTime.UtcNow.AddMinutes(5), TimeSpan.FromSeconds(10));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(1441)]
+    public async Task Create_WithInvalidDuration_ReturnsBadRequest(int durationMinutes)
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        _api.Authorize(admin);
+
+        HttpResponseMessage response = await _api.Client.PostAsJsonAsync(
+            "/api/events/definitions",
+            new
+            {
+                type = "quiz",
+                displayName = "Квиз",
+                description = (string?)null,
+                configJson = "{}",
+                durationMinutes
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await PartyAppApi.ReadJsonAsync(response)).GetProperty("error").GetString()
+            .Should().Be("Длительность — от 1 до 1440 минут");
+    }
+
+    [Fact]
     public async Task Create_AsPlayer_ReturnsForbidden()
     {
         TestUser player = await _api.RegisterAsync();

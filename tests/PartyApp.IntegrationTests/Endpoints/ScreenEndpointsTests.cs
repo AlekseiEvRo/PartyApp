@@ -251,4 +251,21 @@ public class ScreenEndpointsTests : IDisposable
         rotation.StatusCode.Should().Be(HttpStatusCode.OK);
         (await PartyAppApi.ReadJsonAsync(rotation)).GetProperty("mode").GetString().Should().Be("rotation");
     }
+
+    [Fact]
+    public async Task SetState_AcceptsQrAndSpyModes()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        _api.Authorize(admin);
+
+        HttpResponseMessage qr = await _api.Client.PostAsJsonAsync(
+            "/api/screen/state", new { mode = "qr" });
+        qr.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(qr)).GetProperty("mode").GetString().Should().Be("qr");
+
+        HttpResponseMessage spy = await _api.Client.PostAsJsonAsync(
+            "/api/screen/state", new { mode = "spy" });
+        spy.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PartyAppApi.ReadJsonAsync(spy)).GetProperty("mode").GetString().Should().Be("spy");
+    }
 }

@@ -1,5 +1,7 @@
 ﻿using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
@@ -16,15 +18,18 @@ public class QrScanHandler : IEventHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IPointsAwardService _pointsAward;
+    private readonly IHubContext<PartyHub> _hub;
     private readonly ILogger<QrScanHandler> _logger;
 
     public QrScanHandler(
         IServiceScopeFactory scopeFactory,
         IPointsAwardService pointsAward,
+        IHubContext<PartyHub> hub,
         ILogger<QrScanHandler> logger)
     {
         _scopeFactory = scopeFactory;
         _pointsAward = pointsAward;
+        _hub = hub;
         _logger = logger;
     }
 
@@ -107,6 +112,14 @@ public class QrScanHandler : IEventHandler
             points,
             $"QR-код: {submittedCode}",
             ct);
+
+        // Большой экран и админка обновляют статистику QR без перезагрузки
+        await _hub.Clients.All.SendAsync("QrRedeemed", new
+        {
+            playerId,
+            code = submittedCode,
+            points
+        }, ct);
 
         _logger.LogInformation(
             "Player {PlayerId} redeemed QR token {Code} for {Points} points",

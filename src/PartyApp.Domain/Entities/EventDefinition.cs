@@ -12,6 +12,9 @@ public class EventDefinition: BaseEntity
 
     public AvailabilityMode Availability { get; set; } = AvailabilityMode.Manual;
 
+    /// <summary>Сколько минут идёт ивент после старта. Пусто — завершается вручную.</summary>
+    public int? DurationMinutes { get; set; }
+
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

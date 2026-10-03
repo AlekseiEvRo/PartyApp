@@ -64,10 +64,12 @@ public class EventServiceTests : IDisposable
 
     private async Task<EventSession> SeedSessionAsync(
         EventDefinition definition,
-        EventSessionState state = EventSessionState.Active)
+        EventSessionState state = EventSessionState.Active,
+        DateTime? endsAt = null)
     {
         EventSession session = TestData.Session(definition, _adminId, state);
         session.Definition = null!;
+        session.EndsAt = endsAt;
         _host.Db.EventSessions.Add(session);
         await _host.Db.SaveChangesAsync();
         return session;
@@ -132,6 +134,19 @@ public class EventServiceTests : IDisposable
         available.DisplayName.Should().Be("Активный квиз");
         available.Availability.Should().Be(nameof(AvailabilityMode.Manual));
         available.SessionId.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public async Task GetAvailableEventsAsync_IncludesEndsAt()
+    {
+        await SeedAdminAsync();
+        EventDefinition definition = await SeedDefinitionAsync("quiz");
+        DateTime endsAt = DateTime.UtcNow.AddMinutes(15);
+        await SeedSessionAsync(definition, endsAt: endsAt);
+
+        List<AvailableEventDto> events = await _service.GetAvailableEventsAsync();
+
+        events.Should().ContainSingle().Which.EndsAt.Should().Be(endsAt);
     }
 
     // === StartEventAsync ===
@@ -211,6 +226,45 @@ public class EventServiceTests : IDisposable
         push.ExcludedUserId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task StartEventAsync_WithDuration_SetsEndsAt()
+    {
+        await SeedAdminAsync();
+        EventDefinition definition = await SeedDefinitionAsync(displayName: "Квиз");
+        definition.DurationMinutes = 30;
+        await _host.Db.SaveChangesAsync();
+        _factory.HasHandler("quiz").Returns(true);
+        _factory.GetHandler("quiz").Returns(_handler);
+
+        EventSession session = await _service.StartEventAsync(definition.Id, _adminId);
+
+        session.EndsAt.Should().NotBeNull();
+        session.EndsAt!.Value.Should().BeCloseTo(
+            session.StartedAt.AddMinutes(30),
+            TimeSpan.FromSeconds(1));
+
+        RecordingHubContext.HubCall hubCall = _hub.SingleCall("EventStarted");
+        JsonElement payload = Json(hubCall.Payload);
+        payload.GetProperty("endsAt").GetDateTime().Should().BeCloseTo(
+            session.StartedAt.AddMinutes(30),
+            TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task StartEventAsync_WithoutDuration_LeavesEndsAtNull()
+    {
+        await SeedAdminAsync();
+        EventDefinition definition = await SeedDefinitionAsync();
+        _factory.HasHandler("quiz").Returns(true);
+        _factory.GetHandler("quiz").Returns(_handler);
+
+        EventSession session = await _service.StartEventAsync(definition.Id, _adminId);
+
+        session.EndsAt.Should().BeNull();
+        Json(_hub.SingleCall("EventStarted").Payload)
+            .GetProperty("endsAt").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
     // === FinishEventAsync ===
 
     [Fact]
@@ -259,6 +313,58 @@ public class EventServiceTests : IDisposable
         RecordingHubContext.HubCall hubCall = _hub.SingleCall("EventFinished");
         Json(hubCall.Payload).GetProperty("sessionId").GetGuid().Should().Be(session.Id);
         _push.Calls.Should().BeEmpty();
+    }
+
+    // === CloseExpiredEventsAsync ===
+
+    [Fact]
+    public async Task CloseExpiredEventsAsync_FinishesOnlyExpiredActiveSessions()
+    {
+        await SeedAdminAsync();
+        EventDefinition definition = await SeedDefinitionAsync();
+        EventSession expired = await SeedSessionAsync(
+            definition,
+            endsAt: DateTime.UtcNow.AddMinutes(-1));
+        EventSession future = await SeedSessionAsync(
+            definition,
+            endsAt: DateTime.UtcNow.AddMinutes(30));
+        EventSession withoutEnd = await SeedSessionAsync(definition);
+        EventSession alreadyFinished = await SeedSessionAsync(
+            definition,
+            EventSessionState.Finished,
+            endsAt: DateTime.UtcNow.AddMinutes(-10));
+
+        int closed = await _service.CloseExpiredEventsAsync();
+
+        closed.Should().Be(1);
+
+        EventSession storedExpired = await _host.DbAsync(db => db.EventSessions
+            .AsNoTracking().SingleAsync(s => s.Id == expired.Id));
+        storedExpired.State.Should().Be(EventSessionState.Finished);
+        storedExpired.EndedAt.Should().NotBeNull();
+
+        EventSession storedFuture = await _host.DbAsync(db => db.EventSessions
+            .AsNoTracking().SingleAsync(s => s.Id == future.Id));
+        storedFuture.State.Should().Be(EventSessionState.Active);
+
+        EventSession storedWithoutEnd = await _host.DbAsync(db => db.EventSessions
+            .AsNoTracking().SingleAsync(s => s.Id == withoutEnd.Id));
+        storedWithoutEnd.State.Should().Be(EventSessionState.Active);
+
+        EventSession storedFinished = await _host.DbAsync(db => db.EventSessions
+            .AsNoTracking().SingleAsync(s => s.Id == alreadyFinished.Id));
+        storedFinished.State.Should().Be(EventSessionState.Finished);
+    }
+
+    [Fact]
+    public async Task CloseExpiredEventsAsync_WithoutExpiredSessions_ReturnsZero()
+    {
+        await SeedAdminAsync();
+        EventDefinition definition = await SeedDefinitionAsync();
+        await SeedSessionAsync(definition, endsAt: DateTime.UtcNow.AddMinutes(5));
+
+        (await _service.CloseExpiredEventsAsync()).Should().Be(0);
+        _hub.CallsFor("EventFinished").Should().BeEmpty();
     }
 
     // === SubmitToEventAsync ===

@@ -8,9 +8,20 @@ public interface IQrTokenService
 {
     Task<List<QrTokenDto>> GetTokensAsync(CancellationToken ct = default);
     Task<List<QrTokenDto>> GenerateTokensAsync(int count, int points, CancellationToken ct = default);
+    Task<QrStatsDto> GetStatsAsync(CancellationToken ct = default);
 }
 
-public record QrTokenDto(Guid Id, string Code, int Points, bool IsRedeemed, DateTime? RedeemedAt);
+public record QrTokenDto(
+    Guid Id,
+    string Code,
+    int Points,
+    bool IsRedeemed,
+    DateTime? RedeemedAt,
+    string? RedeemedByName);
+
+public record QrStatsDto(int Total, int Redeemed, int Remaining, List<QrPlayerStatDto> Players);
+
+public record QrPlayerStatDto(Guid PlayerId, string DisplayName, int Count);
 
 public class QrTokenService : IQrTokenService
 {
@@ -33,7 +44,13 @@ public class QrTokenService : IQrTokenService
 
         return await db.QrTokens
             .OrderBy(t => t.CreatedAt)
-            .Select(t => new QrTokenDto(t.Id, t.Code, t.Points, t.RedeemedAt.HasValue, t.RedeemedAt))
+            .Select(t => new QrTokenDto(
+                t.Id,
+                t.Code,
+                t.Points,
+                t.RedeemedAt.HasValue,
+                t.RedeemedAt,
+                t.RedeemedBy != null ? t.RedeemedBy.DisplayName : null))
             .ToListAsync(ct);
     }
 
@@ -75,7 +92,30 @@ public class QrTokenService : IQrTokenService
 
         _logger.LogInformation("Generated {Count} QR tokens with {Points} points each", count, points);
 
-        return newTokens.Select(t => new QrTokenDto(t.Id, t.Code, t.Points, false, null)).ToList();
+        return newTokens.Select(t => new QrTokenDto(t.Id, t.Code, t.Points, false, null, null)).ToList();
+    }
+
+    public async Task<QrStatsDto> GetStatsAsync(CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        int total = await db.QrTokens.CountAsync(ct);
+        int redeemed = await db.QrTokens.CountAsync(t => t.RedeemedAt != null, ct);
+
+        // «Верные» коды — только успешно активированные: неудачные попытки нигде не хранятся
+        List<QrPlayerStatDto> players = await db.QrTokens
+            .Where(t => t.RedeemedById != null && t.RedeemedBy != null)
+            .GroupBy(t => new { t.RedeemedById, t.RedeemedBy!.DisplayName })
+            .Select(g => new QrPlayerStatDto(g.Key.RedeemedById!.Value, g.Key.DisplayName, g.Count()))
+            .ToListAsync(ct);
+
+        players = players
+            .OrderByDescending(p => p.Count)
+            .ThenBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        return new QrStatsDto(total, redeemed, total - redeemed, players);
     }
 
     private static string GenerateCode()

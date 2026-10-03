@@ -17,12 +17,13 @@ public class QrScanHandlerTests : IDisposable
 {
     private readonly SqliteTestHost _host;
     private readonly IPointsAwardService _award = Substitute.For<IPointsAwardService>();
+    private readonly RecordingHubContext _hub = new();
     private readonly QrScanHandler _handler;
 
     public QrScanHandlerTests()
     {
         _host = new SqliteTestHost();
-        _handler = new QrScanHandler(_host.ScopeFactory, _award, NullLogger<QrScanHandler>.Instance);
+        _handler = new QrScanHandler(_host.ScopeFactory, _award, _hub, NullLogger<QrScanHandler>.Instance);
     }
 
     public void Dispose()
@@ -174,6 +175,18 @@ public class QrScanHandlerTests : IDisposable
             "QR-код: ABC234",
             Arg.Any<CancellationToken>());
         await _award.DidNotReceiveWithAnyArgs().AwardAsync(default, default, default!, default, default, default);
+    }
+
+    [Fact]
+    public async Task HandleSubmission_BroadcastsQrRedeemed()
+    {
+        (User player, EventDefinition definition, EventSession session) = await SeedAsync(
+            TestData.QrToken("ABC234", points: 25));
+
+        await _handler.HandleSubmissionAsync(session, definition, player.Id, """{"code":"ABC234"}""");
+
+        RecordingHubContext.HubCall call = _hub.SingleCall("QrRedeemed");
+        call.Target.Should().Be("all");
     }
 
     [Fact]

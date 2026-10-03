@@ -17,7 +17,7 @@ import {
     bingoLineAwarded,
     raffleDrawn
 } from './stores';
-import { getToken, setToken } from './api';
+import { getToken, setToken, isTokenExpired } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
 
 let connection: signalR.HubConnection | null = null;
@@ -28,6 +28,13 @@ export function getConnection() {
 
 export async function connect(): Promise<void> {
     if (connection && connection.state === signalR.HubConnectionState.Connected) {
+        return;
+    }
+
+    // Истёкший токен не даст подключиться: чистим сессию и показываем вход
+    if (isTokenExpired(getToken())) {
+        setToken(null);
+        window.location.reload();
         return;
     }
 
@@ -205,6 +212,14 @@ export async function connect(): Promise<void> {
 }
 
 export async function reconnectIfNeeded(): Promise<void> {
+    // Долго открытая вкладка/ТВ: токен мог истечь — тогда нужен повторный вход,
+    // иначе соединение вечно переподключается с 401
+    if (isTokenExpired(getToken())) {
+        setToken(null);
+        window.location.reload();
+        return;
+    }
+
     if (!connection) return;
 
     const state = connection.state;

@@ -123,6 +123,10 @@
                 return 'ротация';
             case 'message':
                 return 'сообщение';
+            case 'qr':
+                return 'QR-статистика';
+            case 'spy':
+                return 'шпионаж';
             default:
                 return 'ожидание';
         }
@@ -153,6 +157,8 @@
         <button class="btn" on:click={() => setMode('photos')} disabled={busy}>📸 Слайдшоу</button>
         <button class="btn" on:click={() => setMode('shop')} disabled={busy}>🛍 Призы</button>
         <button class="btn" on:click={() => setMode('lots')} disabled={busy}>🔨 Ставки</button>
+        <button class="btn" on:click={() => setMode('qr')} disabled={busy}>📷 QR-статистика</button>
+        <button class="btn" on:click={() => setMode('spy')} disabled={busy}>🕵 Шпионаж</button>
         <button class="btn accent" on:click={() => setMode('rotation')} disabled={busy}>🔁 Ротация</button>
         <button class="btn accent" on:click={fireConfetti} disabled={busy}>🎉 Конфетти</button>
     </div>

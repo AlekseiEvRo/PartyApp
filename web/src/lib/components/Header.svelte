@@ -50,7 +50,7 @@
     <div class="header-left">
         <span class="logo">🎉</span>
         <span class="name" title={$user?.displayName}>{$user?.displayName}</span>
-        {#if $user?.role === 'Admin'}
+        {#if $user?.role === 'Admin' || $user?.role === 'SuperAdmin'}
             <a href="/admin" class="admin-link" title="Админка" aria-label="Админка">
                 ⚙️<span class="admin-link-text"> Админка</span>
             </a>

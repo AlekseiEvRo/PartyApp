@@ -66,7 +66,8 @@ public class EventService : IEventService
                 DisplayName: s.Definition.DisplayName,
                 Description: s.Definition.Description,
                 Availability: s.Definition.Availability.ToString(),
-                StartedAt: s.StartedAt))
+                StartedAt: s.StartedAt,
+                EndsAt: s.EndsAt))
             .ToList();
     }
 
@@ -93,6 +94,10 @@ public class EventService : IEventService
             StartedAt = DateTime.UtcNow
         };
 
+        // Длительность из настроек ивента: по ней сессию закроет EventClosingService
+        if (definition.DurationMinutes is > 0)
+            session.EndsAt = session.StartedAt.AddMinutes(definition.DurationMinutes.Value);
+
         db.EventSessions.Add(session);
         await db.SaveChangesAsync(ct);
 
@@ -109,7 +114,8 @@ public class EventService : IEventService
             displayName = definition.DisplayName,
             description = definition.Description,
             availability = definition.Availability.ToString(),
-            startedAt = session.StartedAt
+            startedAt = session.StartedAt,
+            endsAt = session.EndsAt
         }, ct);
 
         // Push тем, у кого приложение закрыто
@@ -160,6 +166,41 @@ public class EventService : IEventService
         _logger.LogInformation(
             "Event finished: {DisplayName} (session={SessionId})",
             session.Definition.DisplayName, session.Id);
+    }
+
+    public async Task<int> CloseExpiredEventsAsync(CancellationToken ct = default)
+    {
+        List<Guid> ids;
+        DateTime now = DateTime.UtcNow;
+
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            ids = await db.EventSessions.AsNoTracking()
+                .Where(s => s.State == EventSessionState.Active && s.EndsAt != null && s.EndsAt <= now)
+                .Select(s => s.Id)
+                .ToListAsync(ct);
+        }
+
+        int closed = 0;
+        foreach (Guid id in ids)
+        {
+            try
+            {
+                await FinishEventAsync(id, ct);
+                closed++;
+            }
+            catch (InvalidOperationException)
+            {
+                // Сессию уже завершили вручную — не страшно
+            }
+        }
+
+        if (closed > 0)
+            _logger.LogInformation("Auto-finished {Count} expired event sessions", closed);
+
+        return closed;
     }
 
     public async Task<SubmissionOutcome> SubmitToEventAsync(Guid sessionId, Guid playerId, string payloadJson, CancellationToken ct = default)
@@ -250,6 +291,8 @@ public class EventService : IEventService
                 sessionId = session.Id,
                 type = session.Definition.Type,
                 displayName = session.Definition.DisplayName,
+                startedAt = session.StartedAt,
+                endsAt = session.EndsAt,
                 config,
                 live,
                 player
@@ -262,10 +305,51 @@ public class EventService : IEventService
                 sessionId = session.Id,
                 type = session.Definition.Type,
                 displayName = session.Definition.DisplayName,
+                startedAt = session.StartedAt,
+                endsAt = session.EndsAt,
                 config = new { },
                 live,
                 player
             };
+        }
+    }
+}
+
+/// <summary>Раз в 10 секунд завершает сессии ивентов, у которых истёк срок.</summary>
+public class EventClosingService : BackgroundService
+{
+    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(10);
+
+    private readonly IEventService _events;
+    private readonly ILogger<EventClosingService> _logger;
+
+    public EventClosingService(IEventService events, ILogger<EventClosingService> logger)
+    {
+        _events = events;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await _events.CloseExpiredEventsAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Не удалось завершить просроченные ивенты");
+            }
+
+            try
+            {
+                await Task.Delay(Interval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 }

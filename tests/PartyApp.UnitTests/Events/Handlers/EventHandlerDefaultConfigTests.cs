@@ -114,6 +114,7 @@ public class EventHandlerDefaultConfigTests
         QrScanHandler handler = new(
             ScopeFactory,
             PointsAward,
+            new RecordingHubContext(),
             NullLogger<QrScanHandler>.Instance);
 
         JsonElement config = Parse(handler.DefaultConfigJson);
@@ -176,7 +177,7 @@ public class EventHandlerDefaultConfigTests
                 PointsAward,
                 NullLogger<WordRushHandler>.Instance),
             new PromoCodeHandler(ScopeFactory, PointsAward, NullLogger<PromoCodeHandler>.Instance),
-            new QrScanHandler(ScopeFactory, PointsAward, NullLogger<QrScanHandler>.Instance),
+            new QrScanHandler(ScopeFactory, PointsAward, new RecordingHubContext(), NullLogger<QrScanHandler>.Instance),
             new QuickCheckinHandler(
                 PointsAward,
                 new RecordingHubContext(),

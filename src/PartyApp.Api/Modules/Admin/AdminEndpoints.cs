@@ -65,6 +65,7 @@ public static class AdminEndpoints
 
             Guid adminId = GetUserId(admin);
             bool self = adminId == playerId;
+            bool actorIsSuper = IsSuperAdmin(admin);
 
             string? newDisplayName = null;
             if (request.DisplayName is not null)
@@ -90,14 +91,31 @@ public static class AdminEndpoints
 
                 if (self && newRole != player.Role)
                     return Results.BadRequest(new { error = "Нельзя менять собственную роль" });
+
+                // Роль супер-админа не может сменить никто
+                if (player.Role == UserRole.SuperAdmin && newRole.Value != UserRole.SuperAdmin)
+                    return Results.BadRequest(new { error = "Роль супер-админа изменить нельзя" });
+
+                // Выдать роль супер-админа может только супер-админ
+                if (newRole.Value == UserRole.SuperAdmin && player.Role != UserRole.SuperAdmin && !actorIsSuper)
+                    return Results.Json(new { error = "Только супер-админ может назначить супер-админа" },
+                        statusCode: StatusCodes.Status403Forbidden);
             }
 
             bool? newIsActive = request.IsActive;
             if (self && newIsActive == false)
                 return Results.BadRequest(new { error = "Нельзя заблокировать себя" });
 
-            bool losesAdmin = player.Role == UserRole.Admin && player.IsActive
-                && ((newRole.HasValue && newRole.Value != UserRole.Admin) || newIsActive == false);
+            // Прочие изменения супер-админа доступны только другому супер-админу
+            bool changesSuperAdmin = player.Role == UserRole.SuperAdmin && !actorIsSuper && !self
+                && (newDisplayName is not null || newIsActive.HasValue);
+
+            if (changesSuperAdmin)
+                return Results.Json(new { error = "Только супер-админ может менять супер-админа" },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            bool losesAdmin = IsPrivilegedRole(player.Role) && player.IsActive
+                && ((newRole.HasValue && !IsPrivilegedRole(newRole.Value)) || newIsActive == false);
 
             if (losesAdmin && !await HasOtherActiveAdminAsync(db, playerId, ct))
                 return Results.BadRequest(new { error = "Нельзя оставить систему без администратора" });
@@ -170,6 +188,10 @@ public static class AdminEndpoints
             if (adminId == playerId)
                 return Results.BadRequest(new { error = "Нельзя кикнуть себя" });
 
+            if (player.Role == UserRole.SuperAdmin && !IsSuperAdmin(admin))
+                return Results.Json(new { error = "Только супер-админ может кикнуть супер-админа" },
+                    statusCode: StatusCodes.Status403Forbidden);
+
             player.SecurityStamp = NewSecurityStamp();
             audit.Record(adminId, "kick", playerId);
             await db.SaveChangesAsync(ct);
@@ -196,6 +218,10 @@ public static class AdminEndpoints
             Guid adminId = GetUserId(admin);
             if (adminId == playerId)
                 return Results.BadRequest(new { error = "Нельзя сбросить пароль себе" });
+
+            if (player.Role == UserRole.SuperAdmin && !IsSuperAdmin(admin))
+                return Results.Json(new { error = "Только супер-админ может сбросить пароль супер-админа" },
+                    statusCode: StatusCodes.Status403Forbidden);
 
             string password = PasswordGenerator.Generate();
             player.PasswordHash = passwordHasher.HashPassword(player, password);
@@ -371,6 +397,7 @@ public static class AdminEndpoints
                     Type = s.Definition.Type,
                     State = s.State.ToString(),
                     StartedAt = s.StartedAt,
+                    EndsAt = s.EndsAt,
                     EndedAt = s.EndedAt,
                     StartedBy = s.StartedBy.DisplayName,
                     SubmissionCount = s.Submissions.Count
@@ -393,10 +420,23 @@ public static class AdminEndpoints
         return Guid.NewGuid().ToString("N");
     }
 
+    private static bool IsSuperAdmin(ClaimsPrincipal user)
+    {
+        return user.IsInRole(nameof(UserRole.SuperAdmin));
+    }
+
+    /// <summary>Админ или супер-админ — роль с доступом к админке.</summary>
+    private static bool IsPrivilegedRole(UserRole role)
+    {
+        return role is UserRole.Admin or UserRole.SuperAdmin;
+    }
+
     private static Task<bool> HasOtherActiveAdminAsync(AppDbContext db, Guid excludeUserId, CancellationToken ct)
     {
         return db.Users.AnyAsync(
-            u => u.Id != excludeUserId && u.Role == UserRole.Admin && u.IsActive,
+            u => u.Id != excludeUserId
+                 && (u.Role == UserRole.Admin || u.Role == UserRole.SuperAdmin)
+                 && u.IsActive,
             ct);
     }
 

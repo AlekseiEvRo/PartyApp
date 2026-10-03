@@ -52,7 +52,7 @@ public class ModerationNotifier
         }, ct);
 
         List<Guid> adminIds = await _db.Users
-            .Where(u => u.Role == UserRole.Admin)
+            .Where(u => u.Role == UserRole.Admin || u.Role == UserRole.SuperAdmin)
             .Select(u => u.Id)
             .ToListAsync(ct);
 

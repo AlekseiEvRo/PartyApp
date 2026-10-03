@@ -16,6 +16,13 @@ public static class QrEndpoints
             return Results.Ok(tokens);
         });
 
+        // Статистика для большого экрана: всего, активировано, осталось и по игрокам
+        group.MapGet("/stats", async (IQrTokenService qrService, CancellationToken ct) =>
+        {
+            var stats = await qrService.GetStatsAsync(ct);
+            return Results.Ok(stats);
+        });
+
         group.MapPost("/tokens/generate", async (
             GenerateQrRequest request,
             IQrTokenService qrService,

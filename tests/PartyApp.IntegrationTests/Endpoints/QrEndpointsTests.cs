@@ -219,5 +219,65 @@ public class QrEndpointsTests : IClassFixture<PartyAppFactory>
             .Single(t => t.GetProperty("code").GetString() == code);
         redeemed.GetProperty("isRedeemed").GetBoolean().Should().BeTrue();
         redeemed.GetProperty("redeemedAt").ValueKind.Should().NotBe(JsonValueKind.Null);
+        redeemed.GetProperty("redeemedByName").GetString().Should().Be(player.DisplayName);
+    }
+
+    [Fact]
+    public async Task Stats_AsPlayer_ReturnsForbidden()
+    {
+        TestUser player = await _api.RegisterAsync();
+        _api.Authorize(player);
+
+        HttpResponseMessage response = await _api.Client.GetAsync("/api/qr/stats");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Stats_CountsRedeemedAndGroupsByPlayer()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+
+        JsonElement before = await PartyAppApi.ReadJsonAsync(
+            await GetStatsAsync(admin));
+        int beforeTotal = before.GetProperty("total").GetInt32();
+        int beforeRedeemed = before.GetProperty("redeemed").GetInt32();
+
+        JsonElement first = await GenerateSingleTokenAsync(admin, points: 10);
+        JsonElement second = await GenerateSingleTokenAsync(admin, points: 10);
+        await GenerateSingleTokenAsync(admin, points: 10); // останется неактивированным
+
+        Guid sessionId = await StartQrScanEventAsync(admin);
+
+        foreach (string code in new[]
+                 {
+                     first.GetProperty("code").GetString()!,
+                     second.GetProperty("code").GetString()!
+                 })
+        {
+            _api.Authorize(player);
+            HttpResponseMessage redeem = await _api.Client.PostAsJsonAsync(
+                $"/api/events/{sessionId}/submit", new { payloadJson = $$"""{"code":"{{code}}"}""" });
+            redeem.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        JsonElement stats = await PartyAppApi.ReadJsonAsync(await GetStatsAsync(admin));
+
+        stats.GetProperty("total").GetInt32().Should().Be(beforeTotal + 3);
+        stats.GetProperty("redeemed").GetInt32().Should().Be(beforeRedeemed + 2);
+        stats.GetProperty("remaining").GetInt32().Should().Be(
+            stats.GetProperty("total").GetInt32() - stats.GetProperty("redeemed").GetInt32());
+
+        JsonElement playerStats = stats.GetProperty("players").EnumerateArray()
+            .Single(p => p.GetProperty("playerId").GetGuid() == player.Id);
+        playerStats.GetProperty("displayName").GetString().Should().Be(player.DisplayName);
+        playerStats.GetProperty("count").GetInt32().Should().Be(2);
+    }
+
+    private async Task<HttpResponseMessage> GetStatsAsync(TestUser admin)
+    {
+        _api.Authorize(admin);
+        return await _api.Client.GetAsync("/api/qr/stats");
     }
 }
