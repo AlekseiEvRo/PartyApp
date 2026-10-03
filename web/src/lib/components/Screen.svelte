@@ -999,7 +999,7 @@
                             {#if lot.topBid !== null}
                                 <span class="lot-leader">{lot.leaderName}: {lot.topBid}</span>
                             {:else}
-                                <span class="lot-leader empty">от {lot.minBid}</span>
+                                <span class="lot-leader no-bid">от {lot.minBid}</span>
                             {/if}
                             <span class="lot-time">{formatLotsRemaining(lot.endsAt)}</span>
                         </li>
@@ -1531,7 +1531,8 @@
         white-space: nowrap;
     }
 
-    .lot-leader.empty { color: var(--muted, #aaa); font-weight: normal; }
+    /* Без ставки; класс не должен называться empty — его перебивает глобальный .empty из app.css */
+    .lot-leader.no-bid { color: var(--muted, #aaa); font-weight: normal; }
 
     .lot-time {
         color: var(--green, #27ae60);
