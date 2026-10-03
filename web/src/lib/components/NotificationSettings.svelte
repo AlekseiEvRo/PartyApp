@@ -6,6 +6,7 @@
         getExistingSubscription,
         getPermission,
         getPushSupport,
+        isAndroid,
         sendTestPush
     } from '../push';
 
@@ -13,6 +14,7 @@
 
     const dispatch = createEventDispatcher();
     const support = getPushSupport();
+    const android = isAndroid();
 
     let permission: NotificationPermission | 'unsupported' = 'default';
     let hasSubscription = false;
@@ -196,6 +198,15 @@
                         </button>
                     {/if}
                 </div>
+
+                {#if android}
+                    <p class="hint">
+                        На Android уведомления работают даже без установки. Чтобы приложение выглядело
+                        как нативное — открой меню браузера <strong>⋮</strong> и выбери
+                        <strong>«Установить приложение»</strong> (Chrome) или
+                        <strong>«Добавить на главный экран»</strong>.
+                    </p>
+                {/if}
 
                 <p class="hint">
                     Уведомления приходят о новых ивентах, тостах, сообщениях ведущего и начислении баллов —

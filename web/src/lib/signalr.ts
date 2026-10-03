@@ -118,7 +118,17 @@ export async function connect(): Promise<void> {
 
     connection.on('LotCancelled', () => shopVersion.update((v) => v + 1));
 
-    connection.on('LotStarted', () => shopVersion.update((v) => v + 1));
+    connection.on('LotStarted', (data: { lotId?: string; name?: string; minBid?: number }) => {
+        shopVersion.update((v) => v + 1);
+        showToast(`🔨 Аукцион: ${data.name ?? 'новый лот'}! Скорее делай ставку`, 'info');
+
+        if (isNotificationSupported() && Notification.permission === 'granted') {
+            showBrowserNotification(`🔨 ${data.name ?? 'Аукцион'}`, {
+                body: `Минимальная ставка — ${data.minBid ?? 1}. Скорее делай ставку!`,
+                tag: data.lotId ? `lot-${data.lotId}` : 'auction'
+            });
+        }
+    });
 
     connection.on('BidPlaced', () => shopVersion.update((v) => v + 1));
 
@@ -183,7 +193,11 @@ export async function connect(): Promise<void> {
 
     // === Состояние соединения ===
     connection.onreconnecting(() => connectionState.set('connecting'));
-    connection.onreconnected(() => connectionState.set('connected'));
+    connection.onreconnected(() => {
+        connectionState.set('connected');
+        // Во время разрыва события могли потеряться — перечитываем магазин
+        shopVersion.update((v) => v + 1);
+    });
     connection.onclose(() => connectionState.set('disconnected'));
 
     await connection.start();

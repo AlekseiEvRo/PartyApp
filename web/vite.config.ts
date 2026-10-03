@@ -23,6 +23,8 @@ export default defineConfig({
             manifest: {
                 name: 'PartyApp — Вечеринка',
                 short_name: 'PartyApp',
+                // Стабильный идентификатор приложения (важно для WebAPK на Android)
+                id: '/',
                 description: 'Интерактивное приложение для вечеринки с друзьями',
                 lang: 'ru',
                 theme_color: '#0f0f23',
