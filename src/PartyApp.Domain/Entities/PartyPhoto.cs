@@ -14,6 +14,9 @@ public class PartyPhoto: BaseEntity
     public string ContentType { get; set; } = string.Empty;
     public long SizeBytes { get; set; }
 
+    /// <summary>Подпись, которую автор добавил к фото при загрузке.</summary>
+    public string? Caption { get; set; }
+
     public Guid? SessionId { get; set; }
     public EventSession? Session { get; set; }
 

@@ -1,4 +1,5 @@
 ﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
@@ -18,6 +19,7 @@ namespace PartyApp.Api.Modules.Photos;
 public static class PhotoEndpoints
 {
     private const int MaxPageSize = 100;
+    private const int MaxCaptionLength = 200;
 
     public static IEndpointRouteBuilder MapPhotoEndpoints(this IEndpointRouteBuilder app)
     {
@@ -29,6 +31,7 @@ public static class PhotoEndpoints
 
         group.MapPost("/", async (
                 IFormFile file,
+                [FromForm] string? caption,
                 ClaimsPrincipal user,
                 AppDbContext db,
                 IFileStorage storage,
@@ -51,6 +54,13 @@ public static class PhotoEndpoints
                         error = $"Файл больше {maxSizeBytes / (1024 * 1024)} МБ"
                     });
 
+                string? trimmedCaption = caption?.Trim();
+                if (trimmedCaption?.Length > MaxCaptionLength)
+                    return Results.BadRequest(new { error = $"Подпись не длиннее {MaxCaptionLength} символов" });
+
+                if (trimmedCaption?.Length == 0)
+                    trimmedCaption = null;
+
                 string? contentType = await DetectContentTypeAsync(file, ct);
                 if (contentType is null)
                     return Results.BadRequest(new { error = "Поддерживаются только JPEG, PNG и WebP" });
@@ -67,6 +77,7 @@ public static class PhotoEndpoints
                     OriginalFileName = NormalizeFileName(file.FileName),
                     ContentType = contentType,
                     SizeBytes = file.Length,
+                    Caption = trimmedCaption,
                     Status = requireModeration ? ModerationStatus.Pending : ModerationStatus.Approved,
                     UploadedAt = DateTime.UtcNow
                 };
@@ -89,7 +100,7 @@ public static class PhotoEndpoints
                 if (photo.Status == ModerationStatus.Pending)
                 {
                     string authorName = user.FindFirst("displayName")?.Value ?? "Гость";
-                    await notifier.NotifyPendingAsync("photo", photo.Id, authorName, null, ct);
+                    await notifier.NotifyPendingAsync("photo", photo.Id, authorName, photo.Caption, ct);
                 }
                 else
                 {
@@ -142,6 +153,7 @@ public static class PhotoEndpoints
                         p.Id,
                         UploadedByName = p.UploadedBy.DisplayName,
                         p.UploadedAt,
+                        p.Caption,
                         Status = p.Status.ToString(),
                         LikesCount = p.Likes.Count,
                         LikedByMe = p.Likes.Any(l => l.UserId == userId),
@@ -390,7 +402,8 @@ public static class PhotoEndpoints
         {
             photoId = photo.Id,
             uploadedByName = uploaderName,
-            uploadedAt = photo.UploadedAt
+            uploadedAt = photo.UploadedAt,
+            caption = photo.Caption
         }, ct);
     }
 

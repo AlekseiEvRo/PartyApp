@@ -8,6 +8,7 @@
         id: string;
         uploadedByName: string;
         uploadedAt: string;
+        caption: string | null;
         status: string;
         likesCount: number;
         likedByMe: boolean;
@@ -20,6 +21,7 @@
     }
 
     const pageSize = 24;
+    const maxCaptionLength = 200;
 
     let photos: Photo[] = [];
     let urls: Record<string, string> = {};
@@ -30,6 +32,11 @@
     let viewer: Photo | null = null;
     let lastVersion = -1;
     let lastRemovedId: string | null = null;
+
+    // Фото и подпись до подтверждения отправки
+    let pendingFile: File | null = null;
+    let pendingPreview = '';
+    let caption = '';
 
     $: if ($photosVersion !== lastVersion) {
         lastVersion = $photosVersion;
@@ -42,7 +49,10 @@
         removeLocally($photoRemovedId);
     }
 
-    onDestroy(releasePhotoUrls);
+    onDestroy(() => {
+        releasePreview();
+        releasePhotoUrls();
+    });
 
     async function load() {
         loading = true;
@@ -92,18 +102,42 @@
         urls = next;
     }
 
-    async function onFileChange(event: Event) {
+    function onFileChange(event: Event) {
         const input = event.currentTarget as HTMLInputElement;
         const file = input.files?.[0];
         input.value = '';
 
         if (!file || uploading) return;
 
+        releasePreview();
+        pendingFile = file;
+        pendingPreview = URL.createObjectURL(file);
+        caption = '';
+    }
+
+    function releasePreview() {
+        if (pendingPreview) {
+            URL.revokeObjectURL(pendingPreview);
+            pendingPreview = '';
+        }
+    }
+
+    function cancelUpload() {
+        if (uploading) return;
+        releasePreview();
+        pendingFile = null;
+    }
+
+    async function confirmUpload() {
+        if (!pendingFile || uploading) return;
+
         uploading = true;
 
         try {
-            const { status } = await uploadPhoto(file);
+            const { status } = await uploadPhoto(pendingFile, caption);
             showToast(status === 'Pending' ? '📸 Фото отправлено на модерацию' : '📸 Фото добавлено!');
+            releasePreview();
+            pendingFile = null;
             await load();
         } catch (e) {
             showToast(e instanceof Error ? e.message : 'Не удалось загрузить фото', 'error');
@@ -180,7 +214,7 @@
     {:else}
         <div class="grid">
             {#each photos as photo (photo.id)}
-                <figure class="tile">
+                <figure class="tile" class:has-caption={!!photo.caption}>
                     {#if urls[photo.id]}
                         <button class="image-button" on:click={() => (viewer = photo)} aria-label="Открыть фото">
                             <img src={urls[photo.id]} alt="Фото от {photo.uploadedByName}" loading="lazy" />
@@ -210,7 +244,12 @@
                         {/if}
                     </div>
 
-                    <figcaption class="meta">{photo.uploadedByName} · {formatTime(photo.uploadedAt)}</figcaption>
+                    <figcaption class="meta">
+                        {#if photo.caption}
+                            <span class="caption" title={photo.caption}>💬 {photo.caption}</span>
+                        {/if}
+                        <span>{photo.uploadedByName} · {formatTime(photo.uploadedAt)}</span>
+                    </figcaption>
                 </figure>
             {/each}
         </div>
@@ -226,7 +265,38 @@
 {#if viewer && urls[viewer.id]}
     <div class="viewer" on:click={() => (viewer = null)} role="presentation">
         <img src={urls[viewer.id]} alt="Фото от {viewer.uploadedByName}" />
+        {#if viewer.caption}
+            <p class="viewer-caption">💬 {viewer.caption}</p>
+        {/if}
         <button class="viewer-close" on:click={() => (viewer = null)} aria-label="Закрыть">✕</button>
+    </div>
+{/if}
+
+{#if pendingFile}
+    <div class="upload-overlay" role="presentation">
+        <div class="upload-card" role="dialog" aria-label="Подпись к фото">
+            <img src={pendingPreview} alt="Превью фото" />
+
+            <input
+                class="caption-input"
+                type="text"
+                maxlength={maxCaptionLength}
+                placeholder="Подпись (необязательно)"
+                bind:value={caption}
+                on:keydown={(event) => {
+                    if (event.key === 'Enter') void confirmUpload();
+                }}
+            />
+
+            <span class="caption-counter">{caption.length}/{maxCaptionLength}</span>
+
+            <div class="upload-actions">
+                <button class="cancel" on:click={cancelUpload} disabled={uploading}>Отмена</button>
+                <button class="send" on:click={confirmUpload} disabled={uploading}>
+                    {uploading ? 'Отправляем…' : 'Отправить'}
+                </button>
+            </div>
+        </div>
     </div>
 {/if}
 
@@ -319,6 +389,9 @@
         gap: 4px;
     }
 
+    /* Подпись добавляет вторую строку в подвал — поднимаем кнопки */
+    .tile.has-caption .tile-actions { bottom: 44px; }
+
     .like, .delete {
         border: none;
         background: rgba(15, 15, 35, 0.75);
@@ -341,6 +414,14 @@
         color: #ddd;
         background: rgba(15, 15, 35, 0.75);
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+
+    .meta .caption {
         overflow: hidden;
         text-overflow: ellipsis;
     }
@@ -401,4 +482,80 @@
         border-radius: 50%;
         cursor: pointer;
     }
+
+    .viewer-caption {
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        margin: 0;
+        text-align: center;
+        color: #fff;
+        font-size: 16px;
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+    }
+
+    .upload-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 210;
+        padding: 16px;
+    }
+
+    .upload-card {
+        width: min(420px, 100%);
+        background: var(--bg-soft, #12122e);
+        border-radius: 14px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .upload-card img {
+        width: 100%;
+        max-height: 45vh;
+        object-fit: contain;
+        border-radius: 10px;
+        background: #000;
+    }
+
+    .caption-input {
+        background: #1d1d40;
+        border: 1px solid #2a2a5e;
+        border-radius: 8px;
+        color: inherit;
+        padding: 10px 12px;
+        font-size: 15px;
+    }
+
+    .caption-counter {
+        align-self: flex-end;
+        margin-top: -6px;
+        font-size: 11px;
+        color: var(--muted, #aaa);
+    }
+
+    .upload-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+
+    .upload-actions button {
+        border: none;
+        border-radius: 8px;
+        padding: 9px 14px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .upload-actions .cancel { background: #2a2a5e; color: #ddd; }
+    .upload-actions .send { background: var(--accent, #f5a623); color: #12122e; }
+    .upload-actions button:disabled { opacity: 0.6; cursor: default; }
 </style>

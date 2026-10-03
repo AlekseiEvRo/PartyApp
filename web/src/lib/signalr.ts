@@ -84,7 +84,7 @@ export async function connect(): Promise<void> {
     });
 
     // === Фото и стенка пожеланий ===
-    connection.on('PhotoUploaded', (data: { photoId: string; uploadedByName: string }) => {
+    connection.on('PhotoUploaded', (data: { photoId: string; uploadedByName: string; caption: string | null }) => {
         photosVersion.update((v) => v + 1);
         showToast(`📸 ${data.uploadedByName} добавил(а) фото`, 'info');
     });

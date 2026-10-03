@@ -12,6 +12,7 @@ public class PartyPhotoConfiguration: IEntityTypeConfiguration<PartyPhoto>
         builder.Property(p => p.StoragePath).HasMaxLength(500).IsRequired();
         builder.Property(p => p.OriginalFileName).HasMaxLength(255).IsRequired();
         builder.Property(p => p.ContentType).HasMaxLength(100).IsRequired();
+        builder.Property(p => p.Caption).HasMaxLength(200);
 
         builder.HasIndex(p => p.UploadedById);
     }
