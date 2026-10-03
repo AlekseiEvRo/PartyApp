@@ -6,6 +6,9 @@ namespace PartyApp.Domain.Entities;
 /// <summary>Фотография с вечеринки. Файл лежит на диске, в БД — только метаданные.</summary>
 public class PartyPhoto: BaseEntity
 {
+    /// <summary>Вечеринка, во время которой загрузили фото. Пусто — партии ещё не было.</summary>
+    public Guid? PartyId { get; set; }
+
     public Guid UploadedById { get; set; }
     public User UploadedBy { get; set; } = null!;
 

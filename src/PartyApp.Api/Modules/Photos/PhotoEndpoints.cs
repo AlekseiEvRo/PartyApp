@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Moderation;
+using PartyApp.Api.Modules.Parties;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
@@ -72,6 +73,7 @@ public static class PhotoEndpoints
 
                 var photo = new PartyPhoto
                 {
+                    PartyId = await PartyContext.GetActivePartyIdAsync(db, ct),
                     UploadedById = userId,
                     StoragePath = storagePath,
                     OriginalFileName = NormalizeFileName(file.FileName),
