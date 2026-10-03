@@ -12,13 +12,17 @@ export interface UploadedPhoto {
 /**
  * Сжимает фото на клиенте и загружает его на сервер.
  * Сжатие экономит трафик и избавляет сервер от тяжёлых файлов.
+ * caption — необязательная подпись автора (до 200 символов).
  */
-export async function uploadPhoto(file: File): Promise<UploadedPhoto> {
+export async function uploadPhoto(file: File, caption?: string): Promise<UploadedPhoto> {
     const blob = await compressImage(file);
     const token = getToken();
 
     const form = new FormData();
     form.append('file', blob, 'photo.jpg');
+
+    const trimmedCaption = caption?.trim();
+    if (trimmedCaption) form.append('caption', trimmedCaption);
 
     const res = await fetch('/api/photos', {
         method: 'POST',

@@ -113,6 +113,7 @@
     interface Photo {
         id: string;
         uploadedByName: string;
+        caption: string | null;
         status: string;
     }
 
@@ -120,6 +121,7 @@
         id: string;
         url: string;
         author: string;
+        caption: string | null;
     }
 
     interface Reaction {
@@ -495,7 +497,7 @@
         for (const photo of approved) {
             try {
                 const url = await loadPhotoUrl(photo.id);
-                next.push({ id: photo.id, url, author: photo.uploadedByName });
+                next.push({ id: photo.id, url, author: photo.uploadedByName, caption: photo.caption });
             } catch {
                 // Фото могли удалить между запросами — просто пропускаем
             }
@@ -960,7 +962,12 @@
                         out:sendSlide={{ key: slide.id }}
                     />
                 {/each}
-                <span class="author">📸 {currentSlide.author}</span>
+                <div class="slide-info">
+                    {#if currentSlide.caption}
+                        <span class="caption">💬 {currentSlide.caption}</span>
+                    {/if}
+                    <span class="author">📸 {currentSlide.author}</span>
+                </div>
             {:else}
                 <p class="muted">Пока нет одобренных фото</p>
             {/if}
@@ -1717,15 +1724,33 @@
         background: #000;
     }
 
-    .author {
+    .slide-info {
         position: absolute;
         bottom: 3vh;
         left: 3vw;
         z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.8vh;
+        max-width: 80vw;
+    }
+
+    .author,
+    .caption {
         background: rgba(0, 0, 0, 0.6);
         border-radius: 999px;
         padding: 0.8vh 1.4vw;
         font-size: clamp(14px, 1.4vw, 22px);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .caption {
+        background: rgba(0, 0, 0, 0.75);
+        font-size: clamp(16px, 1.8vw, 28px);
     }
 
     /* Реакции игроков */

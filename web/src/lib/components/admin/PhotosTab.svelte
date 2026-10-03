@@ -8,6 +8,7 @@
         id: string;
         uploadedByName: string;
         uploadedAt: string;
+        caption: string | null;
         status: string;
         likesCount: number;
     }
@@ -181,6 +182,9 @@
 
                 <div class="info">
                     <span class="author">{photo.uploadedByName}</span>
+                    {#if photo.caption}
+                        <span class="caption" title={photo.caption}>💬 {photo.caption}</span>
+                    {/if}
                     <span class="meta">{formatTime(photo.uploadedAt)} · ❤️ {photo.likesCount}</span>
                     <span class="meta">{statusLabel(photo.status)}</span>
                 </div>
@@ -288,6 +292,15 @@
 
     .author { font-weight: bold; font-size: 14px; }
     .meta { font-size: 12px; color: var(--muted, #aaa); }
+
+    .caption {
+        font-size: 13px;
+        color: #ffd7a1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
 
     .actions {
         display: flex;

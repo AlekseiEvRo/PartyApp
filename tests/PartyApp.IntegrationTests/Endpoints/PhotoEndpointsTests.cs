@@ -34,21 +34,30 @@ public class PhotoEndpointsTests : IDisposable
     private static MultipartFormDataContent CreateUpload(
         byte[] bytes,
         string fileName = "photo.jpg",
-        string contentType = "image/jpeg")
+        string contentType = "image/jpeg",
+        string? caption = null)
     {
         ByteArrayContent fileContent = new(bytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
 
         MultipartFormDataContent form = new();
         form.Add(fileContent, "file", fileName);
+
+        if (caption is not null)
+            form.Add(new StringContent(caption), "caption");
+
         return form;
     }
 
-    private async Task<JsonElement> UploadAsync(TestUser user, byte[]? bytes = null, string contentType = "image/jpeg")
+    private async Task<JsonElement> UploadAsync(
+        TestUser user,
+        byte[]? bytes = null,
+        string contentType = "image/jpeg",
+        string? caption = null)
     {
         _api.Authorize(user);
         HttpResponseMessage response = await _api.Client.PostAsync(
-            "/api/photos", CreateUpload(bytes ?? JpegBytes, contentType: contentType));
+            "/api/photos", CreateUpload(bytes ?? JpegBytes, contentType: contentType, caption: caption));
 
         response.StatusCode.Should().Be(
             HttpStatusCode.Created,
@@ -98,6 +107,44 @@ public class PhotoEndpointsTests : IDisposable
         content.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
         (await content.Content.ReadAsByteArrayAsync()).Should().Equal(JpegBytes);
+    }
+
+    [Fact]
+    public async Task Upload_WithCaption_ReturnsTrimmedCaptionInFeed()
+    {
+        TestUser user = await _api.RegisterAsync();
+
+        await UploadAsync(user, caption: "  Лучший момент вечера  ");
+
+        JsonElement page = await GetPageAsync(user);
+        page.GetProperty("items")[0].GetProperty("caption").GetString()
+            .Should().Be("Лучший момент вечера");
+    }
+
+    [Fact]
+    public async Task Upload_WhitespaceCaption_IsStoredAsNull()
+    {
+        TestUser user = await _api.RegisterAsync();
+
+        await UploadAsync(user, caption: "   ");
+
+        JsonElement page = await GetPageAsync(user);
+        page.GetProperty("items")[0].GetProperty("caption").ValueKind
+            .Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Upload_TooLongCaption_ReturnsBadRequest()
+    {
+        TestUser user = await _api.RegisterAsync();
+        _api.Authorize(user);
+
+        HttpResponseMessage response = await _api.Client.PostAsync(
+            "/api/photos", CreateUpload(JpegBytes, caption: new string('а', 201)));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await PartyAppApi.ReadJsonAsync(response)).GetProperty("error").GetString()
+            .Should().Contain("200");
     }
 
     [Fact]
