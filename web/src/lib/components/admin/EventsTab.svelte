@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { api } from '../../api';
+    import { api, getToken } from '../../api';
     import { showToast } from '../../stores';
 
     interface EventTypeInfo {
@@ -116,6 +116,56 @@
 
     function hasActiveSession(definitionId: string) {
         return sessions.some(s => s.definitionId === definitionId && s.state === 'Active');
+    }
+
+    /** Выгружает все определения ивентов одним JSON-файлом. */
+    async function exportDefinitions() {
+        try {
+            const response = await fetch('/api/admin/events/definitions/export', {
+                headers: { Authorization: `Bearer ${getToken()}` }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'party-events.json';
+            link.click();
+            URL.revokeObjectURL(url);
+
+            showToast('📤 Пакет ивентов скачан');
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        }
+    }
+
+    /** Загружает пакет: новые определения добавляются, совпадающие по названию пропускаются. */
+    async function importDefinitions(event: Event) {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) return;
+
+        try {
+            const pack = JSON.parse(await file.text());
+            const result = await api<{
+                added: number;
+                skipped: number;
+                errors: { displayName: string; error: string }[];
+            }>('/api/admin/events/definitions/import', 'POST', pack);
+
+            showToast(`📥 Добавлено: ${result.added}, пропущено: ${result.skipped}`);
+
+            if (result.errors.length > 0) {
+                showToast(`Ошибок: ${result.errors.length}. ${result.errors[0].error}`, 'error');
+            }
+
+            await loadDefinitions();
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        } finally {
+            input.value = '';
+        }
     }
 
     function formatJson(raw: string): string {
@@ -443,6 +493,11 @@
         <h3>Определения ивентов</h3>
         <div class="card-actions">
             <button class="btn btn-primary" on:click={openCreateForm} disabled={types.length === 0}>➕ Добавить ивент</button>
+            <button class="btn btn-secondary" on:click={exportDefinitions}>📤 Экспорт</button>
+            <label class="btn btn-secondary import-btn">
+                📥 Импорт
+                <input type="file" accept="application/json,.json" on:change={importDefinitions} />
+            </label>
             <button class="btn btn-secondary" on:click={loadDefinitions}>🔄 Обновить</button>
         </div>
     </div>
@@ -590,6 +645,8 @@
     .btn-warning { background: var(--orange, #f39c12); color: #fff; }
     .btn-danger { background: var(--red, #e74c3c); color: #fff; }
     .btn-secondary { background: #555; color: #fff; }
+    .import-btn { display: inline-flex; align-items: center; }
+    .import-btn input { display: none; }
     .badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
     .badge-active { background: var(--green, #27ae60); color: #fff; }
     .badge-finished { background: #7f8c8d; color: #fff; }

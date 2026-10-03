@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Moderation;
+using PartyApp.Api.Modules.Parties;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
 using PartyApp.Infrastructure.Persistence;
@@ -49,6 +50,7 @@ public static class SubmissionEndpoints
 
                 var wish = new Wish
                 {
+                    PartyId = await PartyContext.GetActivePartyIdAsync(db, ct),
                     PlayerId = userId,
                     Text = text,
                     Status = requireModeration ? ModerationStatus.Pending : ModerationStatus.Approved,

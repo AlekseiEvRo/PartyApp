@@ -525,4 +525,30 @@ public class SignalRTests : IDisposable
         JsonElement payload = await message;
         payload.GetProperty("reason").GetString().Should().Be("Сессия завершена администратором");
     }
+
+    [Fact]
+    public async Task PartyStartedAndFinished_AreBroadcast()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        await using HubConnection connection = await ConnectAsync(admin);
+        _api.Authorize(admin);
+
+        Task<JsonElement> started = WaitForAsync(connection, "PartyStarted");
+        HttpResponseMessage start = await _api.Client.PostAsJsonAsync(
+            "/api/parties", new { name = "Сигнальная вечеринка", resetBalances = false });
+        start.StatusCode.Should().Be(HttpStatusCode.OK);
+        Guid partyId = (await PartyAppApi.ReadJsonAsync(start)).GetProperty("id").GetGuid();
+
+        JsonElement party = await started;
+        party.GetProperty("id").GetGuid().Should().Be(partyId);
+        party.GetProperty("name").GetString().Should().Be("Сигнальная вечеринка");
+
+        Task<JsonElement> finished = WaitForAsync(connection, "PartyFinished");
+        (await _api.Client.PostAsync($"/api/parties/{partyId}/finish", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement summary = await finished;
+        summary.GetProperty("party").GetProperty("id").GetGuid().Should().Be(partyId);
+        summary.GetProperty("party").GetProperty("status").GetString().Should().Be("Finished");
+    }
 }

@@ -6,6 +6,9 @@ namespace PartyApp.Domain.Entities;
 /// <summary>Пожелание или тост, оставленный игроком на «стенке пожеланий».</summary>
 public class Wish: BaseEntity
 {
+    /// <summary>Вечеринка, во время которой оставили пожелание. Пусто — партии ещё не было.</summary>
+    public Guid? PartyId { get; set; }
+
     public Guid PlayerId { get; set; }
     public User Player { get; set; } = null!;
 

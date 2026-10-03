@@ -11,5 +11,8 @@ public enum WalletTransactionType
     ShopPurchase = 60,
     AuctionBid = 70,
     Refund = 80,
-    PhotoReward = 90
+    PhotoReward = 90,
+
+    /// <summary>Списание остатка при старте новой вечеринки.</summary>
+    PartyReset = 100
 }
