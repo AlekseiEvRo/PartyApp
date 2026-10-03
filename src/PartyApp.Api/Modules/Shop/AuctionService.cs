@@ -77,6 +77,16 @@ public class AuctionService
                 endsAt = lot.EndsAt
             }, ct);
 
+            // Push тем, у кого приложение свёрнуто: иначе о старте аукциона
+            // узнают только игроки с открытым экраном
+            await _push.SendToAllAsync(
+                new PushMessage(
+                    Title: $"🔨 Аукцион: {lot.Name}",
+                    Body: $"Приём ставок открыт. Минимальная ставка — {lot.MinBid}",
+                    Url: "/",
+                    Tag: $"lot-{lot.Id}"),
+                ct: ct);
+
             _logger.LogInformation(
                 "Lot started: {LotId} «{Name}», ends at {EndsAt}",
                 lot.Id, lot.Name, lot.EndsAt);

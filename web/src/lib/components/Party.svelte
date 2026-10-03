@@ -2,7 +2,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { api } from '../api';
     import { connect, reconnectIfNeeded } from '../signalr';
-    import { activeEvents, balance, spyGameRole } from '../stores';
+    import { activeEvents, balance, spyGameRole, shopVersion } from '../stores';
     import Header from './Header.svelte';
     import EventCard from './EventCard.svelte';
     import SpyGame from './SpyGame.svelte';
@@ -39,6 +39,9 @@
             reconnectIfNeeded();
             loadInitialData();
             restoreSpyGameRole();
+            // Пока приложение было свёрнуто, события могли не дойти (например,
+            // старт аукциона) — магазин перечитывает лоты по этому сигналу
+            shopVersion.update((v) => v + 1);
         }
     }
 

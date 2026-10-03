@@ -268,6 +268,10 @@ public class AuctionServiceTests : IDisposable
             .BeCloseTo(_timeProvider.GetUtcNow().UtcDateTime.AddMinutes(45), TimeSpan.FromSeconds(2));
 
         _hub.SingleCall("LotStarted").Should().NotBeNull();
+
+        PushCall push = _push.Calls.Should().ContainSingle().Subject;
+        push.Message.Title.Should().Be($"🔨 Аукцион: {lot.Name}");
+        push.Message.Tag.Should().Be($"lot-{lot.Id}");
     }
 
     [Fact]

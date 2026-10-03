@@ -21,7 +21,7 @@ async function handlePush(event) {
     await self.registration.showNotification(data.title || 'PartyApp', {
         body: data.body || undefined,
         icon: '/icon-192.png',
-        badge: '/icon-192.png',
+        badge: '/icon-monochrome.png',
         tag: data.tag || undefined,
         data: { url: data.url || '/' }
     });
