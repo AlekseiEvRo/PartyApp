@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from 'svelte';
     import { crossfade } from 'svelte/transition';
+    import QRCode from 'qrcode';
     import { api } from '../api';
     import { connect, getConnection, reconnectIfNeeded } from '../signalr';
     import { loadPhotoUrl, releasePhotoUrls } from '../photos';
@@ -20,6 +21,7 @@
         displayName: string;
         description?: string | null;
         startedAt: string;
+        endsAt?: string | null;
     }
 
     interface LeaderboardEntry {
@@ -32,6 +34,8 @@
         sessionId: string;
         type: string;
         displayName: string;
+        startedAt?: string | null;
+        endsAt?: string | null;
         config: Record<string, any>;
         live?: Record<string, any> | null;
         player?: Record<string, any> | null;
@@ -60,6 +64,45 @@
         bidsCount: number;
         topBid: number | null;
         leaderName: string | null;
+    }
+
+    interface WonLot {
+        id: string;
+        name: string;
+        winnerName: string | null;
+        winningBid: number | null;
+        endsAt: string | null;
+    }
+
+    interface QrPlayerStat {
+        playerId: string;
+        displayName: string;
+        count: number;
+    }
+
+    interface QrStats {
+        total: number;
+        redeemed: number;
+        remaining: number;
+        players: QrPlayerStat[];
+    }
+
+    interface SpyPlayer {
+        userId: string;
+        displayName: string;
+        role: string;
+        hasAccused: boolean;
+    }
+
+    interface SpyState {
+        phase: string;
+        sessionId: string;
+        startedAt: string;
+        finishedAt: string | null;
+        winner: string | null;
+        players: SpyPlayer[];
+        secretWord: string;
+        townWinnerName: string | null;
     }
 
     interface RaffleParticipant {
@@ -139,6 +182,13 @@
     let reactionTimers: ReturnType<typeof setTimeout>[] = [];
     let shopItems: ShopItem[] = [];
     let lots: ShopLot[] = [];
+    let wonLots: WonLot[] = [];
+    let qrStats: QrStats | null = null;
+    let spyState: SpyState | null = null;
+
+    // QR для входа на сайт в режиме ожидания
+    let idleQrUrl = '';
+    let siteUrl = '';
 
     // Лототрон
     const wheelColors = ['#f5a623', '#e74c3c', '#3498db', '#27ae60', '#9b59b6', '#e67e22', '#1abc9c', '#e84393'];
@@ -259,6 +309,18 @@
     }
 
     onMount(async () => {
+        // QR на экране ожидания: сканируешь — попадаешь на сайт
+        siteUrl = window.location.origin;
+        try {
+            idleQrUrl = await QRCode.toDataURL(`${siteUrl}/`, {
+                width: 640,
+                margin: 1,
+                errorCorrectionLevel: 'M'
+            });
+        } catch (e) {
+            console.error('Screen: не удалось построить QR для входа', e);
+        }
+
         try {
             await connect();
         } catch (e) {
@@ -276,7 +338,11 @@
             connection.on('ScreenSettingsUpdated', onScreenSettingsUpdated);
             connection.on('BidPlaced', onBidPlaced);
             connection.on('LotStarted', onLotStarted);
+            connection.on('LotFinished', onLotFinished);
             connection.on('RaffleDrawn', onRaffleDrawn);
+            connection.on('QrRedeemed', onQrRedeemed);
+            connection.on('SpyGameStarted', onSpyGameStarted);
+            connection.on('SpyGameFinished', onSpyGameFinished);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -312,7 +378,11 @@
             connection.off('ScreenSettingsUpdated', onScreenSettingsUpdated);
             connection.off('BidPlaced', onBidPlaced);
             connection.off('LotStarted', onLotStarted);
+            connection.off('LotFinished', onLotFinished);
             connection.off('RaffleDrawn', onRaffleDrawn);
+            connection.off('QrRedeemed', onQrRedeemed);
+            connection.off('SpyGameStarted', onSpyGameStarted);
+            connection.off('SpyGameFinished', onSpyGameFinished);
             clearTimeout(wheelTimer);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
@@ -345,6 +415,7 @@
         displayName: string;
         description?: string | null;
         startedAt: string;
+        endsAt?: string | null;
     }) {
         // Новый ивент показываем автоматически, даже если админ не переключил экран
         forced = { mode: 'event', sessionId: event.sessionId };
@@ -354,7 +425,8 @@
             type: event.type,
             displayName: event.displayName,
             description: event.description ?? null,
-            startedAt: event.startedAt
+            startedAt: event.startedAt,
+            endsAt: event.endsAt ?? null
         };
         void loadEvent();
     }
@@ -382,6 +454,8 @@
             else if (currentView === 'photos') await loadPhotos();
             else if (currentView === 'shop') await loadShopItems();
             else if (currentView === 'lots') await loadLots();
+            else if (currentView === 'qr') await loadQrStats();
+            else if (currentView === 'spy') await loadSpyState();
         } catch (e) {
             console.error('Screen: не удалось обновить содержимое', e);
         }
@@ -406,6 +480,11 @@
         eventData = data;
         eventInfo = available.find((e) => e.sessionId === sessionId)
             ?? (eventInfo?.sessionId === sessionId ? eventInfo : null);
+
+        // Охота за QR: на экране ивента сразу показываем статистику кодов
+        if (data.type === 'qr_scan') {
+            await loadQrStats();
+        }
     }
 
     async function loadPhotos() {
@@ -431,7 +510,42 @@
     }
 
     async function loadLots() {
-        lots = await api<ShopLot[]>('/api/shop/lots');
+        const [open, winners] = await Promise.all([
+            api<ShopLot[]>('/api/shop/lots'),
+            api<WonLot[]>('/api/shop/lots/winners?limit=10')
+        ]);
+
+        lots = open;
+        wonLots = winners;
+    }
+
+    async function loadQrStats() {
+        qrStats = await api<QrStats>('/api/qr/stats');
+    }
+
+    async function loadSpyState() {
+        spyState = await api<SpyState>('/api/spygame/state');
+    }
+
+    function onLotFinished() {
+        if (currentView === 'lots') void loadLots();
+    }
+
+    function onQrRedeemed() {
+        if (currentView === 'qr') void loadQrStats();
+        else if (currentView === 'event' && eventData?.type === 'qr_scan') void loadQrStats();
+    }
+
+    function onSpyGameStarted() {
+        // Игра началась — показываем её на экране автоматически
+        forced = { mode: 'spy' };
+        void loadSpyState();
+    }
+
+    function onSpyGameFinished() {
+        // Оставляем итог на экране до ручного переключения
+        forced = { mode: 'spy' };
+        void loadSpyState();
     }
 
     function onBidPlaced() {
@@ -524,6 +638,13 @@
         if (displayMode !== 'event' || !eventInfo || !eventData) return null;
         if (eventInfo.sessionId !== displaySessionId) return null;
 
+        // Длительность сессии из настроек ивента важнее конфига обработчика:
+        // по ней ивент и завершится автоматически
+        const endsAt = eventData.endsAt ? new Date(eventData.endsAt).getTime() : null;
+        if (endsAt !== null) {
+            return Math.max(0, Math.ceil((endsAt - (clientNow + clockOffset)) / 1000));
+        }
+
         const timeLimit = Number(eventData.config?.timeLimitSec ?? 0);
         if (!timeLimit) return null;
 
@@ -602,10 +723,20 @@
     </header>
 
     {#if currentView === 'idle'}
-        <main class="center">
+        <main class="center idle">
             <div class="idle-emoji">🎉</div>
             <h1>Скоро начнём!</h1>
             <p class="muted">Следи за приложением — ивенты появятся здесь</p>
+
+            {#if idleQrUrl}
+                <div class="join">
+                    <img class="join-qr" src={idleQrUrl} alt="QR-код для входа на сайт" />
+                    <div class="join-text">
+                        <p class="join-title">📱 Сканируй, чтобы участвовать</p>
+                        <p class="join-url">{siteUrl}</p>
+                    </div>
+                </div>
+            {/if}
         </main>
     {:else if currentView === 'leaderboard'}
         <main class="leaderboard">
@@ -780,6 +911,41 @@
                 {:else}
                     <p class="muted">🎟 Пока никто не участвует</p>
                 {/if}
+            {:else if eventData?.type === 'qr_scan'}
+                {#if qrStats}
+                    <div class="qr-numbers">
+                        <div class="qr-number">
+                            <span class="qr-value">{qrStats.total}</span>
+                            <span class="qr-label">всего кодов</span>
+                        </div>
+                        <div class="qr-number active">
+                            <span class="qr-value">{qrStats.redeemed}</span>
+                            <span class="qr-label">активировано</span>
+                        </div>
+                        <div class="qr-number remaining">
+                            <span class="qr-value">{qrStats.remaining}</span>
+                            <span class="qr-label">осталось найти</span>
+                        </div>
+                    </div>
+
+                    {#if qrStats.players.length > 0}
+                        <ul class="qr-players">
+                            {#each qrStats.players.slice(0, 10) as player, i}
+                                <li>
+                                    <span class="place">
+                                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                                    </span>
+                                    <span class="name">{player.displayName}</span>
+                                    <span class="points">{player.count}</span>
+                                </li>
+                            {/each}
+                        </ul>
+                    {:else}
+                        <p class="muted">Пока никто не активировал ни одного кода</p>
+                    {/if}
+                {:else}
+                    <p class="muted">Загружаем статистику…</p>
+                {/if}
             {/if}
         </main>
     {:else if currentView === 'photos'}
@@ -839,6 +1005,100 @@
                         </li>
                     {/each}
                 </ul>
+            {/if}
+
+            {#if wonLots.length > 0}
+                <h2 class="won-title">🏆 Выигранные лоты</h2>
+                <ul class="won-lots">
+                    {#each wonLots as lot (lot.id)}
+                        <li>
+                            <span class="item-name">{lot.name}</span>
+                            <span class="won-winner">{lot.winnerName ?? '—'}</span>
+                            <span class="won-bid">{lot.winningBid ?? '—'}</span>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+        </main>
+    {:else if currentView === 'qr'}
+        <main class="qr-stats">
+            <h1>📷 Охота за QR-кодами</h1>
+
+            {#if qrStats}
+                <div class="qr-numbers">
+                    <div class="qr-number">
+                        <span class="qr-value">{qrStats.total}</span>
+                        <span class="qr-label">всего кодов</span>
+                    </div>
+                    <div class="qr-number active">
+                        <span class="qr-value">{qrStats.redeemed}</span>
+                        <span class="qr-label">активировано</span>
+                    </div>
+                    <div class="qr-number remaining">
+                        <span class="qr-value">{qrStats.remaining}</span>
+                        <span class="qr-label">осталось найти</span>
+                    </div>
+                </div>
+
+                {#if qrStats.players.length > 0}
+                    <h2>🏅 Кто сколько нашёл</h2>
+                    <ul class="qr-players">
+                        {#each qrStats.players.slice(0, 10) as player, i}
+                            <li>
+                                <span class="place">
+                                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                                </span>
+                                <span class="name">{player.displayName}</span>
+                                <span class="points">{player.count}</span>
+                            </li>
+                        {/each}
+                    </ul>
+                {:else}
+                    <p class="muted">Пока никто не активировал ни одного кода</p>
+                {/if}
+            {:else}
+                <p class="muted">Загружаем статистику…</p>
+            {/if}
+        </main>
+    {:else if currentView === 'spy'}
+        <main class="spy">
+            {#if !spyState || spyState.phase === 'Idle'}
+                <h1>🕵 Шпионаж</h1>
+                <p class="muted">Игра ещё не запущена</p>
+            {:else if spyState.phase === 'Playing'}
+                <h1>🕵 Шпионаж</h1>
+                <p class="muted">Обсуждайте, кто из вас шпион!</p>
+
+                <div class="spy-players">
+                    {#each spyState.players as player}
+                        <span class="spy-player" class:accused={player.hasAccused}>
+                            {player.displayName}{#if player.hasAccused} · обвинил{/if}
+                        </span>
+                    {/each}
+                </div>
+
+                <p class="spy-progress">
+                    Обвинений: {spyState.players.filter((p) => p.hasAccused).length}
+                    из {spyState.players.length}
+                </p>
+            {:else}
+                <h1>🏁 Игра завершена</h1>
+
+                {#if spyState.winner === 'spies'}
+                    <p class="spy-result spies">🕵 Шпионы победили!</p>
+                {:else if spyState.winner === 'town'}
+                    <p class="spy-result town">👤 {spyState.townWinnerName} разоблачил шпиона!</p>
+                {:else}
+                    <p class="spy-result draw">🤝 Ничья</p>
+                {/if}
+
+                <p class="spy-word">Секретное слово: <b>{spyState.secretWord}</b></p>
+                <p class="muted">
+                    Шпионы: {spyState.players
+                        .filter((p) => p.role === 'Spy')
+                        .map((p) => p.displayName)
+                        .join(', ')}
+                </p>
             {/if}
         </main>
     {:else if currentView === 'message'}
@@ -943,6 +1203,118 @@
         line-height: 1.15;
         overflow-wrap: anywhere;
     }
+
+    /* QR на экране ожидания */
+    .idle { gap: 3vh; }
+
+    .join {
+        display: flex;
+        align-items: center;
+        gap: 3vw;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        padding: 3vh 3vw;
+        margin-top: 2vh;
+    }
+
+    .join-qr {
+        width: min(30vh, 26vw);
+        height: auto;
+        background: #fff;
+        border-radius: 12px;
+        padding: 8px;
+    }
+
+    .join-text { text-align: left; }
+
+    .join-title {
+        font-size: clamp(18px, 2vw, 34px);
+        font-weight: bold;
+        margin-bottom: 1vh;
+    }
+
+    .join-url { color: var(--muted, #aaa); font-size: clamp(14px, 1.5vw, 26px); }
+
+    /* QR-статистика */
+    .qr-numbers {
+        display: flex;
+        gap: 3vw;
+        margin-bottom: 4vh;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .qr-number {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 18px;
+        padding: 3vh 4vw;
+        min-width: 18vw;
+    }
+
+    .qr-number.active { background: rgba(39, 174, 96, 0.18); }
+    .qr-number.remaining { background: rgba(245, 166, 35, 0.18); }
+
+    .qr-value { font-size: clamp(48px, 7vw, 120px); font-weight: bold; }
+
+    .qr-label { color: var(--muted, #aaa); font-size: clamp(14px, 1.4vw, 24px); }
+
+    .qr-players {
+        list-style: none;
+        width: min(900px, 90vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1vh;
+        max-height: 45vh;
+        overflow: hidden;
+    }
+
+    .qr-players li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.1vh 2vw;
+        font-size: clamp(17px, 1.8vw, 30px);
+    }
+
+    /* Шпионаж */
+    .spy-players {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1vh 1.2vw;
+        justify-content: center;
+        max-width: 90vw;
+        margin-bottom: 2vh;
+    }
+
+    .spy-player {
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        padding: 0.8vh 1.4vw;
+        font-size: clamp(15px, 1.6vw, 26px);
+    }
+
+    .spy-player.accused { background: rgba(245, 166, 35, 0.25); }
+
+    .spy-progress { color: var(--muted, #aaa); font-size: clamp(16px, 1.8vw, 30px); }
+
+    .spy-result {
+        font-size: clamp(28px, 4.5vw, 72px);
+        font-weight: bold;
+        margin: 2vh 0;
+    }
+
+    .spy-result.spies { color: #e74c3c; }
+    .spy-result.town { color: #27ae60; }
+    .spy-result.draw { color: #f39c12; }
+
+    .spy-word { font-size: clamp(20px, 2.4vw, 40px); margin-bottom: 1vh; }
+
+    .spy-word b { color: #f5a623; }
 
     /* Лидерборд */
     .leaderboard ol {
@@ -1167,6 +1539,32 @@
         white-space: nowrap;
         font-size: clamp(15px, 1.6vw, 28px);
     }
+
+    .won-title { margin-top: 3vh; }
+
+    .won-lots {
+        list-style: none;
+        width: min(1100px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1vh;
+        max-height: 28vh;
+        overflow: hidden;
+    }
+
+    .won-lots li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(245, 166, 35, 0.12);
+        border: 1px solid rgba(245, 166, 35, 0.35);
+        border-radius: 14px;
+        padding: 1vh 2vw;
+        font-size: clamp(16px, 1.7vw, 28px);
+    }
+
+    .won-winner { color: #f5a623; font-weight: bold; white-space: nowrap; }
+    .won-bid { color: var(--muted, #aaa); white-space: nowrap; }
 
     .predictions {
         list-style: none;

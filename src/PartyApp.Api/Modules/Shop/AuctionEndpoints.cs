@@ -80,6 +80,31 @@ public static class AuctionEndpoints
                     : Results.Conflict(new { error = outcome.Message });
             });
 
+        // Завершённые лоты с победителями — для экрана и игроков
+        group.MapGet("/winners", async (
+                AppDbContext db,
+                int? limit,
+                CancellationToken ct) =>
+            {
+                int take = Math.Clamp(limit ?? 10, 1, 50);
+
+                var winners = await db.Lots.AsNoTracking()
+                    .Where(l => l.Status == LotStatus.Finished && l.WinnerId != null)
+                    .OrderByDescending(l => l.EndsAt)
+                    .Take(take)
+                    .Select(l => new
+                    {
+                        l.Id,
+                        l.Name,
+                        WinnerName = l.Winner != null ? l.Winner.DisplayName : null,
+                        l.WinningBid,
+                        l.EndsAt
+                    })
+                    .ToListAsync(ct);
+
+                return Results.Ok(winners);
+            });
+
         // === Только для админов ===
 
         group.MapGet("/all", async (AppDbContext db, CancellationToken ct) =>

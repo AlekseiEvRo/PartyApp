@@ -13,6 +13,10 @@ public class EventSession: BaseEntity
 
     public EventSessionState State { get; set; } = EventSessionState.Waiting;
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Когда сессия завершится автоматически. Пусто — только вручную.</summary>
+    public DateTime? EndsAt { get; set; }
+
     public DateTime? EndedAt { get; set; }
 
     public ICollection<PlayerSubmission> Submissions { get; set; } = new List<PlayerSubmission>();

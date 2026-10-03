@@ -22,7 +22,7 @@ public class PartyHub : Hub
         var username = Context.User?.FindFirst("name")?.Value;
 
         // Админ подписывается на уведомления о новом контенте на модерации
-        if (Context.User?.IsInRole("Admin") == true)
+        if (Context.User?.IsInRole("Admin") == true || Context.User?.IsInRole("SuperAdmin") == true)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, AdminsGroup);
         }

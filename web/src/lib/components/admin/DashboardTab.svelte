@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { api, getToken } from '../../api';
-    import { showToast } from '../../stores';
+    import { showToast, user } from '../../stores';
     import BalanceHistory from '../BalanceHistory.svelte';
 
     interface Player {
@@ -65,10 +65,34 @@
     }
 
     function toggleRole(player: Player) {
+        if (player.role === 'SuperAdmin') return;
+
         const next = player.role === 'Admin' ? 'Player' : 'Admin';
         const label = next === 'Admin' ? 'админа' : 'игрока';
         if (!confirm(`Сделать ${player.displayName} ${label}? Его текущие сессии завершатся.`)) return;
         void updatePlayer(player, { role: next });
+    }
+
+    /** Роль супер-админа может выдать только супер-админ; роль после этого не меняется. */
+    $: isSuperAdmin = $user?.role === 'SuperAdmin';
+
+    function promoteToSuperAdmin(player: Player) {
+        if (!isSuperAdmin || player.role === 'SuperAdmin') return;
+        if (!confirm(
+            `Сделать ${player.displayName} супер-админом? Роль супер-админа нельзя будет изменить, ` +
+            'а бан/кик/сброс пароля будут доступны только другому супер-админу.'
+        )) return;
+        void updatePlayer(player, { role: 'SuperAdmin' });
+    }
+
+    /** Супер-админа трогает только другой супер-админ. */
+    function canManage(player: Player): boolean {
+        return player.role !== 'SuperAdmin' || isSuperAdmin;
+    }
+
+    function roleLabel(role: string): string {
+        if (role === 'SuperAdmin') return '⭐ Супер-админ';
+        return role === 'Admin' ? '👑 Админ' : '🎮 Игрок';
     }
 
     function toggleActive(player: Player) {
@@ -168,25 +192,33 @@
                 <tr class:blocked={!p.isActive}>
                     <td>{p.displayName}</td>
                     <td>{p.username}</td>
-                    <td>{p.role === 'Admin' ? '👑 Админ' : '🎮 Игрок'}</td>
+                    <td>{roleLabel(p.role)}</td>
                     <td>{p.isActive ? '✅ Активен' : '🚫 Заблокирован'}</td>
                     <td><strong>{p.balance}</strong></td>
                     <td>{new Date(p.createdAt).toLocaleDateString()}</td>
                     <td>
                         <div class="actions">
-                            <button class="btn-small" disabled={busyId === p.id}
-                                    title="Сменить роль" on:click={() => toggleRole(p)}>
-                                {p.role === 'Admin' ? '🎮' : '👑'}
-                            </button>
-                            <button class="btn-small" disabled={busyId === p.id}
-                                    title="Кикнуть" on:click={() => kick(p)}>👢</button>
-                            <button class="btn-small" disabled={busyId === p.id}
-                                    title="Сбросить пароль" on:click={() => resetPlayerPassword(p)}>🔑</button>
-                            <button class="btn-small" disabled={busyId === p.id}
-                                    title={p.isActive ? 'Заблокировать' : 'Разблокировать'}
-                                    on:click={() => toggleActive(p)}>
-                                {p.isActive ? '🚫' : '✅'}
-                            </button>
+                            {#if p.role !== 'SuperAdmin'}
+                                <button class="btn-small" disabled={busyId === p.id}
+                                        title="Сменить роль" on:click={() => toggleRole(p)}>
+                                    {p.role === 'Admin' ? '🎮' : '👑'}
+                                </button>
+                            {/if}
+                            {#if isSuperAdmin && p.role !== 'SuperAdmin'}
+                                <button class="btn-small" disabled={busyId === p.id}
+                                        title="Сделать супер-админом" on:click={() => promoteToSuperAdmin(p)}>⭐</button>
+                            {/if}
+                            {#if canManage(p)}
+                                <button class="btn-small" disabled={busyId === p.id}
+                                        title="Кикнуть" on:click={() => kick(p)}>👢</button>
+                                <button class="btn-small" disabled={busyId === p.id}
+                                        title="Сбросить пароль" on:click={() => resetPlayerPassword(p)}>🔑</button>
+                                <button class="btn-small" disabled={busyId === p.id}
+                                        title={p.isActive ? 'Заблокировать' : 'Разблокировать'}
+                                        on:click={() => toggleActive(p)}>
+                                    {p.isActive ? '🚫' : '✅'}
+                                </button>
+                            {/if}
                             <button class="btn-history" on:click={() => (historyPlayer = p)}>📜</button>
                         </div>
                     </td>
@@ -254,7 +286,7 @@
         background: none; color: var(--accent, #f5a623); font-size: 13px; cursor: pointer;
     }
     .btn-history:hover { background: var(--card-soft, #2a2a5e); }
-    .actions { display: flex; gap: 6px; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .btn-small {
         padding: 6px 8px; border: 1px solid var(--border, #333); border-radius: 6px;
         background: none; color: var(--text, #eee); font-size: 13px; cursor: pointer;

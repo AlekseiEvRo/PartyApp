@@ -2,7 +2,8 @@
     import { onMount, onDestroy } from 'svelte';
     import { api } from '../api';
     import { connect, reconnectIfNeeded } from '../signalr';
-    import { activeEvents, balance, spyGameRole, shopVersion } from '../stores';
+    import { activeEvents, balance, spyGameRole, shopVersion, showToast } from '../stores';
+    import { getPendingQrCode, clearPendingQrCode } from '../qr';
     import Header from './Header.svelte';
     import EventCard from './EventCard.svelte';
     import SpyGame from './SpyGame.svelte';
@@ -33,6 +34,50 @@
             spyGameRole.set(null);
         }
     }
+
+    // === QR из ссылки ===
+    // Код пришёл из QR-ссылки (?qr=…). Как только появляется активный ивент
+    // «Охота за QR-кодами», отправляем его автоматически. При ошибке код
+    // остаётся: EventCard подставит его в поле, чтобы можно было повторить вручную.
+    let qrSubmitting = false;
+    let qrAttemptKey: string | null = null;
+
+    async function trySubmitPendingQr(events: any[]): Promise<void> {
+        if (qrSubmitting) return;
+
+        const code = getPendingQrCode();
+        if (!code) return;
+
+        const qrEvent = events.find((e) => e.type === 'qr_scan');
+        if (!qrEvent) return;
+
+        // Одна автоматическая попытка на пару «сессия + код»
+        const key = `${qrEvent.sessionId}:${code}`;
+        if (qrAttemptKey === key) return;
+        qrAttemptKey = key;
+
+        qrSubmitting = true;
+        try {
+            const result = await api<any>(`/api/events/${qrEvent.sessionId}/submit`, 'POST', {
+                payloadJson: JSON.stringify({ code })
+            });
+            clearPendingQrCode();
+            showToast(`📷 ${result.message}`, 'success');
+        } catch (e: any) {
+            // Сетевую ошибку есть смысл повторить (код останется), а «уже
+            // использован»/«не найден» — нет
+            const message: string = e?.message ?? '';
+            const retryable = /failed to fetch|network|load failed|HTTP 5\d\d|таймаут/i.test(message);
+            if (!retryable) clearPendingQrCode();
+
+            showToast(message || 'Не удалось активировать QR-код', 'error');
+        } finally {
+            qrSubmitting = false;
+        }
+    }
+
+    // Новый qr_scan-ивент мог стартовать уже после открытия приложения
+    $: if ($activeEvents.length > 0) void trySubmitPendingQr($activeEvents);
 
     function handleVisibilityChange() {
         if (document.visibilityState === 'visible') {

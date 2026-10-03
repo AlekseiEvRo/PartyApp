@@ -274,17 +274,34 @@
 <h3>Товары</h3>
 
 <div class="form">
-    <input type="text" bind:value={itemName} maxlength="100" placeholder="Название" />
-    <input type="text" bind:value={itemDescription} maxlength="500" placeholder="Описание (необязательно)" />
-    <input type="number" bind:value={itemPrice} min="1" placeholder="Цена" title="Цена в баллах" />
-    <input type="number" bind:value={itemStock} min="0" placeholder="Кол-во (пусто = ∞)" />
-    <label class="check"><input type="checkbox" bind:checked={itemActive} /> активен</label>
-    <button class="btn accent" on:click={saveItem} disabled={busy}>
-        {editingId ? 'Сохранить' : 'Добавить'}
-    </button>
-    {#if editingId}
-        <button class="btn" on:click={resetItemForm} disabled={busy}>Отмена</button>
-    {/if}
+    <label class="field">
+        <span>Название</span>
+        <input type="text" bind:value={itemName} maxlength="100" placeholder="Например: коктейль" />
+    </label>
+    <label class="field">
+        <span>Описание (необязательно)</span>
+        <input type="text" bind:value={itemDescription} maxlength="500" placeholder="Что входит" />
+    </label>
+    <label class="field field-small">
+        <span>Цена, ⭐</span>
+        <input type="number" bind:value={itemPrice} min="1" />
+    </label>
+    <label class="field field-small">
+        <span>Кол-во</span>
+        <input type="number" bind:value={itemStock} min="0" placeholder="∞" />
+    </label>
+    <div class="field check-field">
+        <span>&nbsp;</span>
+        <label class="check"><input type="checkbox" bind:checked={itemActive} /> активен</label>
+    </div>
+    <div class="field action">
+        <button class="btn accent" on:click={saveItem} disabled={busy}>
+            {editingId ? 'Сохранить' : 'Добавить'}
+        </button>
+        {#if editingId}
+            <button class="btn" on:click={resetItemForm} disabled={busy}>Отмена</button>
+        {/if}
+    </div>
 </div>
 
 <ul class="list">
@@ -311,13 +328,35 @@
 <h3>Аукцион</h3>
 
 <div class="form">
-    <input type="text" bind:value={lotName} maxlength="120" placeholder="Название лота" />
-    <input type="text" bind:value={lotDescription} maxlength="500" placeholder="Описание (необязательно)" />
-    <input type="number" bind:value={lotMinBid} min="1" placeholder="Мин. ставка" />
-    <input type="number" bind:value={lotHours} min="0" max="24" placeholder="Часы" title="Длительность: часы" />
-    <input type="number" bind:value={lotMinutes} min="0" max="59" placeholder="Минуты" title="Длительность: минуты" />
-    <button class="btn accent" on:click={createLot} disabled={busy}>Создать лот</button>
+    <label class="field">
+        <span>Название лота</span>
+        <input type="text" bind:value={lotName} maxlength="120" placeholder="Например: торт" />
+    </label>
+    <label class="field">
+        <span>Описание (необязательно)</span>
+        <input type="text" bind:value={lotDescription} maxlength="500" placeholder="Что разыгрываем" />
+    </label>
+    <label class="field field-small">
+        <span>Начальная ставка</span>
+        <input type="number" bind:value={lotMinBid} min="1" />
+    </label>
+    <label class="field field-small">
+        <span>Часы</span>
+        <input type="number" bind:value={lotHours} min="0" max="24" />
+    </label>
+    <label class="field field-small">
+        <span>Минуты</span>
+        <input type="number" bind:value={lotMinutes} min="0" max="59" />
+    </label>
+    <div class="field action">
+        <button class="btn accent" on:click={createLot} disabled={busy}>Создать лот</button>
+    </div>
 </div>
+
+<p class="hint">
+    Лот создаётся черновиком: приём ставок откроется по кнопке «Начать», а длительность
+    складывается из «Часов» и «Минут».
+</p>
 
 <ul class="list">
     {#each lots as lot (lot.id)}
@@ -327,15 +366,16 @@
                 <span class="meta">
                     {statusLabel(lot.status)}
                     {#if lot.status === 'Draft'}
-                        · приём {lot.durationMinutes} мин
-                    {:else if lot.endsAt}
-                        · до {formatTime(lot.endsAt)}
+                        · мин. ставка: {lot.minBid} · приём: {lot.durationMinutes} мин
+                    {:else}
+                        · мин. ставка: {lot.minBid}
+                        {#if lot.endsAt}· приём до: {formatTime(lot.endsAt)}{/if}
                     {/if}
-                    · от {lot.minBid}
-                    {#if lot.winnerName}· победил {lot.winnerName} ({lot.winningBid}){/if}
+                    {#if lot.winnerName}· победитель: {lot.winnerName} ({lot.winningBid}){/if}
                 </span>
                 {#if lot.bids.length > 0}
                     <span class="bids">
+                        <span class="bids-label">Ставки ({lot.bids.length}):</span>
                         {#each lot.bids as bid}
                             <span class="bid">{bid.playerName}: {bid.amount}</span>
                         {/each}
@@ -386,20 +426,67 @@
 
     .form {
         display: flex;
-        gap: 8px;
+        gap: 10px;
         flex-wrap: wrap;
+        align-items: flex-end;
         margin-bottom: 14px;
     }
 
+    /* Инпуты живут внутри .field: ширину задаёт колонка, а не сам инпут,
+       иначе на узких полях («Часы», «Минуты») они вылезают и наезжают
+       на соседние поля */
     .form input[type='text'],
     .form input[type='number'] {
+        width: 100%;
+        min-width: 0;
         background: var(--bg-soft, #12122e);
         border: 1px solid #2a2a5e;
         border-radius: 8px;
         color: inherit;
         padding: 9px 12px;
         font-size: 14px;
-        min-width: 140px;
+    }
+
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1 1 170px;
+        min-width: 150px;
+    }
+
+    .field > span {
+        font-size: 12px;
+        color: var(--muted, #aaa);
+    }
+
+    .field.field-small { flex: 0 1 110px; min-width: 96px; }
+
+    .field.check-field { flex: 0 0 auto; min-width: 0; }
+
+    .field.action {
+        flex: 0 0 auto;
+        flex-direction: row;
+        align-items: flex-end;
+        gap: 8px;
+    }
+
+    .field.action .btn { padding: 10px 14px; }
+
+    .hint {
+        color: var(--muted, #aaa);
+        font-size: 12px;
+        line-height: 1.5;
+        margin: -4px 0 14px;
+    }
+
+    @media (max-width: 560px) {
+        .field { flex: 1 1 100%; min-width: 0; }
+        .field.field-small { flex: 1 1 calc(50% - 5px); min-width: 0; }
+        .field.check-field { flex: 1 1 100%; }
+        .field.check-field > span { display: none; }
+        .field.action { flex: 1 1 100%; }
+        .field.action .btn { flex: 1; }
     }
 
     .check {
@@ -451,6 +538,12 @@
         background: rgba(245, 166, 35, 0.15);
         border-radius: 999px;
         padding: 2px 8px;
+    }
+
+    .bids-label {
+        font-size: 12px;
+        color: var(--muted, #aaa);
+        align-self: center;
     }
 
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }

@@ -16,6 +16,7 @@
         configJson: string;
         availability: string | number;
         isActive: boolean;
+        durationMinutes?: number | null;
         createdAt: string;
         createdById?: string | null;
     }
@@ -27,6 +28,7 @@
         type: string;
         state: string;
         startedAt: string;
+        endsAt?: string | null;
         endedAt?: string | null;
         startedBy: string;
         submissionCount: number;
@@ -45,6 +47,8 @@
     let formDescription = '';
     let formConfigJson = '{}';
     let formIsActive = true;
+    // Длительность ивента в минутах; пусто — завершение вручную
+    let formDuration: number | undefined = undefined;
     let configTouched = false;
     let configError = '';
     // Бинго: удобное поле поверх ConfigJson (сам ключ хранится в конфиге)
@@ -189,6 +193,7 @@
         formDescription = '';
         formConfigJson = defaultConfigFor(formType);
         formIsActive = true;
+        formDuration = undefined;
         configTouched = false;
         configError = '';
         syncBingoMaxPredictions(true);
@@ -202,6 +207,7 @@
         formDescription = definition.description ?? '';
         formConfigJson = formatJson(definition.configJson);
         formIsActive = definition.isActive;
+        formDuration = definition.durationMinutes ?? undefined;
         configTouched = true;
         configError = '';
         syncBingoMaxPredictions(true);
@@ -256,6 +262,16 @@
             showToast('Укажи название ивента', 'error');
             return;
         }
+
+        // Пусто — ивент завершается вручную, иначе автозакрытие через N минут
+        const duration = formDuration === undefined || formDuration === null
+            ? null
+            : Math.round(Number(formDuration));
+        if (duration !== null && (!Number.isFinite(duration) || duration < 1 || duration > 1440)) {
+            showToast('Длительность — от 1 до 1440 минут (или оставь поле пустым)', 'error');
+            return;
+        }
+
         if (!applyBingoMaxPredictions()) {
             showToast('Проверь настройки бинго', 'error');
             return;
@@ -272,7 +288,8 @@
                     displayName: formDisplayName.trim(),
                     description: formDescription.trim() || null,
                     configJson: formConfigJson,
-                    isActive: formIsActive
+                    isActive: formIsActive,
+                    durationMinutes: duration
                 });
                 showToast('Ивент обновлён');
             } else {
@@ -280,7 +297,8 @@
                     type: formType,
                     displayName: formDisplayName.trim(),
                     description: formDescription.trim() || null,
-                    configJson: formConfigJson
+                    configJson: formConfigJson,
+                    durationMinutes: duration
                 });
                 showToast('Ивент создан');
             }
@@ -300,7 +318,8 @@
                 displayName: definition.displayName,
                 description: definition.description ?? null,
                 configJson: definition.configJson,
-                isActive: !definition.isActive
+                isActive: !definition.isActive,
+                durationMinutes: definition.durationMinutes ?? null
             });
             showToast(definition.isActive ? 'Ивент деактивирован' : 'Ивент активирован');
             loadDefinitions();
@@ -358,6 +377,12 @@
                 <label for="event-name">Название</label>
                 <input id="event-name" type="text" maxlength="100" bind:value={formDisplayName}
                        placeholder="Например: Квиз про именинника" />
+            </div>
+            <div class="form-group form-group-small">
+                <label for="event-duration">Длительность, мин</label>
+                <input id="event-duration" type="number" min="1" max="1440" bind:value={formDuration}
+                       placeholder="вручную" />
+                <p class="hint">Пусто — завершение только кнопкой</p>
             </div>
             {#if editingId}
                 <div class="form-group form-group-small">
@@ -484,6 +509,7 @@
                 <th>Тип</th>
                 <th>Состояние</th>
                 <th>Запущен</th>
+                <th>Окончание</th>
                 <th>Завершён</th>
                 <th>Сабмитов</th>
                 <th>Действия</th>
@@ -496,6 +522,7 @@
                     <td><code>{s.type}</code></td>
                     <td><span class="badge {badgeClass(s.state)}">{s.state}</span></td>
                     <td>{new Date(s.startedAt).toLocaleTimeString()}</td>
+                    <td>{s.endsAt ? new Date(s.endsAt).toLocaleTimeString() : '—'}</td>
                     <td>{s.endedAt ? new Date(s.endedAt).toLocaleTimeString() : '—'}</td>
                     <td>{s.submissionCount}</td>
                     <td>
@@ -517,7 +544,7 @@
     .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .form-row { display: flex; gap: 16px; flex-wrap: wrap; }
     .form-group { flex: 1; min-width: 220px; margin-bottom: 12px; }
-    .form-group-small { flex: 0 0 auto; min-width: 80px; }
+    .form-group-small { flex: 0 0 auto; min-width: 110px; }
     .form-group label { display: block; margin-bottom: 6px; color: var(--muted, #aaa); font-size: 14px; }
     .form-group input[type="text"], .form-group input[type="number"], .form-group select, .form-group textarea {
         width: 100%; padding: 10px; border-radius: 6px;

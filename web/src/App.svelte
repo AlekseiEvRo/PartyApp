@@ -4,22 +4,18 @@
     import Party from './lib/components/Party.svelte';
     import AdminPanel from './lib/components/admin/AdminPanel.svelte';
     import Screen from './lib/components/Screen.svelte';
-    import { setToken } from './lib/api';
+    import { setToken, isTokenExpired } from './lib/api';
     import { syncServerTime } from './lib/time';
+    import { captureQrParam } from './lib/qr';
     import { onMount } from 'svelte';
 
     let loading = true;
     let isAdminRoute = window.location.pathname.startsWith('/admin');
     let isScreenRoute = window.location.pathname.startsWith('/screen');
 
-    function isTokenExpired(token: string): boolean {
-        try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            const exp = payload.exp * 1000;
-            return Date.now() > exp;
-        } catch {
-            return true;
-        }
+    /** Админка и экран доступны обеим админским ролям. */
+    function isAdminRole(role: string | undefined): boolean {
+        return role === 'Admin' || role === 'SuperAdmin';
     }
 
     async function tryRestoreSession(): Promise<boolean> {
@@ -66,6 +62,9 @@
     }
 
     onMount(async () => {
+        // Ссылка из QR-кода: код ждёт активации в sessionStorage
+        captureQrParam();
+
         // Таймеры считаем от серверного времени, а не от часов телефона
         void syncServerTime();
         setInterval(() => void syncServerTime(), 5 * 60 * 1000);
@@ -78,7 +77,7 @@
 {#if loading}
     <div class="loading">Загрузка...</div>
 {:else if isAdminRoute}
-    {#if $user && $user.role === 'Admin'}
+    {#if $user && isAdminRole($user.role)}
         <AdminPanel />
     {:else}
         <div class="admin-login">
@@ -90,7 +89,7 @@
         </div>
     {/if}
 {:else if isScreenRoute}
-    {#if $user && $user.role === 'Admin'}
+    {#if $user && isAdminRole($user.role)}
         <Screen />
     {:else}
         <div class="admin-login">

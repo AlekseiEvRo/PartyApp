@@ -117,6 +117,9 @@ public static class EventsEndpoints
             if (validationError is not null)
                 return Results.BadRequest(new { error = validationError });
 
+            if (request.DurationMinutes is < 1 or > 1440)
+                return Results.BadRequest(new { error = "Длительность — от 1 до 1440 минут" });
+
             var definition = new EventDefinition
             {
                 Type = type,
@@ -124,6 +127,7 @@ public static class EventsEndpoints
                 Description = NormalizeDescription(request.Description),
                 ConfigJson = configJson,
                 Availability = AvailabilityMode.Manual,
+                DurationMinutes = request.DurationMinutes,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 CreatedById = adminId
@@ -151,9 +155,13 @@ public static class EventsEndpoints
             if (validationError is not null)
                 return Results.BadRequest(new { error = validationError });
 
+            if (request.DurationMinutes is < 1 or > 1440)
+                return Results.BadRequest(new { error = "Длительность — от 1 до 1440 минут" });
+
             definition.DisplayName = displayName;
             definition.Description = NormalizeDescription(request.Description);
             definition.ConfigJson = configJson;
+            definition.DurationMinutes = request.DurationMinutes;
             definition.IsActive = request.IsActive;
 
             await db.SaveChangesAsync(ct);
@@ -205,7 +213,8 @@ public static class EventsEndpoints
                 {
                     sessionId = session.Id,
                     state = session.State.ToString(),
-                    startedAt = session.StartedAt
+                    startedAt = session.StartedAt,
+                    endsAt = session.EndsAt
                 });
             }
             catch (InvalidOperationException ex)
@@ -278,9 +287,11 @@ public record CreateEventDefinitionRequest(
     string? Type,
     string? DisplayName,
     string? Description,
-    string? ConfigJson);
+    string? ConfigJson,
+    int? DurationMinutes = null);
 public record UpdateEventDefinitionRequest(
     string? DisplayName,
     string? Description,
     string? ConfigJson,
-    bool IsActive = true);
+    bool IsActive = true,
+    int? DurationMinutes = null);

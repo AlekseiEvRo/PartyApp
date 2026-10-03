@@ -235,4 +235,29 @@ public class AuctionEndpointsTests : IDisposable
         bid.GetProperty("amount").GetInt32().Should().Be(45);
         bid.GetProperty("playerName").GetString().Should().Be(player.DisplayName);
     }
+
+    [Fact]
+    public async Task Winners_ReturnFinishedLotsWithWinner()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        Guid lotId = await CreateLotAsync(admin, name: "Торт с вишней");
+
+        await BidAsync(player, lotId, 45);
+
+        _api.Authorize(admin);
+        (await _api.Client.PostAsync($"/api/shop/lots/{lotId}/close", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        // Победители видны любому авторизованному игроку
+        _api.Authorize(player);
+        JsonElement winners = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync("/api/shop/lots/winners"));
+
+        winners.GetArrayLength().Should().Be(1);
+        winners[0].GetProperty("id").GetGuid().Should().Be(lotId);
+        winners[0].GetProperty("name").GetString().Should().Be("Торт с вишней");
+        winners[0].GetProperty("winnerName").GetString().Should().Be(player.DisplayName);
+        winners[0].GetProperty("winningBid").GetInt32().Should().Be(45);
+    }
 }
