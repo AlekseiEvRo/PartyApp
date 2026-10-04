@@ -261,9 +261,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("EndsAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("PartyId")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("TEXT");
 
@@ -329,38 +326,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.ToTable("Lots");
                 });
 
-            modelBuilder.Entity("PartyApp.Domain.Entities.Party", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("EndedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StartedAt");
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("Parties");
-                });
-
             modelBuilder.Entity("PartyApp.Domain.Entities.PartyPhoto", b =>
                 {
                     b.Property<Guid>("Id")
@@ -379,9 +344,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Property<string>("OriginalFileName")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("PartyId")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("RewardGranted")
@@ -414,36 +376,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.HasIndex("UploadedById");
 
                     b.ToTable("PartyPhotos");
-                });
-
-            modelBuilder.Entity("PartyApp.Domain.Entities.PartyScheduleItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("DefinitionId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("PartyId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("SessionId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DefinitionId");
-
-                    b.HasIndex("PartyId", "Order");
-
-                    b.ToTable("PartyScheduleItems");
                 });
 
             modelBuilder.Entity("PartyApp.Domain.Entities.PhotoLike", b =>
@@ -825,9 +757,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("PartyId")
-                        .HasColumnType("TEXT");
-
                     b.Property<Guid>("PlayerId")
                         .HasColumnType("TEXT");
 
@@ -999,25 +928,6 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Navigation("Session");
 
                     b.Navigation("UploadedBy");
-                });
-
-            modelBuilder.Entity("PartyApp.Domain.Entities.PartyScheduleItem", b =>
-                {
-                    b.HasOne("PartyApp.Domain.Entities.EventDefinition", "Definition")
-                        .WithMany()
-                        .HasForeignKey("DefinitionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("PartyApp.Domain.Entities.Party", "Party")
-                        .WithMany()
-                        .HasForeignKey("PartyId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Definition");
-
-                    b.Navigation("Party");
                 });
 
             modelBuilder.Entity("PartyApp.Domain.Entities.PhotoLike", b =>

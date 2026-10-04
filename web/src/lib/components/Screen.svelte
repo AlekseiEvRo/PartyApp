@@ -30,33 +30,6 @@
         balance: number;
     }
 
-    interface PartyTopPlayer {
-        playerId: string;
-        displayName: string;
-        earned: number;
-    }
-
-    interface PartySummary {
-        party: { id: string; name: string; status: string; startedAt: string; endedAt: string | null };
-        durationMinutes: number;
-        playersCount: number;
-        topPlayers: PartyTopPlayer[];
-        eventsCount: number;
-        eventsByType: Record<string, number>;
-        submissionsCount: number;
-        photosCount: number;
-        topPhoto: { photoId: string; caption: string | null; uploadedByName: string; likesCount: number } | null;
-        wishesCount: number;
-    }
-
-    interface ScheduleItem {
-        id: string;
-        definitionId: string;
-        displayName: string;
-        type: string;
-        description: string | null;
-    }
-
     interface EventData {
         sessionId: string;
         type: string;
@@ -214,8 +187,6 @@
     let wonLots: WonLot[] = [];
     let qrStats: QrStats | null = null;
     let spyState: SpyState | null = null;
-    let partySummary: PartySummary | null = null;
-    let nextScheduleItem: ScheduleItem | null = null;
 
     // QR для входа на сайт в режиме ожидания
     let idleQrUrl = '';
@@ -374,8 +345,6 @@
             connection.on('QrRedeemed', onQrRedeemed);
             connection.on('SpyGameStarted', onSpyGameStarted);
             connection.on('SpyGameFinished', onSpyGameFinished);
-            connection.on('PartyStarted', onPartyStarted);
-            connection.on('PartyFinished', onPartyFinished);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -416,8 +385,6 @@
             connection.off('QrRedeemed', onQrRedeemed);
             connection.off('SpyGameStarted', onSpyGameStarted);
             connection.off('SpyGameFinished', onSpyGameFinished);
-            connection.off('PartyStarted', onPartyStarted);
-            connection.off('PartyFinished', onPartyFinished);
             clearTimeout(wheelTimer);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
@@ -485,8 +452,6 @@
             if (checkConnection) await reconnectIfNeeded();
 
             if (currentView === 'leaderboard') await loadLeaderboard();
-            else if (currentView === 'summary') await loadPartySummary();
-            else if (currentView === 'idle') await loadPartySummary();
             else if (currentView === 'event') await loadEvent();
             else if (currentView === 'photos') await loadPhotos();
             else if (currentView === 'shop') await loadShopItems();
@@ -500,14 +465,6 @@
 
     async function loadLeaderboard() {
         leaderboard = await api<LeaderboardEntry[]>('/api/admin/leaderboard');
-    }
-
-    async function loadPartySummary() {
-        const current = await api<{ summary: PartySummary | null; nextScheduleItem: ScheduleItem | null }>(
-            '/api/parties/current'
-        );
-        partySummary = current.summary;
-        nextScheduleItem = current.nextScheduleItem;
     }
 
     async function loadEvent() {
@@ -591,17 +548,6 @@
         // Оставляем итог на экране до ручного переключения
         forced = { mode: 'spy' };
         void loadSpyState();
-    }
-
-    function onPartyStarted() {
-        // Новая смена: обновляем очередь в ожидании и итоги, если они на экране
-        if (currentView === 'summary' || currentView === 'idle') void loadPartySummary();
-    }
-
-    function onPartyFinished(summary: PartySummary) {
-        // Итоги вечеринки показываем автоматически до ручного переключения
-        partySummary = summary;
-        forced = { mode: 'summary' };
     }
 
     function onBidPlaced() {
@@ -784,10 +730,6 @@
             <h1>Скоро начнём!</h1>
             <p class="muted">Следи за приложением — ивенты появятся здесь</p>
 
-            {#if nextScheduleItem}
-                <p class="next-up">Далее: <b>{nextScheduleItem.displayName}</b></p>
-            {/if}
-
             {#if idleQrUrl}
                 <div class="join">
                     <img class="join-qr" src={idleQrUrl} alt="QR-код для входа на сайт" />
@@ -814,57 +756,6 @@
                         </li>
                     {/each}
                 </ol>
-            {/if}
-        </main>
-    {:else if currentView === 'summary'}
-        <main class="summary">
-            {#if partySummary}
-                <h1>🎊 {partySummary.party.name}</h1>
-                <p class="muted">
-                    {partySummary.party.status === 'Active' ? 'Вечеринка идёт' : 'Вечеринка завершена'}
-                    · {partySummary.durationMinutes} мин · {partySummary.playersCount} участников
-                </p>
-
-                <div class="summary-grid">
-                    <div class="summary-card">
-                        <span class="summary-value">{partySummary.eventsCount}</span>
-                        <span class="muted">ивентов</span>
-                    </div>
-                    <div class="summary-card">
-                        <span class="summary-value">{partySummary.submissionsCount}</span>
-                        <span class="muted">ответов</span>
-                    </div>
-                    <div class="summary-card">
-                        <span class="summary-value">{partySummary.photosCount}</span>
-                        <span class="muted">фото</span>
-                    </div>
-                    <div class="summary-card">
-                        <span class="summary-value">{partySummary.wishesCount}</span>
-                        <span class="muted">пожеланий</span>
-                    </div>
-                </div>
-
-                {#if partySummary.topPlayers.length > 0}
-                    <ol class="summary-players">
-                        {#each partySummary.topPlayers.slice(0, 5) as player, i (player.playerId)}
-                            <li class:top={i < 3}>
-                                <span class="place">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</span>
-                                <span class="name">{player.displayName}</span>
-                                <span class="points">+{player.earned}</span>
-                            </li>
-                        {/each}
-                    </ol>
-                {/if}
-
-                {#if partySummary.topPhoto}
-                    <p class="summary-photo">
-                        📸 Лучшее фото: {partySummary.topPhoto.caption ?? partySummary.topPhoto.uploadedByName}
-                        <span class="muted">♥ {partySummary.topPhoto.likesCount}</span>
-                    </p>
-                {/if}
-            {:else}
-                <h1>🎊 Итоги</h1>
-                <p class="muted">Вечеринка ещё не начата — загляни в админку</p>
             {/if}
         </main>
     {:else if currentView === 'event'}
@@ -1467,59 +1358,6 @@
     }
 
     .points { color: #27ae60; font-weight: bold; }
-
-    /* Итоги вечеринки */
-    .summary-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(180px, 40vw), 1fr));
-        gap: 2vh 1.5vw;
-        width: min(1200px, 92vw);
-        margin-bottom: 3vh;
-    }
-
-    .summary-card {
-        display: flex;
-        flex-direction: column;
-        gap: 0.6vh;
-        background: rgba(255, 255, 255, 0.06);
-        border-radius: 16px;
-        padding: 2vh 1.5vw;
-        font-size: clamp(15px, 1.5vw, 24px);
-    }
-
-    .summary-value {
-        font-size: clamp(34px, 4vw, 64px);
-        font-weight: bold;
-        color: #f5a623;
-    }
-
-    .summary-players {
-        list-style: none;
-        width: min(900px, 90vw);
-        display: flex;
-        flex-direction: column;
-        gap: 1.2vh;
-    }
-
-    .summary-players li {
-        display: flex;
-        align-items: center;
-        gap: 2vw;
-        background: rgba(255, 255, 255, 0.06);
-        border-radius: 14px;
-        padding: 1.2vh 2vw;
-        font-size: clamp(18px, 2vw, 34px);
-    }
-
-    .summary-players li.top {
-        background: rgba(245, 166, 35, 0.16);
-        border: 1px solid rgba(245, 166, 35, 0.45);
-    }
-
-    .summary-photo { font-size: clamp(16px, 1.8vw, 30px); margin-top: 2vh; }
-
-    .next-up { font-size: clamp(18px, 2vw, 32px); margin-top: 1.5vh; }
-    .next-up b { color: #f5a623; }
 
     /* Ивент */
     .description { color: var(--muted, #aaa); font-size: clamp(16px, 1.8vw, 30px); margin-bottom: 2vh; }

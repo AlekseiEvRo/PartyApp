@@ -1,6 +1,5 @@
 <script lang="ts">
     import DashboardTab from './DashboardTab.svelte';
-    import PartiesTab from './PartiesTab.svelte';
     import EventsTab from './EventsTab.svelte';
     import QrTab from './QrTab.svelte';
     import GrantTab from './GrantTab.svelte';
@@ -21,7 +20,6 @@
 
     const tabs = [
         { id: 'dashboard', label: '📊 Дашборд' },
-        { id: 'parties', label: '🎉 Вечеринки' },
         { id: 'events', label: '🎮 Ивенты' },
         { id: 'dare', label: '🎲 Фанты' },
         { id: 'bingo', label: '🎯 Бинго' },
@@ -83,8 +81,6 @@
     <div class="tab-content">
         {#if activeTab === 'dashboard'}
             <DashboardTab />
-        {:else if activeTab === 'parties'}
-            <PartiesTab />
         {:else if activeTab === 'events'}
             <EventsTab />
         {:else if activeTab === 'dare'}

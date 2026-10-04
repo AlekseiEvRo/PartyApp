@@ -104,8 +104,6 @@
             case 'TransferIn':
             case 'TransferOut':
                 return 'Перевод';
-            case 'PartyReset':
-                return 'Новая вечеринка';
             default:
                 return type;
         }

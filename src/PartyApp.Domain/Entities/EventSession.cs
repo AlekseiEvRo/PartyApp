@@ -5,9 +5,6 @@ namespace PartyApp.Domain.Entities;
 
 public class EventSession: BaseEntity
 {
-    /// <summary>Вечеринка, во время которой запустили ивент. Пусто — партии ещё не было.</summary>
-    public Guid? PartyId { get; set; }
-
     public Guid DefinitionId { get; set; }
     public EventDefinition Definition { get; set; } = null!;
 

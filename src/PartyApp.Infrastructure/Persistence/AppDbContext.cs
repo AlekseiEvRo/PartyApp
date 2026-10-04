@@ -31,8 +31,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<RaffleDraw> RaffleDraws => Set<RaffleDraw>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
-    public DbSet<Party> Parties => Set<Party>();
-    public DbSet<PartyScheduleItem> PartyScheduleItems => Set<PartyScheduleItem>();
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
