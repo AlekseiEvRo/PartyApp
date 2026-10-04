@@ -3,6 +3,7 @@
     import { api, getToken } from '../../api';
     import { showToast, user } from '../../stores';
     import BalanceHistory from '../BalanceHistory.svelte';
+    import Avatar from '../Avatar.svelte';
 
     interface Player {
         id: string;
@@ -12,6 +13,7 @@
         isActive: boolean;
         balance: number;
         createdAt: string;
+        profileUpdatedAt: string | null;
     }
 
     interface BackupFile {
@@ -190,7 +192,12 @@
             <tbody>
             {#each players as p}
                 <tr class:blocked={!p.isActive}>
-                    <td>{p.displayName}</td>
+                    <td>
+                        <div class="player-cell">
+                            <Avatar userId={p.id} name={p.displayName} version={p.profileUpdatedAt} size={28} />
+                            <span>{p.displayName}</span>
+                        </div>
+                    </td>
                     <td>{p.username}</td>
                     <td>{roleLabel(p.role)}</td>
                     <td>{p.isActive ? '✅ Активен' : '🚫 Заблокирован'}</td>
@@ -287,6 +294,7 @@
     }
     .btn-history:hover { background: var(--card-soft, #2a2a5e); }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .player-cell { display: flex; align-items: center; gap: 8px; }
     .btn-small {
         padding: 6px 8px; border: 1px solid var(--border, #333); border-radius: 6px;
         background: none; color: var(--text, #eee); font-size: 13px; cursor: pointer;

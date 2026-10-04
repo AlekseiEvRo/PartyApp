@@ -8,6 +8,7 @@
     import PhotosTab from './PhotosTab.svelte';
     import WishesTab from './WishesTab.svelte';
     import ScreenTab from './ScreenTab.svelte';
+    import PollsTab from './PollsTab.svelte';
     import ShopTab from './ShopTab.svelte';
     import DareTab from './DareTab.svelte';
     import BingoTab from './BingoTab.svelte';
@@ -28,6 +29,7 @@
         { id: 'grant', label: '💰 Начисление' },
         { id: 'leaderboard', label: '🏆 Лидерборд' },
         { id: 'spy', label: '🕵 Шпионаж' },
+        { id: 'polls', label: '🗳 Голосование' },
         { id: 'photos', label: '📸 Фото' },
         { id: 'wishes', label: '💌 Пожелания' },
         { id: 'shop', label: '🛍 Магазин' },
@@ -97,6 +99,8 @@
             <LeaderboardTab />
         {:else if activeTab === 'spy'}
             <SpyGameTab />
+        {:else if activeTab === 'polls'}
+            <PollsTab />
         {:else if activeTab === 'photos'}
             <PhotosTab />
         {:else if activeTab === 'wishes'}

@@ -129,7 +129,8 @@ public class EventHandlerDefaultConfigTests
             ScopeFactory, PointsAward, TimeProvider.System, NullLogger<ReactionHandler>.Instance);
         DareHandler dare = new(ScopeFactory, NullLogger<DareHandler>.Instance);
         BingoService bingoService = new(
-            ScopeFactory, PointsAward, new RecordingHubContext(), NullLogger<BingoService>.Instance);
+            ScopeFactory, PointsAward, new RecordingHubContext(),
+            TestAchievements.Create(ScopeFactory), NullLogger<BingoService>.Instance);
         BingoHandler bingo = new(ScopeFactory, bingoService, NullLogger<BingoHandler>.Instance);
         EmojiSongHandler songs = new(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance);
         PredictionsHandler predictions = new(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance);
@@ -188,7 +189,9 @@ public class EventHandlerDefaultConfigTests
             new DareHandler(ScopeFactory, NullLogger<DareHandler>.Instance),
             new BingoHandler(
                 ScopeFactory,
-                new BingoService(ScopeFactory, PointsAward, new RecordingHubContext(), NullLogger<BingoService>.Instance),
+                new BingoService(
+                    ScopeFactory, PointsAward, new RecordingHubContext(),
+                    TestAchievements.Create(ScopeFactory), NullLogger<BingoService>.Instance),
                 NullLogger<BingoHandler>.Instance),
             new EmojiSongHandler(ScopeFactory, PointsAward, NullLogger<EmojiSongHandler>.Instance),
             new PredictionsHandler(ScopeFactory, PointsAward, NullLogger<PredictionsHandler>.Instance),

@@ -16,5 +16,7 @@ public class UserConfiguration: IEntityTypeConfiguration<User>
         builder.Property(u => u.PasswordHash).HasMaxLength(200).IsRequired();
         builder.Property(u => u.IsActive).HasDefaultValue(true);
         builder.Property(u => u.SecurityStamp).HasMaxLength(64).IsRequired();
+        builder.Property(u => u.AvatarPath).HasMaxLength(300);
+        builder.Property(u => u.StatusEmoji).HasMaxLength(16);
     }
 }

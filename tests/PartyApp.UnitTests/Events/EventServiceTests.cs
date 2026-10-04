@@ -33,6 +33,7 @@ public class EventServiceTests : IDisposable
             _factory,
             _hub,
             _push,
+            TestAchievements.Create(_host.ScopeFactory),
             NullLogger<EventService>.Instance);
     }
 

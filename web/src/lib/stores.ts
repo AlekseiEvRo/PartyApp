@@ -1,5 +1,7 @@
 import { writable } from 'svelte/store';
 
+import type { Poll } from './polls';
+
 export interface UserInfo {
     userId: string;
     username: string;
@@ -37,6 +39,15 @@ export const moderationVersion = writable(0);
 
 // Магазин: товары, покупки и лоты — открытые экраны обновляются без перезагрузки
 export const shopVersion = writable(0);
+
+// Профиль (аватар/статус) обновился — клиенты сбрасывают кэш аватара
+export const profileUpdated = writable<{ userId: string; profileUpdatedAt: string } | null>(null);
+
+// Получено новое достижение — открытые экраны профиля обновляются
+export const achievementsVersion = writable(0);
+
+// Голосование за следующий ивент: живое обновление счётчиков
+export const pollUpdated = writable<Poll | null>(null);
 
 // Подтверждённый админом фант: игрок сразу видит начисленные баллы
 export const dareConfirmed = writable<{ sessionId: string; playerId: string; points: number } | null>(null);

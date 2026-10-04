@@ -37,6 +37,7 @@ public static class AdminEndpoints
                     u.DisplayName,
                     Role = u.Role.ToString(),
                     u.IsActive,
+                    u.ProfileUpdatedAt,
                     Balance = u.Wallet != null ? u.Wallet.Balance : 0,
                     u.CreatedAt
                 })
@@ -329,6 +330,7 @@ public static class AdminEndpoints
                 {
                     u.Id,
                     u.DisplayName,
+                    u.ProfileUpdatedAt,
                     Balance = u.Wallet != null ? u.Wallet.Balance : 0
                 })
                 .ToListAsync(ct);

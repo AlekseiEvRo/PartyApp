@@ -29,7 +29,8 @@ public class BingoHandlerTests : IDisposable
     public BingoHandlerTests()
     {
         _bingo = new BingoService(
-            _host.ScopeFactory, _award, new RecordingHubContext(), NullLogger<BingoService>.Instance);
+            _host.ScopeFactory, _award, new RecordingHubContext(),
+            TestAchievements.Create(_host.ScopeFactory), NullLogger<BingoService>.Instance);
         _handler = new BingoHandler(_host.ScopeFactory, _bingo, NullLogger<BingoHandler>.Instance);
     }
 

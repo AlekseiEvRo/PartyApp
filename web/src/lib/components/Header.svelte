@@ -1,17 +1,22 @@
 <script lang="ts">
-    import { user, balance, connectionState } from '../stores';
+    import { user, balance, connectionState, profileUpdated } from '../stores';
     import { onMount } from 'svelte';
+    import { api } from '../api';
     import { detachPushSubscription, getPermission, getPushSupport } from '../push';
     import { disconnect } from '../signalr';
     import NotificationSettings from './NotificationSettings.svelte';
     import BalanceHistory from './BalanceHistory.svelte';
     import TransferModal from './TransferModal.svelte';
+    import ProfileModal from './ProfileModal.svelte';
+    import Avatar from './Avatar.svelte';
 
     let showNotifButton = false;
     let notificationsEnabled = false;
     let showSettings = false;
     let showBalanceHistory = false;
     let showTransfer = false;
+    let showProfile = false;
+    let profile: { statusEmoji: string | null; profileUpdatedAt: string | null } | null = null;
 
     onMount(() => {
         const support = getPushSupport();
@@ -20,7 +25,25 @@
         // она открывает экран настроек с инструкцией по установке
         showNotifButton = support.supported || support.reason === 'ios-not-installed';
         notificationsEnabled = getPermission() === 'granted';
+
+        void loadProfile();
     });
+
+    async function loadProfile() {
+        try {
+            profile = await api('/api/profile');
+        } catch {
+            profile = null;
+        }
+    }
+
+    // Профиль обновился (в том числе с другого устройства) — обновляем аватар и статус
+    $: if ($profileUpdated && $profileUpdated.userId === $user?.userId) void loadProfile();
+
+    function closeProfile() {
+        showProfile = false;
+        void loadProfile();
+    }
 
     function openSettings() {
         showSettings = true;
@@ -48,8 +71,17 @@
 
 <header>
     <div class="header-left">
-        <span class="logo">🎉</span>
-        <span class="name" title={$user?.displayName}>{$user?.displayName}</span>
+        <button class="profile-btn" on:click={() => (showProfile = true)} title="Профиль" aria-label="Профиль">
+            <Avatar
+                userId={$user?.userId ?? ''}
+                name={$user?.displayName ?? ''}
+                version={profile?.profileUpdatedAt ?? null}
+                size={30}
+            />
+        </button>
+        <span class="name" title={$user?.displayName}>
+            {$user?.displayName}{#if profile?.statusEmoji}<span class="status">{profile.statusEmoji}</span>{/if}
+        </span>
         {#if $user?.role === 'Admin' || $user?.role === 'SuperAdmin'}
             <a href="/admin" class="admin-link" title="Админка" aria-label="Админка">
                 ⚙️<span class="admin-link-text"> Админка</span>
@@ -89,6 +121,7 @@
 <NotificationSettings open={showSettings} on:close={closeSettings} />
 <BalanceHistory open={showBalanceHistory} on:close={() => (showBalanceHistory = false)} />
 <TransferModal open={showTransfer} on:close={() => (showTransfer = false)} />
+<ProfileModal open={showProfile} on:close={closeProfile} />
 
 <style>
     header {
@@ -124,7 +157,16 @@
         flex-shrink: 0;
     }
 
-    .logo { font-size: 22px; }
+    .profile-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        display: flex;
+        border-radius: 50%;
+    }
+
+    .status { margin-left: 4px; }
 
     .name {
         font-weight: bold;

@@ -437,6 +437,92 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.ToTable("PlayerSubmissions");
                 });
 
+            modelBuilder.Entity("PartyApp.Domain.Entities.Poll", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Question")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("CreatedById");
+
+                    b.ToTable("Polls");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.PollOption", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("DefinitionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("PollId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DefinitionId");
+
+                    b.HasIndex("PollId", "Order");
+
+                    b.ToTable("PollOptions");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.PollVote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OptionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PollId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OptionId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("PollId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("PollVotes");
+                });
+
             modelBuilder.Entity("PartyApp.Domain.Entities.Purchase", b =>
                 {
                     b.Property<Guid>("Id")
@@ -654,6 +740,10 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AvatarPath")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -672,12 +762,19 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("ProfileUpdatedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Role")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("SecurityStamp")
                         .IsRequired()
                         .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StatusEmoji")
+                        .HasMaxLength(16)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Username")
@@ -691,6 +788,31 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.UserAchievement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AwardedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("UserAchievements");
                 });
 
             modelBuilder.Entity("PartyApp.Domain.Entities.Wallet", b =>
@@ -968,6 +1090,61 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Navigation("Session");
                 });
 
+            modelBuilder.Entity("PartyApp.Domain.Entities.Poll", b =>
+                {
+                    b.HasOne("PartyApp.Domain.Entities.User", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById");
+
+                    b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.PollOption", b =>
+                {
+                    b.HasOne("PartyApp.Domain.Entities.EventDefinition", "Definition")
+                        .WithMany()
+                        .HasForeignKey("DefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PartyApp.Domain.Entities.Poll", "Poll")
+                        .WithMany("Options")
+                        .HasForeignKey("PollId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Definition");
+
+                    b.Navigation("Poll");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.PollVote", b =>
+                {
+                    b.HasOne("PartyApp.Domain.Entities.PollOption", "Option")
+                        .WithMany()
+                        .HasForeignKey("OptionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PartyApp.Domain.Entities.Poll", "Poll")
+                        .WithMany("Votes")
+                        .HasForeignKey("PollId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PartyApp.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Option");
+
+                    b.Navigation("Poll");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("PartyApp.Domain.Entities.Purchase", b =>
                 {
                     b.HasOne("PartyApp.Domain.Entities.User", "Player")
@@ -1026,6 +1203,17 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
                     b.Navigation("Winner");
                 });
 
+            modelBuilder.Entity("PartyApp.Domain.Entities.UserAchievement", b =>
+                {
+                    b.HasOne("PartyApp.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("PartyApp.Domain.Entities.Wallet", b =>
                 {
                     b.HasOne("PartyApp.Domain.Entities.User", "User")
@@ -1079,6 +1267,13 @@ namespace PartyApp.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("PartyApp.Domain.Entities.PartyPhoto", b =>
                 {
                     b.Navigation("Likes");
+                });
+
+            modelBuilder.Entity("PartyApp.Domain.Entities.Poll", b =>
+                {
+                    b.Navigation("Options");
+
+                    b.Navigation("Votes");
                 });
 
             modelBuilder.Entity("PartyApp.Domain.Entities.User", b =>

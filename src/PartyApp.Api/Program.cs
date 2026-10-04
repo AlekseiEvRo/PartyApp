@@ -13,6 +13,7 @@ using Microsoft.OpenApi.Models;
 using PartyApp.Api.Common.Middleware;
 using PartyApp.Api.Common.Security;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Achievements;
 using PartyApp.Api.Modules.Admin;
 using PartyApp.Api.Modules.Auth;
 using PartyApp.Api.Modules.Auth.Services;
@@ -23,6 +24,8 @@ using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Api.Modules.Moderation;
 using PartyApp.Api.Modules.Notifications;
 using PartyApp.Api.Modules.Photos;
+using PartyApp.Api.Modules.Polls;
+using PartyApp.Api.Modules.Profile;
 using PartyApp.Api.Modules.Push;
 using PartyApp.Api.Modules.Qr;
 using PartyApp.Api.Modules.Screen;
@@ -214,9 +217,11 @@ builder.Services.AddSingleton<ToastService>();
 builder.Services.AddSingleton<SpyGameService>();
 builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();
 builder.Services.AddSingleton<IPointsAwardService, PointsAwardService>();
+builder.Services.AddSingleton<AchievementService>();
 builder.Services.AddScoped<ModerationNotifier>();
 builder.Services.AddScoped<AdminAuditService>();
 builder.Services.AddScoped<BackupService>();
+builder.Services.AddScoped<PollService>();
 builder.Services.AddSingleton<ScreenService>();
 builder.Services.AddSingleton<AuctionService>();
 builder.Services.AddHostedService<AuctionClosingService>();
@@ -244,10 +249,14 @@ builder.Services.AddSingleton<RussianDictionaryService>();
 // QR сервис
 builder.Services.AddSingleton<IQrTokenService, QrTokenService>();
 
-// Файловое хранилище (фотоальбом)
-string uploadRoot = builder.Configuration["Files:UploadRoot"] ?? "App_Data/uploads";
+// Файловое хранилище (фотоальбом и аватары).
+// Путь читаем при первом разрешении, чтобы учитывать конфиг, заданный при старте хоста.
 builder.Services.AddSingleton<IFileStorage>(sp =>
-    new LocalFileStorage(uploadRoot, sp.GetRequiredService<ILogger<LocalFileStorage>>()));
+{
+    IConfiguration config = sp.GetRequiredService<IConfiguration>();
+    string uploadRoot = config["Files:UploadRoot"] ?? "App_Data/uploads";
+    return new LocalFileStorage(uploadRoot, sp.GetRequiredService<ILogger<LocalFileStorage>>());
+});
 
 // Фабрика обработчиков
 builder.Services.AddSingleton<IEventHandlerFactory, EventHandlerFactory>();
@@ -627,6 +636,9 @@ app.MapAdminEndpoints();
 app.MapBackupEndpoints();
 app.MapWalletEndpoints();
 app.MapSpyGameEndpoints();
+app.MapProfileEndpoints();
+app.MapAchievementEndpoints();
+app.MapPollEndpoints();
 app.MapPhotoEndpoints();
 app.MapSubmissionEndpoints();
 app.MapScreenEndpoints();

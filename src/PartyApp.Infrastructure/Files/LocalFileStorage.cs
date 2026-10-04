@@ -18,11 +18,17 @@ public class LocalFileStorage : IFileStorage
         _logger = logger;
     }
 
-    public async Task<string> SaveAsync(Stream content, string extension, CancellationToken ct = default)
+    public Task<string> SaveAsync(Stream content, string extension, CancellationToken ct = default)
+    {
+        return SaveAsync(content, extension, "photos", ct);
+    }
+
+    public async Task<string> SaveAsync(Stream content, string extension, string folder, CancellationToken ct = default)
     {
         string safeExtension = NormalizeExtension(extension);
+        string safeFolder = NormalizeFolder(folder);
         string relativePath = Path.Combine(
-            "photos",
+            safeFolder,
             DateTime.UtcNow.Year.ToString(),
             $"{Guid.NewGuid():N}{safeExtension}");
 
@@ -79,5 +85,18 @@ public class LocalFileStorage : IFileStorage
             throw new InvalidOperationException($"Недопустимое расширение файла: {extension}");
 
         return "." + ext.ToLowerInvariant();
+    }
+
+    private static string NormalizeFolder(string folder)
+    {
+        string name = folder.Trim().ToLowerInvariant();
+
+        if (name.Length is < 1 or > 32
+            || name.Any(c => !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_')))
+        {
+            throw new InvalidOperationException($"Недопустимая папка хранилища: {folder}");
+        }
+
+        return name;
     }
 }

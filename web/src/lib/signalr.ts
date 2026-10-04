@@ -15,8 +15,12 @@ import {
     bingoCellConfirmed,
     bingoCellRejected,
     bingoLineAwarded,
-    raffleDrawn
+    raffleDrawn,
+    profileUpdated,
+    achievementsVersion,
+    pollUpdated
 } from './stores';
+import type { Poll } from './polls';
 import { getToken, setToken, isTokenExpired } from './api';
 import { showBrowserNotification, isNotificationSupported } from './notifications';
 
@@ -186,6 +190,34 @@ export async function connect(): Promise<void> {
             showToast(`Ничья. Слово было: ${result.secretWord}`, 'info');
         }
     });
+
+    // === Профиль ===
+    connection.on('ProfileUpdated', (data: { userId: string; profileUpdatedAt: string }) => {
+        profileUpdated.set(data);
+    });
+
+    // === Достижения ===
+    connection.on('AchievementUnlocked', (data: {
+        code: string;
+        title: string;
+        icon: string;
+        description: string;
+        points: number;
+    }) => {
+        showToast(`${data.icon} Достижение: ${data.title} (+${data.points})`, 'info');
+        achievementsVersion.update((v) => v + 1);
+
+        if (isNotificationSupported() && Notification.permission === 'granted') {
+            showBrowserNotification(`${data.icon} ${data.title}`, {
+                body: `Достижение! +${data.points} баллов`,
+                tag: `achievement-${data.code}`
+            });
+        }
+    });
+
+    // === Голосование за следующий ивент ===
+    connection.on('PollUpdated', (poll: Poll) => pollUpdated.set(poll));
+    connection.on('PollClosed', (poll: Poll) => pollUpdated.set(poll));
 
     // === Сессия ===
     // Админ сменил роль, кикнул или заблокировал — токен больше не действует

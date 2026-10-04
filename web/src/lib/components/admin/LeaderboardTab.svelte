@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { api } from '../../api';
     import { showToast } from '../../stores';
+    import Avatar from '../Avatar.svelte';
 
     let leaderboard: any[] = [];
     const medals = ['🥇', '🥈', '🥉'];
@@ -24,6 +25,7 @@
     {#each leaderboard as p, i}
         <div class="leaderboard-item">
             <div class="rank">{medals[i] || (i + 1)}</div>
+            <Avatar userId={p.id} name={p.displayName} version={p.profileUpdatedAt ?? null} size={36} />
             <div class="name">{p.displayName}</div>
             <div class="score">{p.balance} ⭐</div>
         </div>

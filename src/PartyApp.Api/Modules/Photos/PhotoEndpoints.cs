@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Achievements;
 using PartyApp.Api.Modules.Moderation;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
@@ -225,6 +226,7 @@ public static class PhotoEndpoints
                 Guid photoId,
                 ClaimsPrincipal user,
                 AppDbContext db,
+                AchievementService achievements,
                 CancellationToken ct) =>
             {
                 if (!TryGetUserId(user, out Guid userId))
@@ -255,6 +257,9 @@ public static class PhotoEndpoints
 
                 int likesCount = await db.PhotoLikes.CountAsync(l => l.PhotoId == photoId, ct);
 
+                if (liked)
+                    await achievements.OnPhotoLikedAsync(photoId, ct);
+
                 return Results.Ok(new { liked, likesCount });
             });
 
@@ -266,8 +271,9 @@ public static class PhotoEndpoints
                 AppDbContext db,
                 IHubContext<PartyHub> hub,
                 IPointsAwardService pointsAward,
+                AchievementService achievements,
                 CancellationToken ct) =>
-            ModerateAsync(photoId, ModerationStatus.Approved, user, db, hub, pointsAward, ct))
+            ModerateAsync(photoId, ModerationStatus.Approved, user, db, hub, pointsAward, achievements, ct))
             .RequireAuthorization("AdminOnly");
 
         group.MapPost("/{photoId:guid}/reject", (
@@ -276,8 +282,9 @@ public static class PhotoEndpoints
                 AppDbContext db,
                 IHubContext<PartyHub> hub,
                 IPointsAwardService pointsAward,
+                AchievementService achievements,
                 CancellationToken ct) =>
-            ModerateAsync(photoId, ModerationStatus.Rejected, user, db, hub, pointsAward, ct))
+            ModerateAsync(photoId, ModerationStatus.Rejected, user, db, hub, pointsAward, achievements, ct))
             .RequireAuthorization("AdminOnly");
 
         // Настройка награды за одобренные фото
@@ -344,6 +351,7 @@ public static class PhotoEndpoints
         AppDbContext db,
         IHubContext<PartyHub> hub,
         IPointsAwardService pointsAward,
+        AchievementService achievements,
         CancellationToken ct)
     {
         PartyPhoto? photo = await db.PartyPhotos
@@ -372,6 +380,7 @@ public static class PhotoEndpoints
         if (status == ModerationStatus.Approved)
         {
             await BroadcastPhotoAsync(hub, photo, user, ct);
+            await achievements.EvaluatePlayerAsync(photo.UploadedById, ct);
         }
         else if (wasApproved)
         {

@@ -127,6 +127,8 @@
                 return 'QR-статистика';
             case 'spy':
                 return 'шпионаж';
+            case 'poll':
+                return 'голосование';
             default:
                 return 'ожидание';
         }
@@ -159,6 +161,7 @@
         <button class="btn" on:click={() => setMode('lots')} disabled={busy}>🔨 Ставки</button>
         <button class="btn" on:click={() => setMode('qr')} disabled={busy}>📷 QR-статистика</button>
         <button class="btn" on:click={() => setMode('spy')} disabled={busy}>🕵 Шпионаж</button>
+        <button class="btn" on:click={() => setMode('poll')} disabled={busy}>🗳 Голосование</button>
         <button class="btn accent" on:click={() => setMode('rotation')} disabled={busy}>🔁 Ротация</button>
         <button class="btn accent" on:click={fireConfetti} disabled={busy}>🎉 Конфетти</button>
     </div>
