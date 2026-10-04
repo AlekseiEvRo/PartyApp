@@ -3,6 +3,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Achievements;
 using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Push;
 using PartyApp.Domain.Entities;
@@ -17,6 +18,7 @@ public class EventService : IEventService
     private readonly IEventHandlerFactory _handlerFactory;
     private readonly IHubContext<PartyHub> _hubContext;
     private readonly IPushNotificationService _push;
+    private readonly AchievementService _achievements;
     private readonly ILogger<EventService> _logger;
 
     public EventService(
@@ -24,12 +26,14 @@ public class EventService : IEventService
         IEventHandlerFactory handlerFactory,
         IHubContext<PartyHub> hubContext,
         IPushNotificationService push,
+        AchievementService achievements,
         ILogger<EventService> logger)
     {
         _scopeFactory = scopeFactory;
         _handlerFactory = handlerFactory;
         _hubContext = hubContext;
         _push = push;
+        _achievements = achievements;
         _logger = logger;
     }
 
@@ -157,6 +161,9 @@ public class EventService : IEventService
         var handler = _handlerFactory.GetHandler(session.Definition.Type);
         await handler.OnSessionFinishedAsync(session, session.Definition, ct);
 
+        // Достижения по итогам сессии (например, победитель квиза)
+        await _achievements.OnEventFinishedAsync(session.Id, session.Definition.Type, ct);
+
         // Рассылаем всем клиентам событие завершения
         await _hubContext.Clients.All.SendAsync("EventFinished", new
         {
@@ -252,6 +259,9 @@ public class EventService : IEventService
                     sessionId,
                     session.Definition.Type);
             }
+
+            // Достижения: первый ответ, QR, «сотня» и т.п.
+            await _achievements.EvaluatePlayerAsync(playerId, ct);
         }
 
         return new SubmissionOutcome(result.Success, result.PointsAwarded, result.Message, result.Data);

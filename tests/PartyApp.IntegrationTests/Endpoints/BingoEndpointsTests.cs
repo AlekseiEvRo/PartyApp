@@ -57,13 +57,13 @@ public class BingoEndpointsTests : IDisposable
         (Guid sessionId, TestUser admin) = await StartBingoAsync();
         TestUser player = await _api.RegisterAsync();
 
-        // Отметка не начисляет баллы
+        // Отметка не начисляет баллы, но «Первый шаг» за первую отправку приходит
         _api.Authorize(player);
         HttpResponseMessage mark = await _api.Client.PostAsJsonAsync(
             $"/api/events/{sessionId}/submit", new { payloadJson = """{"cellIndex":0}""" });
         mark.StatusCode.Should().Be(HttpStatusCode.OK);
         (await PartyAppApi.ReadJsonAsync(mark)).GetProperty("pointsAwarded").GetInt32().Should().Be(0);
-        (await _api.GetBalanceAsync(player)).Should().Be(100);
+        (await _api.GetBalanceAsync(player)).Should().Be(105);
 
         // Админ видит отметку и подтверждает событие
         _api.Authorize(admin);
@@ -77,7 +77,7 @@ public class BingoEndpointsTests : IDisposable
         confirm.StatusCode.Should().Be(HttpStatusCode.OK);
         (await PartyAppApi.ReadJsonAsync(confirm)).GetProperty("awardedPlayers").GetInt32().Should().Be(1);
 
-        (await _api.GetBalanceAsync(player)).Should().Be(105); // pointsPerCell из сида
+        (await _api.GetBalanceAsync(player)).Should().Be(110); // pointsPerCell из сида + 5 за «Первый шаг»
 
         // Повторно подтвердить нельзя
         _api.Authorize(admin);
@@ -137,8 +137,9 @@ public class BingoEndpointsTests : IDisposable
         }
 
         // 5 предсказаний × 5 баллов + бонус за линию 10 самому быстрому
-        (await _api.GetBalanceAsync(fast)).Should().Be(135);
-        (await _api.GetBalanceAsync(late)).Should().Be(100);
+        // + 5 за «Первый шаг» и 10 за «Линию бинго» у быстрого, + 5 за «Первый шаг» у медленного
+        (await _api.GetBalanceAsync(fast)).Should().Be(150);
+        (await _api.GetBalanceAsync(late)).Should().Be(105);
 
         _api.Authorize(admin);
         JsonElement adminState = await PartyAppApi.ReadJsonAsync(

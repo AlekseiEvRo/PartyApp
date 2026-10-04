@@ -6,6 +6,7 @@
     import { getPendingQrCode, clearPendingQrCode } from '../qr';
     import Header from './Header.svelte';
     import EventCard from './EventCard.svelte';
+    import PollCard from './PollCard.svelte';
     import SpyGame from './SpyGame.svelte';
     import PhotoGallery from './PhotoGallery.svelte';
     import WishesWall from './WishesWall.svelte';
@@ -116,7 +117,8 @@
     <InstallPrompt />
     <main>
         <SpyGame />
-        
+        <PollCard />
+
         <h2>🎮 Активные ивенты</h2>
 
         {#if $activeEvents.length === 0}

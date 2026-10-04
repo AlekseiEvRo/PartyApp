@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Achievements;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
@@ -46,6 +47,7 @@ public static class DareEndpoints
                 AppDbContext db,
                 IPointsAwardService pointsAward,
                 IHubContext<PartyHub> hub,
+                AchievementService achievements,
                 CancellationToken ct) =>
             {
                 DareAssignment? assignment = await db.DareAssignments
@@ -76,6 +78,8 @@ public static class DareEndpoints
                     playerId = assignment.PlayerId,
                     points = assignment.Points
                 }, ct);
+
+                await achievements.EvaluatePlayerAsync(assignment.PlayerId, ct);
 
                 return Results.Ok(new
                 {

@@ -93,4 +93,30 @@ public class LocalFileStorageTests : IDisposable
         Action secondDelete = () => _storage.Delete(path);
         secondDelete.Should().NotThrow();
     }
+
+    [Fact]
+    public async Task SaveAsync_WithFolder_WritesIntoThatFolder()
+    {
+        using MemoryStream content = new(new byte[] { 1, 2, 3 });
+
+        string path = await _storage.SaveAsync(content, ".jpg", "avatars");
+
+        path.Should().StartWith("avatars/");
+        _storage.Exists(path).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("../evil")]
+    [InlineData("photos/../evil")]
+    [InlineData("a b")]
+    [InlineData("фото")]
+    public async Task SaveAsync_InvalidFolder_Throws(string folder)
+    {
+        using MemoryStream content = new(new byte[] { 1 });
+
+        Func<Task> act = () => _storage.SaveAsync(content, ".jpg", folder);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
 }

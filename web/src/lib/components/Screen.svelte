@@ -6,6 +6,8 @@
     import { connect, getConnection, reconnectIfNeeded } from '../signalr';
     import { loadPhotoUrl, releasePhotoUrls } from '../photos';
     import { RAFFLE_SPIN_MS } from '../raffle';
+    import { pollPercent, pollWinnerName, type Poll } from '../polls';
+    import Avatar from './Avatar.svelte';
 
     interface ScreenState {
         mode: string;
@@ -28,6 +30,7 @@
         id: string;
         displayName: string;
         balance: number;
+        profileUpdatedAt?: string | null;
     }
 
     interface EventData {
@@ -187,6 +190,8 @@
     let wonLots: WonLot[] = [];
     let qrStats: QrStats | null = null;
     let spyState: SpyState | null = null;
+    let pollData: Poll | null = null;
+    let lastPollId: string | null = null;
 
     // QR для входа на сайт в режиме ожидания
     let idleQrUrl = '';
@@ -345,6 +350,8 @@
             connection.on('QrRedeemed', onQrRedeemed);
             connection.on('SpyGameStarted', onSpyGameStarted);
             connection.on('SpyGameFinished', onSpyGameFinished);
+            connection.on('PollUpdated', onPollUpdated);
+            connection.on('PollClosed', onPollClosed);
 
             balanceHandler = () => {
                 if (displayMode === 'leaderboard') void loadLeaderboard();
@@ -385,6 +392,8 @@
             connection.off('QrRedeemed', onQrRedeemed);
             connection.off('SpyGameStarted', onSpyGameStarted);
             connection.off('SpyGameFinished', onSpyGameFinished);
+            connection.off('PollUpdated', onPollUpdated);
+            connection.off('PollClosed', onPollClosed);
             clearTimeout(wheelTimer);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
@@ -458,6 +467,7 @@
             else if (currentView === 'lots') await loadLots();
             else if (currentView === 'qr') await loadQrStats();
             else if (currentView === 'spy') await loadSpyState();
+            else if (currentView === 'poll') await loadPoll();
         } catch (e) {
             console.error('Screen: не удалось обновить содержимое', e);
         }
@@ -529,6 +539,11 @@
         spyState = await api<SpyState>('/api/spygame/state');
     }
 
+    async function loadPoll() {
+        const response = await api<{ poll: Poll | null }>('/api/polls/current');
+        pollData = response.poll;
+    }
+
     function onLotFinished() {
         if (currentView === 'lots') void loadLots();
     }
@@ -548,6 +563,20 @@
         // Оставляем итог на экране до ручного переключения
         forced = { mode: 'spy' };
         void loadSpyState();
+    }
+
+    function onPollUpdated(poll: Poll) {
+        pollData = poll;
+
+        // Новое голосование показываем автоматически, обновления счётчиков — нет
+        if (poll.status === 'Open' && poll.id !== lastPollId) {
+            lastPollId = poll.id;
+            forced = { mode: 'poll' };
+        }
+    }
+
+    function onPollClosed(poll: Poll) {
+        pollData = poll;
     }
 
     function onBidPlaced() {
@@ -751,6 +780,8 @@
                     {#each leaderboard.slice(0, 10) as entry, i (entry.id)}
                         <li class:top={i < 3}>
                             <span class="place">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</span>
+                            <Avatar userId={entry.id} name={entry.displayName}
+                                    version={entry.profileUpdatedAt ?? null} size={44} />
                             <span class="name">{entry.displayName}</span>
                             <span class="points">{entry.balance}</span>
                         </li>
@@ -1108,6 +1139,37 @@
                 </p>
             {/if}
         </main>
+    {:else if currentView === 'poll'}
+        <main class="poll-screen">
+            {#if pollData}
+                <h1>🗳 {pollData.question}</h1>
+
+                <ul class="poll-results">
+                    {#each pollData.options as option (option.id)}
+                        {@const percent = pollPercent(option.votes, pollData.totalVotes)}
+                        <li class:winner={pollData.status === 'Closed' && pollData.winnerOptionId === option.id}>
+                            <span class="poll-name">
+                                {#if pollData.status === 'Closed' && pollData.winnerOptionId === option.id}🏆{/if}
+                                {option.displayName}
+                            </span>
+                            <span class="poll-bar">
+                                <i style={`width:${percent}%`}><b>{option.votes}</b></i>
+                            </span>
+                            <span class="poll-percent">{percent}%</span>
+                        </li>
+                    {/each}
+                </ul>
+
+                <p class="muted">Голосов: {pollData.totalVotes}</p>
+
+                {#if pollWinnerName(pollData)}
+                    <p class="poll-winner">🏆 {pollWinnerName(pollData)}</p>
+                {/if}
+            {:else}
+                <h1>🗳 Голосование</h1>
+                <p class="muted">Голосование ещё не создано — загляни в админку</p>
+            {/if}
+        </main>
     {:else if currentView === 'message'}
         <main class="center">
             <p class="big-message">{state.message}</p>
@@ -1322,6 +1384,80 @@
     .spy-word { font-size: clamp(20px, 2.4vw, 40px); margin-bottom: 1vh; }
 
     .spy-word b { color: #f5a623; }
+
+    /* Голосование */
+    .poll-results {
+        list-style: none;
+        width: min(1300px, 92vw);
+        display: flex;
+        flex-direction: column;
+        gap: 1.4vh;
+    }
+
+    .poll-results li {
+        display: flex;
+        align-items: center;
+        gap: 2vw;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 14px;
+        padding: 1.2vh 2vw;
+        font-size: clamp(18px, 2vw, 34px);
+    }
+
+    .poll-results li.winner {
+        background: rgba(39, 174, 96, 0.18);
+        border: 1px solid rgba(39, 174, 96, 0.5);
+    }
+
+    .poll-name {
+        width: 34%;
+        text-align: left;
+        overflow-wrap: anywhere;
+    }
+
+    .poll-bar {
+        flex: 1;
+        height: clamp(26px, 3.6vh, 52px);
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+
+    .poll-bar i {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.6em;
+        height: 100%;
+        background: #f5a623;
+        color: #12122e;
+        font-style: normal;
+        font-weight: bold;
+        font-size: clamp(14px, 1.5vw, 24px);
+        border-radius: 999px;
+        transition: width 0.4s ease;
+    }
+
+    .poll-results li.winner .poll-bar i {
+        background: #27ae60;
+        color: #fff;
+    }
+
+    .poll-percent {
+        width: 4.5em;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: #f5a623;
+        font-weight: bold;
+    }
+
+    .poll-results li.winner .poll-percent { color: #27ae60; }
+
+    .poll-winner {
+        margin-top: 2vh;
+        font-size: clamp(24px, 3vw, 48px);
+        color: #f5a623;
+    }
 
     /* Лидерборд */
     .leaderboard ol {

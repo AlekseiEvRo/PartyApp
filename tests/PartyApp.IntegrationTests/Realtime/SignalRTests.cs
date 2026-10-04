@@ -525,4 +525,78 @@ public class SignalRTests : IDisposable
         JsonElement payload = await message;
         payload.GetProperty("reason").GetString().Should().Be("Сессия завершена администратором");
     }
+
+    [Fact]
+    public async Task ProfileUpdated_IsBroadcastOnStatusChange()
+    {
+        TestUser player = await _api.RegisterAsync();
+        await using HubConnection connection = await ConnectAsync(player);
+
+        Task<JsonElement> message = WaitForAsync(connection, "ProfileUpdated");
+
+        _api.Authorize(player);
+        (await _api.Client.PatchAsJsonAsync("/api/profile", new { statusEmoji = "🎂" })).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("userId").GetGuid().Should().Be(player.Id);
+        payload.GetProperty("profileUpdatedAt").ValueKind.Should().NotBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task AchievementUnlocked_IsDeliveredToPlayer()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        EventDefinition definition = await _factory.SeedDefinitionAsync(
+            "quiz",
+            """{"timeLimitSec":300,"pointsPerCorrect":10,"questions":[{"text":"Q","options":["a","b"],"correctIndex":1}]}""",
+            displayName: "Квиз достижения");
+
+        _api.Authorize(admin);
+        HttpResponseMessage started = await _api.Client.PostAsync($"/api/events/{definition.Id}/start", null);
+        Guid sessionId = (await PartyAppApi.ReadJsonAsync(started)).GetProperty("sessionId").GetGuid();
+
+        _api.Authorize(player);
+        await using HubConnection connection = await ConnectAsync(player);
+        Task<JsonElement> message = WaitForAsync(connection, "AchievementUnlocked");
+
+        (await _api.Client.PostAsJsonAsync(
+            $"/api/events/{sessionId}/submit",
+            new { payloadJson = """{"questionIndex":0,"answerIndex":1}""" })).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement payload = await message;
+        payload.GetProperty("code").GetString().Should().Be("first_answer");
+        payload.GetProperty("points").GetInt32().Should().Be(5);
+    }
+
+    [Fact]
+    public async Task PollUpdated_IsBroadcastOnCreateAndVote()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        EventDefinition first = await _factory.SeedDefinitionAsync("quiz", "{}", displayName: "Голосование 1");
+        EventDefinition second = await _factory.SeedDefinitionAsync("raffle", "{}", displayName: "Голосование 2");
+
+        await using HubConnection connection = await ConnectAsync(player);
+
+        Task<JsonElement> createdMessage = WaitForAsync(connection, "PollUpdated");
+        _api.Authorize(admin);
+        (await _api.Client.PostAsJsonAsync(
+            "/api/polls", new { question = "Что дальше?", definitionIds = new[] { first.Id, second.Id } })).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement poll = await createdMessage;
+        Guid pollId = poll.GetProperty("id").GetGuid();
+        Guid optionId = poll.GetProperty("options")[0].GetProperty("id").GetGuid();
+
+        Task<JsonElement> votedMessage = WaitForAsync(connection, "PollUpdated");
+        _api.Authorize(player);
+        (await _api.Client.PostAsJsonAsync($"/api/polls/{pollId}/vote", new { optionId })).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        JsonElement voted = await votedMessage;
+        voted.GetProperty("totalVotes").GetInt32().Should().Be(1);
+    }
 }

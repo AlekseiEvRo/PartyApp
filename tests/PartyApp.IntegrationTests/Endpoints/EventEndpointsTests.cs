@@ -104,7 +104,7 @@ public class EventEndpointsTests : IClassFixture<PartyAppFactory>
         JsonElement submitJson = await PartyAppApi.ReadJsonAsync(submit);
         submitJson.GetProperty("message").GetString().Should().Be("Правильно! 🎉");
         submitJson.GetProperty("pointsAwarded").GetInt32().Should().Be(10);
-        (await _api.GetBalanceAsync(player)).Should().Be(110);
+        (await _api.GetBalanceAsync(player)).Should().Be(115); // 10 за ответ + 5 за «Первый шаг»
 
         // Повторный ответ на тот же вопрос отклоняется
         HttpResponseMessage replay = await _api.Client.PostAsJsonAsync(

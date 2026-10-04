@@ -21,5 +21,14 @@ public class User : BaseEntity
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Относительный путь к загруженному аватару. Пусто — показываем инициалы.</summary>
+    public string? AvatarPath { get; set; }
+
+    /// <summary>Короткий статус-эмодзи рядом с именем (например, «🎂»).</summary>
+    public string? StatusEmoji { get; set; }
+
+    /// <summary>Версия профиля: меняется при обновлении аватара или статуса — сбрасывает кэш у клиентов.</summary>
+    public DateTime? ProfileUpdatedAt { get; set; }
+
     public Wallet Wallet { get; set; } = null!;
 }

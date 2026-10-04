@@ -104,6 +104,8 @@
             case 'TransferIn':
             case 'TransferOut':
                 return 'Перевод';
+            case 'Achievement':
+                return 'Достижение';
             default:
                 return type;
         }

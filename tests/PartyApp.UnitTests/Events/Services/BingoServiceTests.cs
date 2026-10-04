@@ -30,7 +30,7 @@ public class BingoServiceTests : IDisposable
     public BingoServiceTests()
     {
         _service = new BingoService(
-            _host.ScopeFactory, _award, _hub, NullLogger<BingoService>.Instance);
+            _host.ScopeFactory, _award, _hub, TestAchievements.Create(_host.ScopeFactory), NullLogger<BingoService>.Instance);
     }
 
     public void Dispose() => _host.Dispose();

@@ -149,7 +149,7 @@ public class QrEndpointsTests : IClassFixture<PartyAppFactory>
         JsonElement redeemJson = await PartyAppApi.ReadJsonAsync(redeem);
         redeemJson.GetProperty("pointsAwarded").GetInt32().Should().Be(25);
         redeemJson.GetProperty("message").GetString().Should().Be("QR-код активирован! +25 баллов");
-        (await _api.GetBalanceAsync(player)).Should().Be(125);
+        (await _api.GetBalanceAsync(player)).Should().Be(130); // 25 за QR + 5 за «Первый шаг»
 
         QrToken stored = await _factory.DbAsync(db => db.QrTokens
             .AsNoTracking()
@@ -182,7 +182,7 @@ public class QrEndpointsTests : IClassFixture<PartyAppFactory>
             new { payloadJson = $$"""{"code":"{{code.ToLowerInvariant()}}"}""" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await _api.GetBalanceAsync(player)).Should().Be(115);
+        (await _api.GetBalanceAsync(player)).Should().Be(120); // 15 за QR + 5 за «Первый шаг»
     }
 
     [Fact]

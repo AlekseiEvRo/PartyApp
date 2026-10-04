@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Achievements;
 using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
@@ -27,6 +28,7 @@ public class BingoService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IPointsAwardService _pointsAward;
     private readonly IHubContext<PartyHub> _hub;
+    private readonly AchievementService _achievements;
     private readonly ILogger<BingoService> _logger;
 
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -35,11 +37,13 @@ public class BingoService
         IServiceScopeFactory scopeFactory,
         IPointsAwardService pointsAward,
         IHubContext<PartyHub> hub,
+        AchievementService achievements,
         ILogger<BingoService> logger)
     {
         _scopeFactory = scopeFactory;
         _pointsAward = pointsAward;
         _hub = hub;
+        _achievements = achievements;
         _logger = logger;
     }
 
@@ -567,6 +571,8 @@ public class BingoService
                 $"Бинго: линия «{LineLabel(config.Size, lineIndex)}» — самый быстрый (+{config.LineBonus})",
                 sessionId: sessionId,
                 ct: ct);
+
+            await _achievements.OnBingoLineAsync(winner.Value, ct);
 
             result.Add(new LineAwardInfo(lineIndex, LineLabel(config.Size, lineIndex), winner.Value, config.LineBonus));
 

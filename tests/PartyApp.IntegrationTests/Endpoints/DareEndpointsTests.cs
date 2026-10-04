@@ -71,7 +71,8 @@ public class DareEndpointsTests : IDisposable
         drawn.GetProperty("data").GetProperty("status").GetString().Should().Be("pending");
         drawn.GetProperty("data").GetProperty("task").GetString().Should().NotBeNullOrWhiteSpace();
 
-        (await _api.GetBalanceAsync(player)).Should().Be(100);
+        // Баллы за фант пока не начисляются, но «Первый шаг» уже получен
+        (await _api.GetBalanceAsync(player)).Should().Be(105);
 
         // Второй фант нельзя
         HttpResponseMessage second = await DrawAsync(player, sessionId);
@@ -92,14 +93,15 @@ public class DareEndpointsTests : IDisposable
         confirm.StatusCode.Should().Be(HttpStatusCode.OK);
         (await PartyAppApi.ReadJsonAsync(confirm)).GetProperty("points").GetInt32().Should().Be(5);
 
-        (await _api.GetBalanceAsync(player)).Should().Be(105);
+        // 5 за фант + 5 за «Первый шаг»
+        (await _api.GetBalanceAsync(player)).Should().Be(110);
 
         // Повторное подтверждение не начисляет дважды
         _api.Authorize(admin);
         HttpResponseMessage again = await _api.Client.PostAsync(
             $"/api/events/dare/{assignmentId}/confirm", null);
         again.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await _api.GetBalanceAsync(player)).Should().Be(105);
+        (await _api.GetBalanceAsync(player)).Should().Be(110);
 
         // Игрок видит «подтверждено» после перезагрузки страницы
         _api.Authorize(player);
