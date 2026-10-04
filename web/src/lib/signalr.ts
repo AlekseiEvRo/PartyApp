@@ -187,15 +187,6 @@ export async function connect(): Promise<void> {
         }
     });
 
-    // === Вечеринки ===
-    connection.on('PartyStarted', (party: { name?: string }) => {
-        showToast(`🎉 Новая вечеринка${party?.name ? `: ${party.name}` : ''}`, 'info');
-    });
-
-    connection.on('PartyFinished', (summary: { party?: { name?: string } }) => {
-        showToast(`🏁 Вечеринка завершена${summary?.party?.name ? `: ${summary.party.name}` : ''}`, 'info');
-    });
-
     // === Сессия ===
     // Админ сменил роль, кикнул или заблокировал — токен больше не действует
     connection.on('SessionRevoked', (data: { reason?: string }) => {

@@ -21,9 +21,7 @@
         ban: '🚫 Блокировка',
         unban: '✅ Разблокировка',
         kick: '👢 Кик',
-        password_reset: '🔑 Сброс пароля',
-        party_start: '🎉 Старт вечеринки',
-        party_finish: '🏁 Финиш вечеринки'
+        password_reset: '🔑 Сброс пароля'
     };
 
     let items: AuditEntry[] = [];

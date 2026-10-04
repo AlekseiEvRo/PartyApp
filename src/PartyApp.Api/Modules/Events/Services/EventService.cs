@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Events.Handlers;
-using PartyApp.Api.Modules.Parties;
 using PartyApp.Api.Modules.Push;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
@@ -89,7 +88,6 @@ public class EventService : IEventService
 
         var session = new EventSession
         {
-            PartyId = await PartyContext.GetActivePartyIdAsync(db, ct),
             DefinitionId = definitionId,
             StartedById = startedById,
             State = EventSessionState.Active,
