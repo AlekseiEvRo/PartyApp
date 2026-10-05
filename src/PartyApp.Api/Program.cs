@@ -555,8 +555,8 @@ using (var scope = app.Services.CreateScope())
         {
             Type = "raffle",
             DisplayName = "Лототрон",
-            Description = "Жми «Участвовать», и ведущий запустит колесо — победитель получит приз!",
-            ConfigJson = """{"prize":"Приз"}""",
+            Description = "Жми «Участвовать», получи билет со случайным номером, и ведущий запустит барабан — выигравший номер получит приз!",
+            ConfigJson = """{"prize":"Приз","ticketPrice":0,"maxTickets":1}""",
             Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
             IsActive = true,
             CreatedById = null

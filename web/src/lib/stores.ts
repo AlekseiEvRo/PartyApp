@@ -64,11 +64,12 @@ export const bingoLineAwarded = writable<{
     lineAwards: { lineIndex: number; lineLabel: string; playerId: string; amount: number }[];
 } | null>(null);
 
-// Лототрон: победитель выбран — колесо на экране и карточки игроков обновляются
+// Лототрон: победный номер выбран — барабан на экране и карточки игроков обновляются.
+// Имена игроков в событии нет: на экран попадает только номер билета.
 export const raffleDrawn = writable<{
     sessionId: string;
-    winner: { id: string; name: string };
-    participants: { id: string; name: string }[];
+    winnerTicket: number;
+    ticketsCount: number;
 } | null>(null);
 
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {

@@ -11,5 +11,8 @@ public class RaffleDraw: BaseEntity
     public Guid WinnerId { get; set; }
     public User Winner { get; set; } = null!;
 
+    /// <summary>Номер победившего билета (у старых розыгрышей может быть null).</summary>
+    public int? WinnerTicketNumber { get; set; }
+
     public DateTime DrawnAt { get; set; } = DateTime.UtcNow;
 }

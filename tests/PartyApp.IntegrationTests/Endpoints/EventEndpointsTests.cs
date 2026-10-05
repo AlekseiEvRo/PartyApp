@@ -145,6 +145,70 @@ public class EventEndpointsTests : IClassFixture<PartyAppFactory>
     }
 
     [Fact]
+    public async Task FullRaffleFlow_TicketsAndDrawWithoutNames()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        TestUser secondPlayer = await _api.RegisterAsync();
+        EventDefinition definition = await _factory.SeedDefinitionAsync(
+            "raffle",
+            """{"prize":"Приз","ticketPrice":0,"maxTickets":1}""",
+            displayName: "Тестовый лототрон");
+
+        Guid sessionId = await StartSessionAsync(admin, definition.Id);
+
+        // Игрок получает билет со случайным номером
+        _api.Authorize(player);
+        JsonElement join = await PartyAppApi.ReadJsonAsync(await _api.Client.PostAsJsonAsync(
+            $"/api/events/{sessionId}/submit", new { payloadJson = "{}" }));
+        int ticket = join.GetProperty("data").GetProperty("ticketNumber").GetInt32();
+        ticket.Should().BeInRange(1, 9999);
+
+        // Лимит по умолчанию — один билет
+        HttpResponseMessage replay = await _api.Client.PostAsJsonAsync(
+            $"/api/events/{sessionId}/submit", new { payloadJson = "{}" });
+        replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Второй игрок получает другой номер
+        _api.Authorize(secondPlayer);
+        JsonElement secondJoin = await PartyAppApi.ReadJsonAsync(await _api.Client.PostAsJsonAsync(
+            $"/api/events/{sessionId}/submit", new { payloadJson = "{}" }));
+        int secondTicket = secondJoin.GetProperty("data").GetProperty("ticketNumber").GetInt32();
+        secondTicket.Should().NotBe(ticket);
+
+        // Live-данные содержат только номера — имён участников там нет
+        JsonElement beforeDraw = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync($"/api/events/{sessionId}/data"));
+        JsonElement live = beforeDraw.GetProperty("live");
+        live.GetProperty("tickets").EnumerateArray().Select(e => e.GetInt32())
+            .Should().BeEquivalentTo(new[] { ticket, secondTicket });
+        live.GetProperty("winnerTicket").ValueKind.Should().Be(JsonValueKind.Null);
+        live.TryGetProperty("participants", out _).Should().BeFalse();
+
+        // Админ разыгрывает: имя победителя видно только в ответе админа
+        _api.Authorize(admin);
+        JsonElement draw = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.PostAsync($"/api/events/raffle/{sessionId}/draw", null));
+        int winnerTicket = draw.GetProperty("winnerTicket").GetInt32();
+        new[] { ticket, secondTicket }.Should().Contain(winnerTicket);
+        draw.GetProperty("winnerName").GetString().Should().NotBeNullOrWhiteSpace();
+
+        // Победный номер виден в live, свои билеты — в player data
+        _api.Authorize(player);
+        JsonElement data = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync($"/api/events/{sessionId}/data"));
+        data.GetProperty("live").GetProperty("winnerTicket").GetInt32().Should().Be(winnerTicket);
+        data.GetProperty("player").GetProperty("myTickets").EnumerateArray()
+            .Select(e => e.GetInt32()).Should().Equal(ticket);
+
+        // Повторный розыгрыш невозможен
+        _api.Authorize(admin);
+        HttpResponseMessage drawAgain = await _api.Client.PostAsync(
+            $"/api/events/raffle/{sessionId}/draw", null);
+        drawAgain.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
     public async Task Data_ForUnknownSession_ReturnsNotFound()
     {
         TestUser player = await _api.RegisterAsync();

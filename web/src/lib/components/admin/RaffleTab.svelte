@@ -14,7 +14,7 @@
     let selectedSessionId = '';
     let busy = false;
     let error = '';
-    let winnerName: string | null = null;
+    let winner: { ticket: number; name: string } | null = null;
 
     onMount(load);
 
@@ -39,12 +39,12 @@
         busy = true;
 
         try {
-            const data = await api<{ winner: { name: string } }>(
+            const data = await api<{ winnerTicket: number; winnerName: string }>(
                 `/api/events/raffle/${selectedSessionId}/draw`,
                 'POST'
             );
-            winnerName = data.winner.name;
-            showToast(`🏆 Победитель: ${data.winner.name}`);
+            winner = { ticket: data.winnerTicket, name: data.winnerName };
+            showToast(`🏆 Билет №${data.winnerTicket} — ${data.winnerName}`);
         } catch (e) {
             showToast(e instanceof Error ? e.message : 'Не удалось разыграть', 'error');
         } finally {
@@ -56,15 +56,16 @@
 <h2>🎡 Лототрон</h2>
 
 <p class="hint">
-    Игроки жмут «Участвовать» в приложении. Нажми «Разыграть» — сервер выберет победителя,
-    а на большом экране прокрутится колесо. Повторный розыгрыш в одной сессии невозможен.
+    Игроки жмут «Участвовать» и получают билеты со случайными номерами: первый бесплатный,
+    дополнительные — по цене из настроек ивента. Нажми «Разыграть» — сервер выберет билет,
+    а на большом экране прокрутится барабан с числами. Повторный розыгрыш в одной сессии невозможен.
 </p>
 
 {#if error}
     <p class="message error">{error}</p>
 {:else}
     <div class="toolbar">
-        <select bind:value={selectedSessionId} on:change={() => (winnerName = null)}>
+        <select bind:value={selectedSessionId} on:change={() => (winner = null)}>
             {#if sessions.length === 0}
                 <option value="">Нет сессий лототрона</option>
             {/if}
@@ -79,8 +80,8 @@
         </button>
     </div>
 
-    {#if winnerName}
-        <p class="result">🏆 Победитель: {winnerName}</p>
+    {#if winner}
+        <p class="result">🏆 Билет №{winner.ticket} — {winner.name}</p>
     {/if}
 {/if}
 

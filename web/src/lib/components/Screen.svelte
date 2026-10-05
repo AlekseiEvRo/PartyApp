@@ -108,11 +108,6 @@
         townWinnerName: string | null;
     }
 
-    interface RaffleParticipant {
-        id: string;
-        name: string;
-    }
-
     interface Photo {
         id: string;
         uploadedByName: string;
@@ -197,14 +192,15 @@
     let idleQrUrl = '';
     let siteUrl = '';
 
-    // Лототрон
-    const wheelColors = ['#f5a623', '#e74c3c', '#3498db', '#27ae60', '#9b59b6', '#e67e22', '#1abc9c', '#e84393'];
-    let raffleParticipants: RaffleParticipant[] = [];
-    let raffleWinnerId: string | null = null;
-    let wheelRotation = 0;
-    let wheelSpunFor: string | null = null;
-    let wheelSettled = false;
-    let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+    // Лототрон: номера билетов и прокрутка барабана
+    let raffleSessionId: string | null = null;
+    let raffleTickets: number[] = [];
+    let raffleWinnerTicket: number | null = null;
+    let drumNumbers: number[] = [];
+    let drumTargetIndex = 0;
+    let drumSpunFor: string | null = null;
+    let drumSettled = false;
+    let drumTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Настройки ротации секций (таймауты задаются в админке)
     let settings: ScreenSettings = { photoSeconds: 8, leaderboardSeconds: 60, shopSeconds: 60 };
@@ -245,55 +241,62 @@
         slideIndex = (slideIndex + 1) % slides.length;
     }
 
-    // Лототрон: следим за участниками и запускаем колесо один раз на победителя
+    // Лототрон: следим за билетами и запускаем барабан один раз на победный номер
     $: if (displayMode === 'event' && eventData?.type === 'raffle') {
-        syncRaffle(eventData.live);
+        syncRaffle(eventData.live, eventData.sessionId);
     }
 
-    function syncRaffle(live: any): void {
-        const participants: RaffleParticipant[] = live?.participants ?? [];
-        if (participants.length !== raffleParticipants.length) {
-            raffleParticipants = participants;
+    function syncRaffle(live: any, sessionId: string): void {
+        // Новая сессия лототрона — сбрасываем результат предыдущей
+        if (sessionId !== raffleSessionId) {
+            raffleSessionId = sessionId;
+            raffleWinnerTicket = null;
+            drumNumbers = [];
+            drumTargetIndex = 0;
+            drumSettled = false;
+            drumSpunFor = null;
+            clearTimeout(drumTimer);
         }
 
-        const winner = live?.winner ?? null;
-        if (winner && wheelSpunFor !== winner.id) {
-            wheelSpunFor = winner.id;
-            raffleWinnerId = winner.id;
-            spinWheel(winner.id);
+        raffleTickets = live?.tickets ?? [];
+
+        const winnerTicket = live?.winnerTicket ?? null;
+        if (winnerTicket === null) return;
+
+        const key = `${sessionId}:${winnerTicket}`;
+        if (drumSpunFor !== key) {
+            drumSpunFor = key;
+            raffleWinnerTicket = winnerTicket;
+            spinDrum(winnerTicket);
         }
     }
 
-    function spinWheel(winnerId: string): void {
-        const index = raffleParticipants.findIndex((p) => p.id === winnerId);
-        if (index < 0 || raffleParticipants.length === 0) return;
+    /**
+     * Крутит барабан: полоса из случайных номеров заканчивается победным,
+     * CSS-переход за RAFFLE_SPIN_MS доезжает до него.
+     */
+    function spinDrum(winnerTicket: number): void {
+        const pool = raffleTickets.length > 0 ? raffleTickets : [winnerTicket];
+        const rows = 60;
+        const strip: number[] = [];
 
-        const segment = 360 / raffleParticipants.length;
-        const center = (index + 0.5) * segment;
-        const target = 360 * 4 + ((360 - center) % 360);
-
-        wheelSettled = false;
-        wheelRotation += target;
-
-        clearTimeout(wheelTimer);
-        wheelTimer = setTimeout(() => (wheelSettled = true), RAFFLE_SPIN_MS + 200);
-    }
-
-    function wheelColor(index: number): string {
-        return wheelColors[index % wheelColors.length];
-    }
-
-    function wheelGradient(count: number): string {
-        if (count <= 1) return wheelColors[0];
-
-        const step = 100 / count;
-        const parts: string[] = [];
-
-        for (let i = 0; i < count; i++) {
-            parts.push(`${wheelColor(i)} ${i * step}% ${(i + 1) * step}%`);
+        for (let i = 0; i < rows - 1; i++) {
+            strip.push(pool[Math.floor(Math.random() * pool.length)]);
         }
 
-        return `conic-gradient(${parts.join(', ')})`;
+        strip.push(winnerTicket);
+
+        drumNumbers = strip;
+        drumTargetIndex = 0;
+        drumSettled = false;
+
+        // Даём браузеру отрисовать полосу в начальном положении, затем запускаем прокрутку
+        setTimeout(() => {
+            drumTargetIndex = rows - 1;
+        }, 50);
+
+        clearTimeout(drumTimer);
+        drumTimer = setTimeout(() => (drumSettled = true), RAFFLE_SPIN_MS + 200);
     }
 
     // === Ротация секций: фото → лидерборд → магазин → ... ===
@@ -394,7 +397,7 @@
             connection.off('SpyGameFinished', onSpyGameFinished);
             connection.off('PollUpdated', onPollUpdated);
             connection.off('PollClosed', onPollClosed);
-            clearTimeout(wheelTimer);
+            clearTimeout(drumTimer);
             if (balanceHandler) connection.off('BalanceUpdated', balanceHandler);
         }
 
@@ -915,32 +918,34 @@
                     <p class="muted">🔮 Собрано предсказаний: {eventData.live?.count ?? 0}</p>
                 {/if}
             {:else if eventData?.type === 'raffle'}
-                {#if raffleParticipants.length > 0}
-                    <div class="wheel-wrap">
-                        <div class="wheel-pointer">▼</div>
-                        <div
-                            class="wheel"
-                            style="background: {wheelGradient(raffleParticipants.length)}; transform: rotate({wheelRotation}deg)"
-                        ></div>
+                {#if raffleWinnerTicket !== null}
+                    <div class="drum">
+                        <div class="drum-window">
+                            <div
+                                class="drum-strip"
+                                style="transform: translateY(calc(-1 * {drumTargetIndex} * var(--drum-row))); transition-duration: {RAFFLE_SPIN_MS}ms"
+                            >
+                                {#each drumNumbers as number, i (i)}
+                                    <span class="drum-number">{number}</span>
+                                {/each}
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="wheel-names">
-                        {#each raffleParticipants.slice(0, 24) as participant, i}
-                            <span class="wheel-name" class:winner={wheelSettled && raffleWinnerId === participant.id}>
-                                <i style="background: {wheelColor(i)}"></i>{participant.name}
-                            </span>
-                        {/each}
-                    </div>
-
-                    {#if wheelSettled && raffleWinnerId}
-                        <h2 class="wheel-result">
-                            🏆 {raffleParticipants.find((p) => p.id === raffleWinnerId)?.name}
-                        </h2>
-                    {:else if raffleWinnerId}
-                        <p class="muted">🎡 Крутим…</p>
+                    {#if drumSettled}
+                        <h2 class="drum-result">🏆 Билет №{raffleWinnerTicket}</h2>
                     {:else}
-                        <p class="muted">🎟 Участников: {raffleParticipants.length}</p>
+                        <p class="muted">🎰 Крутим барабан…</p>
                     {/if}
+                {:else if raffleTickets.length > 0}
+                    <div class="drum">
+                        <div class="drum-window">
+                            <span class="drum-number drum-idle">🎟</span>
+                        </div>
+                    </div>
+                    <p class="muted">
+                        Билетов: {raffleTickets.length} · игроков: {eventData.live?.playersCount ?? 0}
+                    </p>
                 {:else}
                     <p class="muted">🎟 Пока никто не участвует</p>
                 {/if}
@@ -1731,61 +1736,55 @@
 
     .predictions b { color: #f5a623; }
 
-    /* Лототрон */
-    .wheel-wrap {
+    /* Лототрон: барабан с числами */
+    .drum {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.5vh;
+    }
+
+    .drum-window {
+        --drum-row: min(26vh, 260px);
         position: relative;
-        width: min(52vh, 70vw);
-        aspect-ratio: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 1vh;
+        width: min(52vh, 72vw);
+        height: var(--drum-row);
+        overflow: hidden;
+        border-radius: 24px;
+        background: linear-gradient(180deg, #0d0d24, #1c1c42 50%, #0d0d24);
+        box-shadow: 0 0 60px rgba(0, 0, 0, 0.55), inset 0 0 0 6px rgba(15, 15, 35, 0.9);
     }
 
-    .wheel {
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        box-shadow: 0 0 60px rgba(0, 0, 0, 0.55), inset 0 0 0 8px rgba(15, 15, 35, 0.9);
-        transition: transform 5s cubic-bezier(0.15, 0.9, 0.15, 1);
-    }
-
-    .wheel-pointer {
+    .drum-strip {
         position: absolute;
-        top: -3vh;
-        z-index: 2;
-        font-size: clamp(24px, 4vw, 56px);
-        color: #f5a623;
-        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
-    }
-
-    .wheel-names {
+        top: 0;
+        left: 0;
+        right: 0;
         display: flex;
-        flex-wrap: wrap;
-        gap: 0.6vh 1.4vw;
-        justify-content: center;
-        max-width: 92vw;
+        flex-direction: column;
+        transition-property: transform;
+        transition-timing-function: cubic-bezier(0.12, 0.8, 0.2, 1);
     }
 
-    .wheel-name {
-        display: inline-flex;
+    .drum-number {
+        display: flex;
         align-items: center;
-        gap: 0.4em;
-        font-size: clamp(12px, 1.2vw, 20px);
-        color: #ddd;
+        justify-content: center;
+        height: var(--drum-row);
+        font-size: clamp(52px, 12vh, 150px);
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        color: #f5a623;
+        text-shadow: 0 0 26px rgba(245, 166, 35, 0.35);
         white-space: nowrap;
     }
 
-    .wheel-name i {
-        width: 0.9em;
-        height: 0.9em;
-        border-radius: 3px;
-        display: inline-block;
+    .drum-idle {
+        color: #6f6fa8;
+        text-shadow: none;
     }
 
-    .wheel-name.winner { color: #f5a623; font-weight: bold; }
-
-    .wheel-result { color: #f5a623; margin-top: 1.5vh; }
+    .drum-result { color: #f5a623; margin-top: 1.5vh; }
 
     /* Результаты реакции */
     .reaction-results {
