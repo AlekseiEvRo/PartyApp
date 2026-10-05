@@ -9,6 +9,7 @@
     export let event: any;
 
     let input = '';
+    let qrBusy = false;
     let cooldownUntil: string | null = null;
     let cooldownLeft = 0;
     let questions: any[] = [];
@@ -163,7 +164,7 @@
         void refreshBingoState();
     }
 
-    // Разыграна линия бинго — бонус получил самый быстрый
+    // Разыграна линия бинго — бонус получили все, кто её собрал
     let handledBingoLine: any = null;
 
     $: if (event.type === 'bingo'
@@ -226,6 +227,24 @@
             const data = await api<any>('/api/wallet/balance');
             balance.set(data.balance);
         } catch {}
+    }
+
+    /** Отправка кода с QR: кнопка блокируется от двойного нажатия. */
+    async function submitQrCode() {
+        if (qrBusy) return;
+
+        const code = input.trim().toUpperCase();
+        if (!code) return;
+
+        qrBusy = true;
+
+        try {
+            const result = await submit({ code });
+            // При ошибке код остаётся в поле — можно поправить и повторить
+            if (result) input = '';
+        } finally {
+            qrBusy = false;
+        }
     }
 
     function startCooldown(untilIso: string) {
@@ -369,9 +388,15 @@
     }
 
     function handleBingoLineAwarded(awards: { lineIndex: number; lineLabel: string; playerId: string; amount: number }[]): void {
-        const mine = awards.find((award) => award.playerId === $user?.userId);
-        if (mine) {
-            showToast(`🏆 Твоя линия «${mine.lineLabel}»! +${mine.amount}`, 'success');
+        // Одно подтверждение может закрыть игроку сразу несколько линий
+        const mine = awards.filter((award) => award.playerId === $user?.userId);
+        if (mine.length > 0) {
+            const total = mine.reduce((sum, award) => sum + award.amount, 0);
+            const labels = mine.map((award) => `«${award.lineLabel}»`).join(', ');
+            const message = mine.length > 1
+                ? `🏆 Твои линии: ${labels}! +${total}`
+                : `🏆 Твоя линия ${labels}! +${total}`;
+            showToast(message, 'success');
         }
 
         void refreshBingoState();
@@ -489,7 +514,7 @@
     {:else if event.type === 'qr_scan'}
         <div class="row">
             <input type="text" placeholder="Код с QR" bind:value={input} style="text-transform: uppercase" />
-            <button class="btn" on:click={() => { submit({ code: input.trim().toUpperCase() }); input = ''; }}>📷 Активировать</button>
+            <button class="btn" on:click={submitQrCode} disabled={qrBusy}>📷 Активировать</button>
         </div>
 
     {:else if event.type === 'quiz'}
@@ -629,6 +654,12 @@
                 <p class="desc raffle-winner">🎉 Твой билет №{raffleWinnerTicket} выиграл!</p>
             {:else}
                 <p class="desc raffle-winner">🏆 Выиграл билет №{raffleWinnerTicket}</p>
+            {/if}
+            {#if raffleMyTickets.length > 0}
+                <p class="desc raffle-tickets">
+                    🎟 Твои билеты:
+                    {#each raffleMyTickets as ticket, i (ticket)}<span class:won={ticket === raffleWinnerTicket}>№{ticket}</span>{i < raffleMyTickets.length - 1 ? ', ' : ''}{/each}
+                </p>
             {/if}
         {:else if raffleJoined}
             <p class="desc dare-task">

@@ -66,6 +66,7 @@ public class QrScanHandler : IEventHandler
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var token = await db.QrTokens
+            .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Code == submittedCode, ct);
 
         if (token is null)
@@ -77,17 +78,37 @@ public class QrScanHandler : IEventHandler
         // Начисляем баллы
         var points = token.Points > 0 ? token.Points : 20;
 
+        // Занять токен атомарным UPDATE: параллельные сабмиты одного кода
+        // (дабл-тап, два устройства) не должны начислить баллы дважды.
+        // Начисление и отметка токена коммитятся вместе.
+        await using var transactionScope = await db.Database.BeginTransactionAsync(ct);
+
+        DateTime redeemedAt = DateTime.UtcNow;
+        int claimed = await db.QrTokens
+            .Where(t => t.Id == token.Id && t.RedeemedAt == null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(t => t.RedeemedAt, redeemedAt)
+                .SetProperty(t => t.RedeemedById, playerId), ct);
+
+        if (claimed == 0)
+        {
+            await transactionScope.RollbackAsync(ct);
+            return SubmissionResult.Fail("Этот код уже был использован");
+        }
+
         var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == playerId, ct);
         if (wallet is null)
         {
             wallet = new Domain.Entities.Wallet { UserId = playerId, Balance = points };
             db.Wallets.Add(wallet);
-            await db.SaveChangesAsync(ct);
         }
         else
         {
-            wallet.Balance += points;
-            await db.SaveChangesAsync(ct);
+            // Условный UPDATE вместо чтения баланса в память: гонок с другими начислениями нет
+            await db.Wallets
+                .Where(w => w.Id == wallet.Id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(w => w.Balance, w => w.Balance + points), ct);
         }
 
         var transaction = new WalletTransaction
@@ -100,15 +121,17 @@ public class QrScanHandler : IEventHandler
         };
         db.WalletTransactions.Add(transaction);
 
-        // Помечаем токен как использованный
-        token.RedeemedById = playerId;
-        token.RedeemedAt = DateTime.UtcNow;
-
         await db.SaveChangesAsync(ct);
+        await transactionScope.CommitAsync(ct);
+
+        int newBalance = await db.Wallets.AsNoTracking()
+            .Where(w => w.Id == wallet.Id)
+            .Select(w => w.Balance)
+            .SingleAsync(ct);
 
         await _pointsAward.NotifyBalanceChangedAsync(
             playerId,
-            wallet.Balance,
+            newBalance,
             points,
             $"QR-код: {submittedCode}",
             ct);

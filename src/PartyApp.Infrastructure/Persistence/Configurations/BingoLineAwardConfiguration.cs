@@ -9,8 +9,8 @@ public class BingoLineAwardConfiguration: IEntityTypeConfiguration<BingoLineAwar
 {
     public void Configure(EntityTypeBuilder<BingoLineAward> builder)
     {
-        // Каждая линия разыгрывается один раз за сессию
-        builder.HasIndex(a => new { a.SessionId, a.LineIndex }).IsUnique();
+        // Бонус за линию получает каждый собравший её игрок — по разу на линию
+        builder.HasIndex(a => new { a.SessionId, a.LineIndex, a.PlayerId }).IsUnique();
 
         builder.HasOne(a => a.Session)
             .WithMany()

@@ -152,6 +152,8 @@
     const slideIntervalMs = 8000;
     const refreshIntervalMs = 5000;
     const maxReactionsOnScreen = 40;
+    // Сколько случайных фото показывает фото-фаза в ротации
+    const rotationPhotosPerPhase = 3;
 
     const [sendSlide, receiveSlide] = crossfade({ duration: 900 });
 
@@ -207,6 +209,8 @@
     let rotationPhase = 'photos';
     let rotationPhaseStartedAt = 0;
     let rotationActive = false;
+    // Стартовая позиция в списке фото для текущей фото-фазы (3 случайных фото)
+    let rotationPhotoOffset = -1;
 
     let clockTimer: ReturnType<typeof setInterval>;
     let refreshTimer: ReturnType<typeof setInterval>;
@@ -300,7 +304,7 @@
         drumTimer = setTimeout(() => (drumSettled = true), RAFFLE_SPIN_MS + 200);
     }
 
-    // === Ротация секций: фото → лидерборд → магазин → ... ===
+    // === Ротация секций: фото → лидерборд → призы → ставки → ... ===
     $: if (displayMode === 'rotation' && !rotationActive) {
         startRotation();
     }
@@ -313,10 +317,18 @@
         advanceRotation();
     }
 
-    // В фазе фото листаем их по таймауту из настроек
-    $: if (rotationActive && rotationPhase === 'photos' && slides.length > 0) {
+    // Фото-фаза ротации: 3 случайных фото — стартовую позицию берём один раз,
+    // когда фото догрузились (или сразу при входе в фазу), дальше идём по кругу
+    $: if (rotationActive && rotationPhase === 'photos' && rotationPhotoOffset < 0 && slides.length > 0) {
+        rotationPhotoOffset = Math.floor(Math.random() * slides.length);
+    }
+
+    // В фазе фото листаем выбранные фото по таймауту из настроек
+    $: if (rotationActive && rotationPhase === 'photos' && slides.length > 0 && rotationPhotoOffset >= 0) {
         const secondsIntoPhase = Math.floor((now - rotationPhaseStartedAt) / 1000);
-        slideIndex = Math.floor(secondsIntoPhase / Math.max(1, settings.photoSeconds)) % slides.length;
+        const step = Math.floor(secondsIntoPhase / Math.max(1, settings.photoSeconds));
+        const visible = Math.min(rotationPhotosPerPhase, slides.length);
+        slideIndex = (rotationPhotoOffset + (step % visible)) % slides.length;
     }
 
     onMount(async () => {
@@ -606,6 +618,7 @@
     function startRotation() {
         rotationActive = true;
         rotationPhase = 'photos';
+        rotationPhotoOffset = -1;
         rotationPhaseStartedAt = Date.now();
         void refreshContent();
     }
@@ -613,7 +626,9 @@
     function advanceRotation() {
         rotationPhase = rotationPhase === 'photos'
             ? 'leaderboard'
-            : rotationPhase === 'leaderboard' ? 'shop' : 'photos';
+            : rotationPhase === 'leaderboard' ? 'shop'
+            : rotationPhase === 'shop' ? 'lots' : 'photos';
+        rotationPhotoOffset = -1;
         rotationPhaseStartedAt = Date.now();
         void refreshContent();
     }
@@ -621,13 +636,15 @@
     function rotationPhaseDurationMs(): number {
         if (rotationPhase === 'photos') {
             // Минимум один интервал — даём фотографиям время загрузиться
-            return Math.max(slides.length, 1) * Math.max(1, settings.photoSeconds) * 1000;
+            const visible = Math.max(Math.min(rotationPhotosPerPhase, slides.length), 1);
+            return visible * Math.max(1, settings.photoSeconds) * 1000;
         }
 
         if (rotationPhase === 'leaderboard') {
             return Math.max(5, settings.leaderboardSeconds) * 1000;
         }
 
+        // «Призы» и «Ставки» делят одно время из настроек
         return Math.max(5, settings.shopSeconds) * 1000;
     }
 

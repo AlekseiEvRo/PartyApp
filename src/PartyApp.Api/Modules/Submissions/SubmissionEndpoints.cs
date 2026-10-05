@@ -11,7 +11,7 @@ using PartyApp.Infrastructure.Persistence;
 namespace PartyApp.Api.Modules.Submissions;
 
 /// <summary>
-/// Стенка пожеланий: игроки пишут тосты и пожелания, админ модерирует,
+/// Отзывы о площадке: игроки пишут отзывы, админ модерирует,
 /// одобренное уходит на общий экран.
 /// </summary>
 public static class SubmissionEndpoints
@@ -41,10 +41,10 @@ public static class SubmissionEndpoints
 
                 string text = request.Text?.Trim() ?? string.Empty;
                 if (text.Length == 0)
-                    return Results.BadRequest(new { error = "Пожелание не может быть пустым" });
+                    return Results.BadRequest(new { error = "Отзыв не может быть пустым" });
 
                 if (text.Length > MaxTextLength)
-                    return Results.BadRequest(new { error = $"Пожелание не длиннее {MaxTextLength} символов" });
+                    return Results.BadRequest(new { error = $"Отзыв не длиннее {MaxTextLength} символов" });
 
                 bool requireModeration = config.GetValue("Wishes:RequireModeration", true);
 
@@ -94,7 +94,7 @@ public static class SubmissionEndpoints
 
                 if (!user.IsAdminOrSuperAdmin())
                 {
-                    // Игрок видит одобренные пожелания и свои собственные
+                    // Игрок видит одобренные отзывы и свои собственные
                     query = query.Where(w =>
                         w.Status == ModerationStatus.Approved || w.PlayerId == userId);
                 }
@@ -139,7 +139,7 @@ public static class SubmissionEndpoints
                 db.Wishes.Remove(wish);
                 await db.SaveChangesAsync(ct);
 
-                // Чтобы пожелание исчезло у всех открытых приложений без перезагрузки
+                // Чтобы отзыв исчез у всех открытых приложений без перезагрузки
                 await BroadcastWishRemovedAsync(hub, wishId, ct);
 
                 return Results.Ok(new { success = true });
@@ -191,7 +191,7 @@ public static class SubmissionEndpoints
         }
         else if (wasApproved)
         {
-            // Одобренное пожелание отозвано — убираем его со стенки
+            // Одобренный отзыв отозван — убираем его со стенки
             await BroadcastWishRemovedAsync(hub, wish.Id, ct);
         }
 

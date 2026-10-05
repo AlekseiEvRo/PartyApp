@@ -34,11 +34,19 @@ self.addEventListener('notificationclick', (event) => {
 
     event.waitUntil((async () => {
         const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        const target = new URL(targetUrl, self.location.origin);
 
-        // Если приложение уже открыто — фокусируем его, иначе открываем новое окно
+        // Если приложение уже открыто — фокусируем его и при необходимости
+        // переводим на нужную страницу (например, push модерации → /admin),
+        // иначе открываем новое окно
         const existing = clients.find((client) => client.url.startsWith(self.location.origin));
         if (existing) {
             await existing.focus();
+
+            if ('navigate' in existing && new URL(existing.url).pathname !== target.pathname) {
+                await existing.navigate(target.url);
+            }
+
             return;
         }
 

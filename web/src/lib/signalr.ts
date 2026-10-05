@@ -88,7 +88,7 @@ export async function connect(): Promise<void> {
         balance.set(data.balance);
     });
 
-    // === Фото и стенка пожеланий ===
+    // === Фото и отзывы о площадке ===
     connection.on('PhotoUploaded', (data: { photoId: string; uploadedByName: string; caption: string | null }) => {
         photosVersion.update((v) => v + 1);
         showToast(`📸 ${data.uploadedByName} добавил(а) фото`, 'info');
@@ -110,7 +110,7 @@ export async function connect(): Promise<void> {
     connection.on('ModerationPending', (data: { kind: string }) => {
         moderationVersion.update((v) => v + 1);
         showToast(
-            data.kind === 'photo' ? '📸 Новое фото на модерации' : '💌 Новое пожелание на модерации',
+            data.kind === 'photo' ? '📸 Новое фото на модерации' : '💌 Новый отзыв на модерации',
             'info'
         );
     });

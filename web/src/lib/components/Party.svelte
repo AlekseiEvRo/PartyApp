@@ -19,6 +19,8 @@
         try {
             const events = await api<any[]>('/api/events/available');
             activeEvents.set(events);
+            // Только после успешной загрузки: иначе на старте код сбросился бы зря
+            initialEventsLoaded = true;
 
             const b = await api<any>('/api/wallet/balance');
             balance.set(b.balance);
@@ -37,20 +39,27 @@
     }
 
     // === QR из ссылки ===
-    // Код пришёл из QR-ссылки (?qr=…). Как только появляется активный ивент
-    // «Охота за QR-кодами», отправляем его автоматически. При ошибке код
-    // остаётся: EventCard подставит его в поле, чтобы можно было повторить вручную.
+    // Код пришёл из QR-ссылки (?qr=…). Активировать его можно только во время
+    // ивента «Охота за QR-кодами»: без активного ивента код не запоминаем и
+    // просим отсканировать заново. При ошибке во время ивента код остаётся:
+    // EventCard подставит его в поле, чтобы можно было повторить вручную.
     let qrSubmitting = false;
     let qrAttemptKey: string | null = null;
+    let initialEventsLoaded = false;
 
-    async function trySubmitPendingQr(events: any[]): Promise<void> {
+    async function handlePendingQr(events: any[]): Promise<void> {
         if (qrSubmitting) return;
 
         const code = getPendingQrCode();
         if (!code) return;
 
         const qrEvent = events.find((e) => e.type === 'qr_scan');
-        if (!qrEvent) return;
+        if (!qrEvent) {
+            // QR-коды активируются только во время ивента — заранее их не копим
+            clearPendingQrCode();
+            showToast('⏳ QR-код можно активировать только во время ивента', 'error');
+            return;
+        }
 
         // Одна автоматическая попытка на пару «сессия + код»
         const key = `${qrEvent.sessionId}:${code}`;
@@ -77,8 +86,8 @@
         }
     }
 
-    // Новый qr_scan-ивент мог стартовать уже после открытия приложения
-    $: if ($activeEvents.length > 0) void trySubmitPendingQr($activeEvents);
+    // Список ивентов загружен: код из QR-ссылки либо активируем, либо сбрасываем
+    $: if (initialEventsLoaded) void handlePendingQr($activeEvents);
 
     function handleVisibilityChange() {
         if (document.visibilityState === 'visible') {

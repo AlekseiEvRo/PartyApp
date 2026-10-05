@@ -126,17 +126,17 @@ public class BingoEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task MarksBeforeLock_AllConfirmedPredictionsPay_LineBonusGoesToFastest()
+    public async Task MarksBeforeLock_AllConfirmedPredictionsPay_LineBonusGoesToAllCompleters()
     {
         (Guid sessionId, TestUser admin) = await StartBingoAsync();
         TestUser fast = await _api.RegisterAsync();
         TestUser late = await _api.RegisterAsync();
 
-        // Быстрый выбирает линию 0..4, медленный — только 0..2
+        // Оба собирают первую линию (5 клеток) — просто в разное время
         for (int cell = 0; cell <= 4; cell++)
             await SubmitAsync(fast, sessionId, cell);
 
-        for (int cell = 0; cell <= 2; cell++)
+        for (int cell = 0; cell <= 4; cell++)
             await SubmitAsync(late, sessionId, cell);
 
         // Пока приём открыт, игроки не получают баллов за предсказания
@@ -153,19 +153,22 @@ public class BingoEndpointsTests : IDisposable
                 .StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
-        // Быстрый: 100 приветствие + 5 первый шаг + 25 за 5 предсказаний
+        // Каждый: 100 приветствие + 5 первый шаг + 25 за 5 предсказаний
         // + 10 бонус за линию + 10 достижение «Линия бинго» = 150
         (await _api.GetBalanceAsync(fast)).Should().Be(150);
-        // Медленный: 100 + 5 + 15 за 3 предсказания = 120
-        (await _api.GetBalanceAsync(late)).Should().Be(120);
+        (await _api.GetBalanceAsync(late)).Should().Be(150);
 
         _api.Authorize(admin);
         JsonElement adminState = await PartyAppApi.ReadJsonAsync(
             await _api.Client.GetAsync($"/api/events/bingo/{sessionId}"));
-        JsonElement lineAward = adminState.GetProperty("lineAwards")[0];
-        lineAward.GetProperty("playerId").GetGuid().Should().Be(fast.Id);
-        lineAward.GetProperty("amount").GetInt32().Should().Be(10);
-        lineAward.GetProperty("lineLabel").GetString().Should().Be("Ряд 1");
+
+        List<JsonElement> lineAwards = adminState.GetProperty("lineAwards").EnumerateArray().ToList();
+        lineAwards.Should().HaveCount(2);
+        lineAwards.Select(a => a.GetProperty("playerId").GetGuid())
+            .Should().BeEquivalentTo(new[] { fast.Id, late.Id });
+        lineAwards.Should().OnlyContain(a =>
+            a.GetProperty("amount").GetInt32() == 10
+            && a.GetProperty("lineLabel").GetString() == "Ряд 1");
     }
 
     [Fact]

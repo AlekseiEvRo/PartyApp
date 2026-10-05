@@ -175,7 +175,7 @@ public class BingoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ConfirmCell_LineBonusGoesOnlyToFastest()
+    public async Task ConfirmCell_LineBonusGoesToEveryoneWhoCompleted()
     {
         (_, EventSession session, Guid fast) = await SeedEventAsync();
         Guid slow = await SeedSecondPlayerAsync();
@@ -199,11 +199,29 @@ public class BingoServiceTests : IDisposable
         await _award.Received(3).AwardAsync(
             slow, 2, Arg.Any<string>(), Arg.Any<WalletTransactionType>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
 
-        // Бонус за линию — только самому быстрому
+        // Бонус за линию получают оба, каждый по разу
         await _award.Received(1).AwardAsync(
             fast, 10, Arg.Any<string>(), Arg.Any<WalletTransactionType>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
-        await _award.DidNotReceive().AwardAsync(
+        await _award.Received(1).AwardAsync(
             slow, 10, Arg.Any<string>(), Arg.Any<WalletTransactionType>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConfirmCell_PaysBonusForEachCompletedLine()
+    {
+        (_, EventSession session, Guid player) = await SeedEventAsync();
+
+        // Два ряда: клетки 0..2 и 3..5
+        for (int cell = 0; cell <= 5; cell++)
+            await SeedMarkAsync(session.Id, player, cell, Start.AddMinutes(cell));
+
+        await LockAsync(session.Id);
+        for (int cell = 0; cell <= 5; cell++)
+            await _service.ConfirmCellAsync(session.Id, cell);
+
+        // По бонусу за каждый собранный ряд
+        await _award.Received(2).AwardAsync(
+            player, 10, Arg.Any<string>(), Arg.Any<WalletTransactionType>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -228,7 +246,7 @@ public class BingoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task LineAward_IsPaidOnlyOnce()
+    public async Task LineAward_IsPaidOnlyOncePerPlayer()
     {
         (_, EventSession session, Guid player) = await SeedEventAsync();
         await SeedMarkAsync(session.Id, player, 0, Start);
@@ -246,7 +264,7 @@ public class BingoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CheckLineAwards_ConfirmedLineCompletedLater_PaysFirstCompleter()
+    public async Task CheckLineAwards_ConfirmedLineCompletedLater_PaysCompleter()
     {
         (_, EventSession session, Guid player) = await SeedEventAsync();
         await LockAsync(session.Id);

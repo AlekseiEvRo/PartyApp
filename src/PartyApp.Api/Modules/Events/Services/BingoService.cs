@@ -16,7 +16,7 @@ public record BingoConfirmOutcome(bool Success, string Message, object? Data = n
 /// Бинго в два этапа: сначала игроки выбирают предсказания (до блокировки),
 /// затем админ фиксирует приём и отмечает, что было, а что нет.
 /// Баллы за сбывшееся предсказание получают все, кто выбрал клетку заранее;
-/// бонус за линию — самый быстрый (по времени последней отметки).
+/// бонус за линию — все, кто собрал линию.
 /// </summary>
 public class BingoService
 {
@@ -525,7 +525,11 @@ public class BingoService
         HashSet<int> confirmed = await GetConfirmedCellsAsync(db, sessionId, ct);
         HashSet<int> rejected = await GetRejectedCellsAsync(db, sessionId, ct);
         DateTime? lockedAt = await GetLockedAtAsync(db, sessionId, ct);
-        int awardedLines = await db.BingoLineAwards.CountAsync(a => a.SessionId == sessionId, ct);
+        int awardedLines = await db.BingoLineAwards
+            .Where(a => a.SessionId == sessionId)
+            .Select(a => a.LineIndex)
+            .Distinct()
+            .CountAsync(ct);
 
         return new
         {
@@ -686,7 +690,8 @@ public class BingoService
 
     /// <summary>
     /// Разыгрывает линии, которые уже полностью подтверждены и ещё не разыграны.
-    /// Победитель — игрок с минимальным временем последней отметки линии.
+    /// Бонус получают все игроки, собравшие линию, — по одному разу за линию
+    /// (ключ «сессия + линия + игрок»).
     /// </summary>
     private async Task<List<LineAwardInfo>> AwardPendingLinesAsync(
         AppDbContext db,
@@ -697,69 +702,54 @@ public class BingoService
     {
         HashSet<int> confirmed = await GetConfirmedCellsAsync(db, sessionId, ct);
 
-        List<int> awarded = await db.BingoLineAwards.AsNoTracking()
+        var existing = await db.BingoLineAwards.AsNoTracking()
             .Where(a => a.SessionId == sessionId)
-            .Select(a => a.LineIndex)
+            .Select(a => new { a.LineIndex, a.PlayerId })
             .ToListAsync(ct);
 
-        HashSet<int> awardedLines = awarded.ToHashSet();
+        HashSet<(int LineIndex, Guid PlayerId)> awarded = existing
+            .Select(a => (a.LineIndex, a.PlayerId))
+            .ToHashSet();
+
         var result = new List<LineAwardInfo>();
 
         foreach ((int lineIndex, int[] cells) in IndexedLines(config.Size))
         {
-            if (awardedLines.Contains(lineIndex))
-                continue;
-
             if (!cells.All(confirmed.Contains))
                 continue;
-
-            Guid? winner = null;
-            DateTime winnerCompletedAt = DateTime.MaxValue;
 
             foreach ((Guid playerId, Dictionary<int, DateTime> marks) in markTimes)
             {
                 if (!cells.All(marks.ContainsKey))
                     continue;
 
-                DateTime completedAt = cells.Max(cell => marks[cell]);
-
-                bool better = winner is null
-                    || completedAt < winnerCompletedAt
-                    || (completedAt == winnerCompletedAt && playerId.CompareTo(winner.Value) < 0);
-
-                if (!better)
+                if (!awarded.Add((lineIndex, playerId)))
                     continue;
 
-                winner = playerId;
-                winnerCompletedAt = completedAt;
+                db.BingoLineAwards.Add(new BingoLineAward
+                {
+                    SessionId = sessionId,
+                    LineIndex = lineIndex,
+                    PlayerId = playerId,
+                    Amount = config.LineBonus
+                });
+                await db.SaveChangesAsync(ct);
+
+                await _pointsAward.AwardAsync(
+                    playerId,
+                    config.LineBonus,
+                    $"Бинго: линия «{LineLabel(config.Size, lineIndex)}» (+{config.LineBonus})",
+                    sessionId: sessionId,
+                    ct: ct);
+
+                await _achievements.OnBingoLineAsync(playerId, ct);
+
+                result.Add(new LineAwardInfo(lineIndex, LineLabel(config.Size, lineIndex), playerId, config.LineBonus));
+
+                _logger.LogInformation(
+                    "Bingo line awarded: session={SessionId}, line={LineIndex}, player={PlayerId}, amount={Amount}",
+                    sessionId, lineIndex, playerId, config.LineBonus);
             }
-
-            if (winner is null)
-                continue;
-
-            db.BingoLineAwards.Add(new BingoLineAward
-            {
-                SessionId = sessionId,
-                LineIndex = lineIndex,
-                PlayerId = winner.Value,
-                Amount = config.LineBonus
-            });
-            await db.SaveChangesAsync(ct);
-
-            await _pointsAward.AwardAsync(
-                winner.Value,
-                config.LineBonus,
-                $"Бинго: линия «{LineLabel(config.Size, lineIndex)}» — самый быстрый (+{config.LineBonus})",
-                sessionId: sessionId,
-                ct: ct);
-
-            await _achievements.OnBingoLineAsync(winner.Value, ct);
-
-            result.Add(new LineAwardInfo(lineIndex, LineLabel(config.Size, lineIndex), winner.Value, config.LineBonus));
-
-            _logger.LogInformation(
-                "Bingo line awarded: session={SessionId}, line={LineIndex}, player={PlayerId}, amount={Amount}",
-                sessionId, lineIndex, winner, config.LineBonus);
         }
 
         return result;

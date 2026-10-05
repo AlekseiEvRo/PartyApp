@@ -167,7 +167,7 @@
     </div>
 
     <div class="block settings">
-        <p class="group-label">Ротация: фото → лидерборд → призы</p>
+        <p class="group-label">Ротация: фото (3 случайных) → лидерборд → призы → ставки (время призов)</p>
         <div class="inline">
             <label class="field">
                 Секунд на фото

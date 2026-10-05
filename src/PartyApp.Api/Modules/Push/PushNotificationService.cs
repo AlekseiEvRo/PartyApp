@@ -86,7 +86,8 @@ public class PushNotificationService : IPushNotificationService
     }
 
     /// <summary>
-    /// Отбрасывает получателей, которым недавно уже отправляли сообщение с этим throttle-окном.
+    /// Отбрасывает получателей, которым недавно уже отправляли сообщение с этим
+    /// тегом. Ключ — «пользователь + тег»: push баланса не глушит push модерации.
     /// </summary>
     private List<PushSubscriptionEntity> ApplyThrottle(List<PushSubscriptionEntity> recipients, PushMessage message)
     {
@@ -98,7 +99,7 @@ public class PushNotificationService : IPushNotificationService
 
         foreach (PushSubscriptionEntity recipient in recipients)
         {
-            string key = recipient.UserId.ToString();
+            string key = $"{recipient.UserId}:{message.Tag}";
             if (_lastSentAt.TryGetValue(key, out DateTime lastSentAt) && now - lastSentAt < window)
                 continue;
 

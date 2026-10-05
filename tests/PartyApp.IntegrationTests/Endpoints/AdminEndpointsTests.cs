@@ -219,6 +219,24 @@ public class AdminEndpointsTests : IClassFixture<PartyAppFactory>
     }
 
     [Fact]
+    public async Task Leaderboard_DoesNotIncludeAdmins()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser player = await _api.RegisterAsync();
+        _api.Authorize(admin);
+        await GrantAsync(admin.Id, 500);
+        await GrantAsync(player.Id, 25);
+
+        HttpResponseMessage response = await _api.Client.GetAsync("/api/admin/leaderboard");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        List<JsonElement> rows = (await PartyAppApi.ReadJsonAsync(response)).EnumerateArray().ToList();
+
+        rows.Should().NotContain(r => r.GetProperty("id").GetGuid() == admin.Id);
+        rows.Should().Contain(r => r.GetProperty("id").GetGuid() == player.Id);
+    }
+
+    [Fact]
     public async Task Sessions_AsAdmin_ReturnsStartedSessionsWithDefinitionData()
     {
         TestUser admin = await _api.CreateAdminAsync();

@@ -33,7 +33,7 @@
         void load();
     }
 
-    // Пожелание удалили (или отозвали одобрение) — убираем со стенки у всех
+    // Отзыв удалили (или отозвали одобрение) — убираем со стенки у всех
     $: if ($wishRemovedId && $wishRemovedId !== lastRemovedId) {
         lastRemovedId = $wishRemovedId;
         removeLocally($wishRemovedId);
@@ -48,7 +48,7 @@
             wishes = page.items;
             total = page.total;
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Не удалось загрузить пожелания';
+            error = e instanceof Error ? e.message : 'Не удалось загрузить отзывы';
         } finally {
             loading = false;
         }
@@ -67,29 +67,29 @@
             text = '';
             showToast(
                 result.status === 'Pending'
-                    ? '💌 Пожелание отправлено на модерацию'
-                    : '💌 Пожелание добавлено!'
+                    ? '💌 Отзыв отправлен на модерацию'
+                    : '💌 Отзыв добавлен!'
             );
             await load();
         } catch (e) {
-            showToast(e instanceof Error ? e.message : 'Не удалось отправить пожелание', 'error');
+            showToast(e instanceof Error ? e.message : 'Не удалось отправить отзыв', 'error');
         } finally {
             sending = false;
         }
     }
 
     async function remove(wish: Wish) {
-        if (!confirm('Удалить пожелание?')) return;
+        if (!confirm('Удалить отзыв?')) return;
 
         try {
             await api(`/api/wishes/${wish.id}`, 'DELETE');
             removeLocally(wish.id);
         } catch (e) {
-            showToast(e instanceof Error ? e.message : 'Не удалось удалить пожелание', 'error');
+            showToast(e instanceof Error ? e.message : 'Не удалось удалить отзыв', 'error');
         }
     }
 
-    /** Убирает пожелание из открытого списка; повторный вызов (после SignalR) безопасен. */
+    /** Убирает отзыв из открытого списка; повторный вызов (после SignalR) безопасен. */
     function removeLocally(id: string) {
         const existed = wishes.some((w) => w.id === id);
         wishes = wishes.filter((w) => w.id !== id);
@@ -109,14 +109,14 @@
 </script>
 
 <section class="wishes">
-    <h2>💌 Стенка пожеланий</h2>
+    <h2>💌 Оставьте свой отзыв о данной площадке</h2>
 
     <div class="composer">
         <textarea
             bind:value={text}
             maxlength={maxLength}
             rows="2"
-            placeholder="Напиши тост или пожелание имениннику…"
+            placeholder="Оставь отзыв о площадке…"
             on:keydown={onKeydown}
         ></textarea>
 
@@ -131,9 +131,9 @@
     {#if error}
         <p class="message error">{error}</p>
     {:else if loading && wishes.length === 0}
-        <p class="muted">Загружаем пожелания…</p>
+        <p class="muted">Загружаем отзывы…</p>
     {:else if wishes.length === 0}
-        <p class="muted">Пока никто ничего не написал — будь первым!</p>
+        <p class="muted">Пока нет отзывов — будь первым!</p>
     {:else}
         <ul class="list">
             {#each wishes as wish (wish.id)}
