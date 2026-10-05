@@ -2,7 +2,6 @@ using System.Text.Json;
 
 using FluentAssertions;
 
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using NSubstitute;
@@ -82,7 +81,7 @@ public class BingoHandlerTests : IDisposable
 
         Json(result.Data).GetProperty("markedCells").EnumerateArray()
             .Select(e => e.GetInt32()).Should().Equal(0);
-        Json(result.Data).GetProperty("pendingCount").GetInt32().Should().Be(1);
+        Json(result.Data).GetProperty("selectedCount").GetInt32().Should().Be(1);
 
         await _award.DidNotReceiveWithAnyArgs().AwardAsync(default, default, default!, default, default, default);
     }
@@ -128,7 +127,7 @@ public class BingoHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task PredictionLimit_BlocksExtraUnconfirmedMarks()
+    public async Task PredictionLimit_BlocksExtraMarks()
     {
         (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
         await SeedCellAsync(session.Id, playerId, 0);
@@ -139,64 +138,42 @@ public class BingoHandlerTests : IDisposable
             session, definition, playerId, """{"cellIndex":3}""");
 
         blocked.Success.Should().BeFalse();
-        blocked.Message.Should().Contain("Лимит предсказаний");
+        blocked.Message.Should().Contain("Лимит выбора");
     }
 
     [Fact]
-    public async Task RejectedCell_FreesPredictionSlot()
+    public async Task Limit_IsClampedToHalfOfBoard()
     {
-        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
+        // В конфиге завышенный лимит: половина поля 3×3 = 4
+        const string config = """
+            {"size":3,"pointsPerCell":2,"lineBonus":10,"maxPredictions":25,"cells":["1","2","3","4","5","6","7","8","9"]}
+            """;
+        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync(config);
         await SeedCellAsync(session.Id, playerId, 0);
         await SeedCellAsync(session.Id, playerId, 1);
         await SeedCellAsync(session.Id, playerId, 2);
+        await SeedCellAsync(session.Id, playerId, 3);
 
-        await _bingo.RejectCellAsync(session.Id, 0);
-
-        SubmissionResult result = await _handler.HandleSubmissionAsync(
-            session, definition, playerId, """{"cellIndex":3}""");
-
-        result.Success.Should().BeTrue();
-        Json(result.Data).GetProperty("pendingCount").GetInt32().Should().Be(3);
-    }
-
-    [Fact]
-    public async Task ConfirmedCell_DoesNotConsumeLimitAndGivesNoPoints()
-    {
-        (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
-        await SeedCellAsync(session.Id, playerId, 0);
-        await SeedCellAsync(session.Id, playerId, 1);
-        await SeedCellAsync(session.Id, playerId, 2);
-
-        // Пустую клетку 8 админ подтвердил заранее
-        await _bingo.ConfirmCellAsync(session.Id, 8);
-
-        // Поздняя отметка подтверждённой клетки проходит и не расходует слот
-        SubmissionResult late = await _handler.HandleSubmissionAsync(
-            session, definition, playerId, """{"cellIndex":8}""");
-
-        late.Success.Should().BeTrue();
-        late.Message.Should().Contain("не начисляются");
-        Json(late.Data).GetProperty("pendingCount").GetInt32().Should().Be(3);
-
-        // Свободных слотов по-прежнему нет: четвёртое предсказание не проходит
         SubmissionResult blocked = await _handler.HandleSubmissionAsync(
-            session, definition, playerId, """{"cellIndex":3}""");
+            session, definition, playerId, """{"cellIndex":4}""");
 
         blocked.Success.Should().BeFalse();
-        blocked.Message.Should().Contain("Лимит предсказаний");
+        blocked.Message.Should().Contain("Лимит выбора: 4");
     }
 
     [Fact]
-    public async Task RejectedCell_CannotBeMarked()
+    public async Task LockedAnswers_BlockNewMarks()
     {
         (EventDefinition definition, EventSession session, Guid playerId) = await SeedEventAsync();
-        await _bingo.RejectCellAsync(session.Id, 0);
+
+        BingoConfirmOutcome locked = await _bingo.LockAsync(session.Id);
+        locked.Success.Should().BeTrue();
 
         SubmissionResult result = await _handler.HandleSubmissionAsync(
             session, definition, playerId, """{"cellIndex":0}""");
 
         result.Success.Should().BeFalse();
-        result.Message.Should().Contain("не было");
+        result.Message.Should().Contain("Приём предсказаний закрыт");
     }
 
     [Fact]
@@ -206,11 +183,13 @@ public class BingoHandlerTests : IDisposable
         await SeedCellAsync(session.Id, playerId, 0);
         await SeedCellAsync(session.Id, playerId, 1);
 
+        await _bingo.LockAsync(session.Id);
         BingoConfirmOutcome confirmed = await _bingo.ConfirmCellAsync(session.Id, 0);
         confirmed.Success.Should().BeTrue();
 
         JsonElement data = Json(await _handler.GetPlayerDataAsync(session, definition, playerId));
 
+        data.GetProperty("locked").GetBoolean().Should().BeTrue();
         data.GetProperty("markedCells").EnumerateArray().Select(e => e.GetInt32())
             .Should().BeEquivalentTo(new[] { 0, 1 });
         data.GetProperty("confirmedCells").EnumerateArray().Select(e => e.GetInt32())

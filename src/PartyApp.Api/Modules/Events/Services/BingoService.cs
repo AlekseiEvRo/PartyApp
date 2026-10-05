@@ -13,9 +13,9 @@ namespace PartyApp.Api.Modules.Events.Services;
 public record BingoConfirmOutcome(bool Success, string Message, object? Data = null);
 
 /// <summary>
-/// Бинго: предсказания игроков, подтверждение/отклонение клеток админом
-/// и розыгрыш линий.
-/// Баллы за сбывшееся предсказание получают все, кто отметил клетку заранее;
+/// Бинго в два этапа: сначала игроки выбирают предсказания (до блокировки),
+/// затем админ фиксирует приём и отмечает, что было, а что нет.
+/// Баллы за сбывшееся предсказание получают все, кто выбрал клетку заранее;
 /// бонус за линию — самый быстрый (по времени последней отметки).
 /// </summary>
 public class BingoService
@@ -23,7 +23,6 @@ public class BingoService
     private const int DefaultSize = 5;
     private const int DefaultPointsPerCell = 5;
     private const int DefaultLineBonus = 10;
-    private const int DefaultMaxPredictions = 3;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IPointsAwardService _pointsAward;
@@ -68,6 +67,9 @@ public class BingoService
 
             if (session is null || session.Definition.Type != "bingo")
                 return new BingoConfirmOutcome(false, "Сессия бинго не найдена");
+
+            if (!await IsLockedAsync(db, sessionId, ct))
+                return new BingoConfirmOutcome(false, "Сначала завершите приём предсказаний");
 
             BingoConfig config = ParseConfig(session.Definition.ConfigJson);
             int totalCells = config.Size * config.Size;
@@ -142,8 +144,8 @@ public class BingoService
     }
 
     /// <summary>
-    /// Отмечает клетку как «событие не состоялось»: предсказания не сбылись,
-    /// но их слоты у игроков освобождаются.
+    /// Отмечает клетку как «событие не состоялось»: предсказания не сбылись.
+    /// Выбор игроков уже зафиксирован блокировкой, поэтому слоты не освобождаются.
     /// </summary>
     public async Task<BingoConfirmOutcome> RejectCellAsync(
         Guid sessionId,
@@ -162,6 +164,9 @@ public class BingoService
 
             if (session is null || session.Definition.Type != "bingo")
                 return new BingoConfirmOutcome(false, "Сессия бинго не найдена");
+
+            if (!await IsLockedAsync(db, sessionId, ct))
+                return new BingoConfirmOutcome(false, "Сначала завершите приём предсказаний");
 
             BingoConfig config = ParseConfig(session.Definition.ConfigJson);
             int totalCells = config.Size * config.Size;
@@ -191,9 +196,6 @@ public class BingoService
             });
             await db.SaveChangesAsync(ct);
 
-            Dictionary<Guid, Dictionary<int, DateTime>> markTimes = await GetMarkTimesByPlayerAsync(db, sessionId, ct);
-            int freedPredictions = markTimes.Values.Count(marks => marks.ContainsKey(cellIndex));
-
             int rejectedCount = await db.BingoCellRejections.AsNoTracking()
                 .CountAsync(c => c.SessionId == sessionId, ct);
 
@@ -201,7 +203,6 @@ public class BingoService
             {
                 sessionId,
                 cellIndex,
-                freedPredictions,
                 rejectedCount
             };
 
@@ -209,10 +210,188 @@ public class BingoService
             await BroadcastLiveAsync(sessionId, ct);
 
             _logger.LogInformation(
-                "Bingo cell rejected: session={SessionId}, cell={CellIndex}, freed={Freed}",
-                sessionId, cellIndex, freedPredictions);
+                "Bingo cell rejected: session={SessionId}, cell={CellIndex}",
+                sessionId, cellIndex);
 
             return new BingoConfirmOutcome(true, "Клетка отклонена", summary);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Завершает 1 этап: закрывает приём предсказаний, фиксируя выбор игроков.
+    /// После блокировки админ ставит клеткам статусы «было»/«не было».
+    /// </summary>
+    public async Task<BingoConfirmOutcome> LockAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            EventSession? session = await db.EventSessions
+                .Include(s => s.Definition)
+                .SingleOrDefaultAsync(s => s.Id == sessionId, ct);
+
+            if (session is null || session.Definition.Type != "bingo")
+                return new BingoConfirmOutcome(false, "Сессия бинго не найдена");
+
+            if (await IsLockedAsync(db, sessionId, ct))
+                return new BingoConfirmOutcome(false, "Приём предсказаний уже закрыт");
+
+            DateTime lockedAt = DateTime.UtcNow;
+            db.BingoLocks.Add(new BingoLock
+            {
+                SessionId = sessionId,
+                LockedAt = lockedAt
+            });
+            await db.SaveChangesAsync(ct);
+
+            await BroadcastLockAsync(sessionId, true, lockedAt, ct);
+            await BroadcastLiveAsync(sessionId, ct);
+
+            _logger.LogInformation("Bingo answers locked: session={SessionId}", sessionId);
+
+            return new BingoConfirmOutcome(true, "Приём предсказаний закрыт", new
+            {
+                sessionId,
+                locked = true,
+                lockedAt
+            });
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Возвращает 1 этап: снова открывает приём предсказаний. Доступно, только
+    /// пока по клеткам нет ни одного решения — иначе выбор игроков уже сыграл.
+    /// </summary>
+    public async Task<BingoConfirmOutcome> UnlockAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            EventSession? session = await db.EventSessions
+                .Include(s => s.Definition)
+                .SingleOrDefaultAsync(s => s.Id == sessionId, ct);
+
+            if (session is null || session.Definition.Type != "bingo")
+                return new BingoConfirmOutcome(false, "Сессия бинго не найдена");
+
+            BingoLock? bingoLock = await db.BingoLocks
+                .SingleOrDefaultAsync(l => l.SessionId == sessionId, ct);
+
+            if (bingoLock is null)
+                return new BingoConfirmOutcome(false, "Приём предсказаний ещё не закрыт");
+
+            bool hasDecisions = await db.BingoCellConfirmations.AsNoTracking()
+                .AnyAsync(c => c.SessionId == sessionId, ct)
+                || await db.BingoCellRejections.AsNoTracking()
+                    .AnyAsync(c => c.SessionId == sessionId, ct);
+
+            if (hasDecisions)
+                return new BingoConfirmOutcome(false, "Уже есть решения по клеткам — вернуть приём нельзя");
+
+            db.BingoLocks.Remove(bingoLock);
+            await db.SaveChangesAsync(ct);
+
+            await BroadcastLockAsync(sessionId, false, null, ct);
+            await BroadcastLiveAsync(sessionId, ct);
+
+            _logger.LogInformation("Bingo answers unlocked: session={SessionId}", sessionId);
+
+            return new BingoConfirmOutcome(true, "Приём предсказаний снова открыт", new
+            {
+                sessionId,
+                locked = false,
+                lockedAt = (DateTime?)null
+            });
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Снимает выбор игрока до блокировки приёма: удаляет его отметку клетки.
+    /// После блокировки выбор фиксируется и изменить его нельзя.
+    /// </summary>
+    public async Task<BingoConfirmOutcome> RemoveMarkAsync(
+        Guid sessionId,
+        Guid playerId,
+        int cellIndex,
+        CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            EventSession? session = await db.EventSessions
+                .Include(s => s.Definition)
+                .SingleOrDefaultAsync(s => s.Id == sessionId, ct);
+
+            if (session is null || session.Definition.Type != "bingo")
+                return new BingoConfirmOutcome(false, "Сессия бинго не найдена");
+
+            BingoConfig config = ParseConfig(session.Definition.ConfigJson);
+            int totalCells = config.Size * config.Size;
+
+            if (cellIndex < 0 || cellIndex >= totalCells)
+                return new BingoConfirmOutcome(false, "Неверная клетка");
+
+            if (await IsLockedAsync(db, sessionId, ct))
+                return new BingoConfirmOutcome(false, "Приём предсказаний закрыт — выбор больше не изменить");
+
+            List<PlayerSubmission> submissions = await db.PlayerSubmissions
+                .Where(s => s.SessionId == sessionId && s.PlayerId == playerId)
+                .OrderBy(s => s.SubmittedAt)
+                .ThenBy(s => s.Id)
+                .ToListAsync(ct);
+
+            PlayerSubmission? mark = submissions
+                .FirstOrDefault(s => ExtractCellIndex(s.PayloadJson) == cellIndex);
+
+            if (mark is null)
+                return new BingoConfirmOutcome(false, "Эта клетка не отмечена");
+
+            db.PlayerSubmissions.Remove(mark);
+            await db.SaveChangesAsync(ct);
+
+            var selected = new HashSet<int>();
+
+            foreach (PlayerSubmission submission in submissions)
+            {
+                if (ReferenceEquals(submission, mark))
+                    continue;
+
+                int? cell = ExtractCellIndex(submission.PayloadJson);
+                if (cell is not null)
+                    selected.Add(cell.Value);
+            }
+
+            await BroadcastLiveAsync(sessionId, ct);
+
+            return new BingoConfirmOutcome(true, "Выбор снят", new
+            {
+                sessionId,
+                cellIndex,
+                markedCells = selected.OrderBy(i => i).ToArray(),
+                selectedCount = selected.Count,
+                maxPredictions = config.MaxPredictions
+            });
         }
         finally
         {
@@ -265,7 +444,7 @@ public class BingoService
         }
     }
 
-    /// <summary>Данные игрока: отметки, предсказания, слоты и линии.</summary>
+    /// <summary>Данные игрока: выбор, решения админа, блокировка приёма и линии.</summary>
     public async Task<object?> GetPlayerStateAsync(Guid sessionId, Guid playerId, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -283,27 +462,20 @@ public class BingoService
         Dictionary<int, DateTime> marks = await GetPlayerMarkTimesAsync(db, sessionId, playerId, ct);
         Dictionary<int, DateTime> confirmations = await GetConfirmationsAsync(db, sessionId, ct);
         HashSet<int> rejected = await GetRejectedCellsAsync(db, sessionId, ct);
+        DateTime? lockedAt = await GetLockedAtAsync(db, sessionId, ct);
 
         var pending = new List<int>();
         var predictions = new List<int>();
-        var late = new List<int>();
 
-        foreach ((int cell, DateTime markedAt) in marks)
+        foreach (int cell in marks.Keys)
         {
             if (rejected.Contains(cell))
                 continue;
 
-            if (confirmations.TryGetValue(cell, out DateTime confirmedAt))
-            {
-                if (markedAt < confirmedAt)
-                    predictions.Add(cell);
-                else
-                    late.Add(cell);
-            }
+            if (confirmations.ContainsKey(cell))
+                predictions.Add(cell);
             else
-            {
                 pending.Add(cell);
-            }
         }
 
         int wonLines = await db.BingoLineAwards.AsNoTracking()
@@ -311,14 +483,16 @@ public class BingoService
 
         return new
         {
+            locked = lockedAt.HasValue,
+            lockedAt,
             markedCells = marks.Keys.OrderBy(i => i).ToArray(),
             pendingCells = pending.OrderBy(i => i).ToArray(),
             predictionCells = predictions.OrderBy(i => i).ToArray(),
             // Совместимость со старым клиентом: сбывшиеся предсказания = подтверждённые клетки
             confirmedCells = predictions.OrderBy(i => i).ToArray(),
             allConfirmedCells = confirmations.Keys.OrderBy(i => i).ToArray(),
-            lateCells = late.OrderBy(i => i).ToArray(),
             rejectedCells = rejected.OrderBy(i => i).ToArray(),
+            selectedCount = marks.Count,
             pendingCount = pending.Count,
             maxPredictions = config.MaxPredictions,
             pointsPerCell = config.PointsPerCell,
@@ -350,12 +524,16 @@ public class BingoService
         Dictionary<Guid, Dictionary<int, DateTime>> marksByPlayer = await GetMarkTimesByPlayerAsync(db, sessionId, ct);
         HashSet<int> confirmed = await GetConfirmedCellsAsync(db, sessionId, ct);
         HashSet<int> rejected = await GetRejectedCellsAsync(db, sessionId, ct);
+        DateTime? lockedAt = await GetLockedAtAsync(db, sessionId, ct);
         int awardedLines = await db.BingoLineAwards.CountAsync(a => a.SessionId == sessionId, ct);
 
         return new
         {
             size = config.Size,
             cells,
+            locked = lockedAt.HasValue,
+            lockedAt,
+            maxPredictions = config.MaxPredictions,
             confirmedCells = confirmed.OrderBy(i => i).ToArray(),
             rejectedCells = rejected.OrderBy(i => i).ToArray(),
             markedCount = marksByPlayer.Values.Sum(marks => marks.Count),
@@ -383,19 +561,14 @@ public class BingoService
         Dictionary<int, DateTime> confirmations = await GetConfirmationsAsync(db, sessionId, ct);
         HashSet<int> rejected = await GetRejectedCellsAsync(db, sessionId, ct);
         Dictionary<Guid, Dictionary<int, DateTime>> marksByPlayer = await GetMarkTimesByPlayerAsync(db, sessionId, ct);
+        DateTime? lockedAt = await GetLockedAtAsync(db, sessionId, ct);
 
         var markCounts = new Dictionary<int, int>();
 
         foreach (Dictionary<int, DateTime> marks in marksByPlayer.Values)
         {
-            foreach ((int cell, DateTime markedAt) in marks)
-            {
-                // Считаем только предсказания: отметки после подтверждения баллов не приносят
-                if (confirmations.TryGetValue(cell, out DateTime confirmedAt) && markedAt >= confirmedAt)
-                    continue;
-
+            foreach (int cell in marks.Keys)
                 markCounts[cell] = markCounts.GetValueOrDefault(cell) + 1;
-            }
         }
 
         var awards = await db.BingoLineAwards.AsNoTracking()
@@ -429,12 +602,15 @@ public class BingoService
             displayName = session.Definition.DisplayName,
             size = config.Size,
             cells = config.Cells,
+            locked = lockedAt.HasValue,
+            lockedAt,
             pointsPerCell = config.PointsPerCell,
             lineBonus = config.LineBonus,
             maxPredictions = config.MaxPredictions,
             confirmedCells = confirmations.Keys.OrderBy(i => i).ToArray(),
             rejectedCells = rejected.OrderBy(i => i).ToArray(),
             markCounts,
+            pickedPredictions = marksByPlayer.Values.Sum(marks => marks.Count),
             playersCount = marksByPlayer.Count,
             lineAwards
         };
@@ -442,38 +618,42 @@ public class BingoService
 
     internal static BingoConfig ParseConfig(string configJson)
     {
+        BingoConfig parsed;
+
         try
         {
-            var parsed = JsonSerializer.Deserialize<BingoConfig>(configJson, EventJsonOptions.Default);
-            if (parsed is null)
-                return new BingoConfig();
-
-            if (parsed.Size is < 3 or > 7)
-                parsed.Size = DefaultSize;
-
-            if (parsed.PointsPerCell <= 0)
-                parsed.PointsPerCell = DefaultPointsPerCell;
-
-            if (parsed.LineBonus <= 0)
-                parsed.LineBonus = DefaultLineBonus;
-
-            if (parsed.MaxPredictions <= 0)
-                parsed.MaxPredictions = DefaultMaxPredictions;
-
-            parsed.Cells ??= new List<string>();
-
-            // Лишние клетки за пределами игрового поля отбрасываем: админка и игроки
-            // должны видеть одну и ту же сетку
-            int totalCells = parsed.Size * parsed.Size;
-            if (parsed.Cells.Count > totalCells)
-                parsed.Cells = parsed.Cells.Take(totalCells).ToList();
-
-            return parsed;
+            parsed = JsonSerializer.Deserialize<BingoConfig>(configJson, EventJsonOptions.Default)
+                ?? new BingoConfig();
         }
         catch
         {
-            return new BingoConfig();
+            parsed = new BingoConfig();
         }
+
+        if (parsed.Size is < 3 or > 7)
+            parsed.Size = DefaultSize;
+
+        int totalCells = parsed.Size * parsed.Size;
+        int maxPredictions = Math.Max(1, totalCells / 2);
+
+        if (parsed.PointsPerCell <= 0)
+            parsed.PointsPerCell = DefaultPointsPerCell;
+
+        if (parsed.LineBonus <= 0)
+            parsed.LineBonus = DefaultLineBonus;
+
+        // Выбор фиксирован и не превышает половину поля: слоты больше не освобождаются
+        if (parsed.MaxPredictions <= 0 || parsed.MaxPredictions > maxPredictions)
+            parsed.MaxPredictions = maxPredictions;
+
+        parsed.Cells ??= new List<string>();
+
+        // Лишние клетки за пределами игрового поля отбрасываем: админка и игроки
+        // должны видеть одну и ту же сетку
+        if (parsed.Cells.Count > totalCells)
+            parsed.Cells = parsed.Cells.Take(totalCells).ToList();
+
+        return parsed;
     }
 
     internal static int CountLines(HashSet<int> marked, HashSet<int> confirmed, int size)
@@ -631,6 +811,17 @@ public class BingoService
         }, ct);
     }
 
+    /// <summary>Сообщает карточкам игроков о закрытии или возврате приёма предсказаний.</summary>
+    private Task BroadcastLockAsync(Guid sessionId, bool locked, DateTime? lockedAt, CancellationToken ct)
+    {
+        return _hub.Clients.All.SendAsync("BingoLocked", new
+        {
+            sessionId,
+            locked,
+            lockedAt
+        }, ct);
+    }
+
     internal static async Task<Dictionary<int, DateTime>> GetPlayerMarkTimesAsync(
         AppDbContext db, Guid sessionId, Guid playerId, CancellationToken ct)
     {
@@ -686,6 +877,23 @@ public class BingoService
         return rejected.ToHashSet();
     }
 
+    /// <summary>Приём предсказаний закрыт админом (начался 2 этап).</summary>
+    internal static async Task<bool> IsLockedAsync(
+        AppDbContext db, Guid sessionId, CancellationToken ct)
+    {
+        return await GetLockedAtAsync(db, sessionId, ct) is not null;
+    }
+
+    /// <summary>Когда админ закрыл приём предсказаний; null — приём ещё открыт.</summary>
+    internal static async Task<DateTime?> GetLockedAtAsync(
+        AppDbContext db, Guid sessionId, CancellationToken ct)
+    {
+        return await db.BingoLocks.AsNoTracking()
+            .Where(l => l.SessionId == sessionId)
+            .Select(l => (DateTime?)l.LockedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
     internal static int? ExtractCellIndex(string payloadJson)
     {
         try
@@ -718,7 +926,7 @@ public class BingoService
         public int Size { get; set; } = DefaultSize;
         public int PointsPerCell { get; set; } = DefaultPointsPerCell;
         public int LineBonus { get; set; } = DefaultLineBonus;
-        public int MaxPredictions { get; set; } = DefaultMaxPredictions;
+        public int MaxPredictions { get; set; }
         public List<string> Cells { get; set; } = new();
     }
 }

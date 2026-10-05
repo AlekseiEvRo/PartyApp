@@ -14,6 +14,7 @@ import {
     dareConfirmed,
     bingoCellConfirmed,
     bingoCellRejected,
+    bingoLocked,
     bingoLineAwarded,
     raffleDrawn,
     profileUpdated,
@@ -153,6 +154,10 @@ export async function connect(): Promise<void> {
 
     connection.on('BingoCellRejected', (data: { sessionId: string; cellIndex: number; rejectedCount: number }) => {
         bingoCellRejected.set(data);
+    });
+
+    connection.on('BingoLocked', (data: { sessionId: string; locked: boolean; lockedAt: string | null }) => {
+        bingoLocked.set(data);
     });
 
     connection.on('BingoLineAwarded', (data: {

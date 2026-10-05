@@ -71,9 +71,85 @@ public class BingoServiceTests : IDisposable
         await _host.Db.SaveChangesAsync();
     }
 
+    private async Task LockAsync(Guid sessionId)
+    {
+        BingoConfirmOutcome outcome = await _service.LockAsync(sessionId);
+        outcome.Success.Should().BeTrue();
+    }
+
     private static JsonElement Json(object? value)
     {
         return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(value));
+    }
+
+    [Fact]
+    public async Task ConfirmCell_WithoutLock_IsRejected()
+    {
+        (_, EventSession session, Guid player) = await SeedEventAsync();
+        await SeedMarkAsync(session.Id, player, 0, Start);
+
+        BingoConfirmOutcome outcome = await _service.ConfirmCellAsync(session.Id, 0);
+
+        outcome.Success.Should().BeFalse();
+        outcome.Message.Should().Contain("Сначала завершите приём");
+    }
+
+    [Fact]
+    public async Task RejectCell_WithoutLock_IsRejected()
+    {
+        (_, EventSession session, _) = await SeedEventAsync();
+
+        BingoConfirmOutcome outcome = await _service.RejectCellAsync(session.Id, 0);
+
+        outcome.Success.Should().BeFalse();
+        outcome.Message.Should().Contain("Сначала завершите приём");
+    }
+
+    [Fact]
+    public async Task Lock_Twice_IsRejected()
+    {
+        (_, EventSession session, _) = await SeedEventAsync();
+        await LockAsync(session.Id);
+
+        BingoConfirmOutcome second = await _service.LockAsync(session.Id);
+
+        second.Success.Should().BeFalse();
+        second.Message.Should().Contain("уже закрыт");
+        _hub.SingleCall("BingoLocked").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Unlock_WithoutDecisions_ReopensAnswers()
+    {
+        (_, EventSession session, Guid player) = await SeedEventAsync();
+        await SeedMarkAsync(session.Id, player, 0, Start);
+        await LockAsync(session.Id);
+
+        BingoConfirmOutcome unlock = await _service.UnlockAsync(session.Id);
+
+        unlock.Success.Should().BeTrue();
+        Json(unlock.Data).GetProperty("locked").GetBoolean().Should().BeFalse();
+
+        // После возврата приёма выбор снова можно менять
+        BingoConfirmOutcome removed = await _service.RemoveMarkAsync(session.Id, player, 0);
+        removed.Success.Should().BeTrue();
+
+        JsonElement state = Json(await _service.GetPlayerStateAsync(session.Id, player));
+        state.GetProperty("locked").GetBoolean().Should().BeFalse();
+        state.GetProperty("selectedCount").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Unlock_AfterDecision_IsRejected()
+    {
+        (_, EventSession session, _) = await SeedEventAsync();
+        await LockAsync(session.Id);
+        await _service.ConfirmCellAsync(session.Id, 0);
+
+        BingoConfirmOutcome unlock = await _service.UnlockAsync(session.Id);
+
+        unlock.Success.Should().BeFalse();
+        unlock.Message.Should().Contain("решения по клеткам");
     }
 
     [Fact]
@@ -84,6 +160,7 @@ public class BingoServiceTests : IDisposable
 
         await SeedMarkAsync(session.Id, marker, 0, Start);
         await SeedMarkAsync(session.Id, other, 5, Start);
+        await LockAsync(session.Id);
 
         BingoConfirmOutcome outcome = await _service.ConfirmCellAsync(session.Id, 0);
 
@@ -111,6 +188,7 @@ public class BingoServiceTests : IDisposable
         await SeedMarkAsync(session.Id, slow, 1, Start.AddMinutes(4));
         await SeedMarkAsync(session.Id, slow, 2, Start.AddMinutes(5));
 
+        await LockAsync(session.Id);
         await _service.ConfirmCellAsync(session.Id, 0);
         await _service.ConfirmCellAsync(session.Id, 1);
         await _service.ConfirmCellAsync(session.Id, 2);
@@ -135,6 +213,7 @@ public class BingoServiceTests : IDisposable
         await SeedMarkAsync(session.Id, player, 0, Start);
         await SeedMarkAsync(session.Id, player, 1, Start.AddMinutes(1));
         await SeedMarkAsync(session.Id, player, 2, Start.AddMinutes(2));
+        await LockAsync(session.Id);
 
         await _service.ConfirmCellAsync(session.Id, 0);
         await _service.ConfirmCellAsync(session.Id, 1);
@@ -155,6 +234,7 @@ public class BingoServiceTests : IDisposable
         await SeedMarkAsync(session.Id, player, 0, Start);
         await SeedMarkAsync(session.Id, player, 1, Start.AddMinutes(1));
         await SeedMarkAsync(session.Id, player, 2, Start.AddMinutes(2));
+        await LockAsync(session.Id);
 
         await _service.ConfirmCellAsync(session.Id, 2);
         await _service.ConfirmCellAsync(session.Id, 1);
@@ -169,6 +249,7 @@ public class BingoServiceTests : IDisposable
     public async Task CheckLineAwards_ConfirmedLineCompletedLater_PaysFirstCompleter()
     {
         (_, EventSession session, Guid player) = await SeedEventAsync();
+        await LockAsync(session.Id);
 
         // Все клетки линии подтвердили до того, как кто-то её собрал
         await _service.ConfirmCellAsync(session.Id, 0);
@@ -188,26 +269,28 @@ public class BingoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PlayerState_ClassifiesPendingPredictionAndLateMarks()
+    public async Task PlayerState_ClassifiesSelectionAndDecisions()
     {
         (_, EventSession session, Guid player) = await SeedEventAsync();
 
         await SeedMarkAsync(session.Id, player, 0, Start); // останется ждать решения
         await SeedMarkAsync(session.Id, player, 1, Start); // сбывшееся предсказание
+        await LockAsync(session.Id);
 
         await _service.ConfirmCellAsync(session.Id, 1);
         await _service.ConfirmCellAsync(session.Id, 2); // пустая клетка подтверждена
-        await SeedMarkAsync(session.Id, player, 2, DateTime.UtcNow.AddSeconds(1)); // поздняя отметка
 
         JsonElement state = Json(await _service.GetPlayerStateAsync(session.Id, player));
 
+        state.GetProperty("locked").GetBoolean().Should().BeTrue();
         state.GetProperty("pendingCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(0);
         state.GetProperty("predictionCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(1);
-        state.GetProperty("lateCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(2);
+        state.GetProperty("allConfirmedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(1, 2);
+        state.GetProperty("selectedCount").GetInt32().Should().Be(2);
         state.GetProperty("pendingCount").GetInt32().Should().Be(1);
-        state.GetProperty("maxPredictions").GetInt32().Should().Be(3);
+        state.GetProperty("maxPredictions").GetInt32().Should().Be(4); // половина поля 3×3
         state.GetProperty("markedCells").EnumerateArray().Select(e => e.GetInt32())
-            .Should().BeEquivalentTo(new[] { 0, 1, 2 });
+            .Should().BeEquivalentTo(new[] { 0, 1 });
     }
 
     [Fact]
@@ -215,6 +298,7 @@ public class BingoServiceTests : IDisposable
     {
         (_, EventSession session, Guid player) = await SeedEventAsync();
         await SeedMarkAsync(session.Id, player, 0, Start);
+        await LockAsync(session.Id);
 
         await _service.ConfirmCellAsync(session.Id, 0);
         await _service.RejectCellAsync(session.Id, 1);
@@ -224,21 +308,23 @@ public class BingoServiceTests : IDisposable
         live.GetProperty("size").GetInt32().Should().Be(3);
         live.GetProperty("cells").EnumerateArray().Select(e => e.GetString())
             .Should().HaveCount(9);
+        live.GetProperty("locked").GetBoolean().Should().BeTrue();
         live.GetProperty("confirmedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(0);
         live.GetProperty("rejectedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(1);
         live.GetProperty("confirmedCount").GetInt32().Should().Be(1);
         live.GetProperty("rejectedCount").GetInt32().Should().Be(1);
         live.GetProperty("playersCount").GetInt32().Should().Be(1);
 
-        // После каждого решения админа экран получает свежие live-данные
-        _hub.CallsFor("EventLiveUpdated").Should().HaveCount(2);
+        // Блокировка, подтверждение и отклонение — каждый раз свежие live-данные
+        _hub.CallsFor("EventLiveUpdated").Should().HaveCount(3);
     }
 
     [Fact]
-    public async Task RejectCell_BlocksConfirmAndFreesPredictionSlot()
+    public async Task RejectCell_BlocksConfirmAndKeepsSelection()
     {
         (_, EventSession session, Guid player) = await SeedEventAsync();
         await SeedMarkAsync(session.Id, player, 0, Start);
+        await LockAsync(session.Id);
 
         BingoConfirmOutcome reject = await _service.RejectCellAsync(session.Id, 0);
 
@@ -255,16 +341,58 @@ public class BingoServiceTests : IDisposable
         secondReject.Success.Should().BeFalse();
         secondReject.Message.Should().Contain("уже отклонена");
 
-        // Отметка на отклонённой клетке больше не занимает слот предсказания
+        // Выбор зафиксирован: отклонение не освобождает слот
         JsonElement state = Json(await _service.GetPlayerStateAsync(session.Id, player));
-        state.GetProperty("pendingCount").GetInt32().Should().Be(0);
+        state.GetProperty("selectedCount").GetInt32().Should().Be(1);
         state.GetProperty("rejectedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(0);
+    }
+
+    [Fact]
+    public async Task RemoveMark_BeforeLock_RemovesSelection()
+    {
+        (_, EventSession session, Guid player) = await SeedEventAsync();
+        await SeedMarkAsync(session.Id, player, 0, Start);
+        await SeedMarkAsync(session.Id, player, 1, Start);
+
+        BingoConfirmOutcome outcome = await _service.RemoveMarkAsync(session.Id, player, 0);
+
+        outcome.Success.Should().BeTrue();
+        Json(outcome.Data).GetProperty("selectedCount").GetInt32().Should().Be(1);
+
+        JsonElement state = Json(await _service.GetPlayerStateAsync(session.Id, player));
+        state.GetProperty("markedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(1);
+        state.GetProperty("selectedCount").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RemoveMark_AfterLock_IsRejected()
+    {
+        (_, EventSession session, Guid player) = await SeedEventAsync();
+        await SeedMarkAsync(session.Id, player, 0, Start);
+        await LockAsync(session.Id);
+
+        BingoConfirmOutcome outcome = await _service.RemoveMarkAsync(session.Id, player, 0);
+
+        outcome.Success.Should().BeFalse();
+        outcome.Message.Should().Contain("закрыт");
+    }
+
+    [Fact]
+    public async Task RemoveMark_NotMarked_IsRejected()
+    {
+        (_, EventSession session, Guid player) = await SeedEventAsync();
+
+        BingoConfirmOutcome outcome = await _service.RemoveMarkAsync(session.Id, player, 0);
+
+        outcome.Success.Should().BeFalse();
+        outcome.Message.Should().Contain("не отмечена");
     }
 
     [Fact]
     public async Task ConfirmCell_ThenReject_IsRejected()
     {
         (_, EventSession session, _) = await SeedEventAsync();
+        await LockAsync(session.Id);
 
         await _service.ConfirmCellAsync(session.Id, 0);
         BingoConfirmOutcome reject = await _service.RejectCellAsync(session.Id, 0);
@@ -278,6 +406,7 @@ public class BingoServiceTests : IDisposable
     {
         (_, EventSession session, Guid player) = await SeedEventAsync();
         await SeedMarkAsync(session.Id, player, 0, Start);
+        await LockAsync(session.Id);
 
         await _service.ConfirmCellAsync(session.Id, 0);
         BingoConfirmOutcome second = await _service.ConfirmCellAsync(session.Id, 0);
@@ -292,6 +421,7 @@ public class BingoServiceTests : IDisposable
     public async Task ConfirmCell_InvalidCell_IsRejected(int cellIndex)
     {
         (_, EventSession session, _) = await SeedEventAsync();
+        await LockAsync(session.Id);
 
         BingoConfirmOutcome outcome = await _service.ConfirmCellAsync(session.Id, cellIndex);
 
@@ -334,7 +464,7 @@ public class BingoServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AdminState_ShowsMarksAndConfirmations()
+    public async Task AdminState_ShowsMarksConfirmationsAndLock()
     {
         (_, EventSession session, Guid first) = await SeedEventAsync();
         Guid second = await SeedSecondPlayerAsync();
@@ -342,14 +472,30 @@ public class BingoServiceTests : IDisposable
         await SeedMarkAsync(session.Id, first, 0, Start);
         await SeedMarkAsync(session.Id, second, 0, Start);
         await SeedMarkAsync(session.Id, first, 4, Start);
+        await LockAsync(session.Id);
         await _service.ConfirmCellAsync(session.Id, 4);
 
         JsonElement state = Json(await _service.GetAdminStateAsync(session.Id));
 
+        state.GetProperty("locked").GetBoolean().Should().BeTrue();
         state.GetProperty("playersCount").GetInt32().Should().Be(2);
+        state.GetProperty("pickedPredictions").GetInt32().Should().Be(3);
         state.GetProperty("confirmedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(4);
         state.GetProperty("markCounts").GetProperty("0").GetInt32().Should().Be(2);
         state.GetProperty("markCounts").GetProperty("4").GetInt32().Should().Be(1);
-        state.GetProperty("maxPredictions").GetInt32().Should().Be(3);
+        state.GetProperty("maxPredictions").GetInt32().Should().Be(4); // половина поля 3×3
+    }
+
+    [Fact]
+    public async Task AdminState_ClampsMaxPredictionsToHalfOfBoard()
+    {
+        const string configWithBigLimit = """
+            {"size":3,"maxPredictions":99,"cells":["1","2","3","4","5","6","7","8","9"]}
+            """;
+        (_, EventSession session, _) = await SeedEventAsync(configWithBigLimit);
+
+        JsonElement state = Json(await _service.GetAdminStateAsync(session.Id));
+
+        state.GetProperty("maxPredictions").GetInt32().Should().Be(4);
     }
 }

@@ -5,9 +5,10 @@ using PartyApp.Infrastructure.Persistence;
 namespace PartyApp.Api.Modules.Events.Handlers;
 
 /// <summary>
-/// Обработчик ивента "bingo". Игроки заранее отмечают клетки-предсказания
-/// (не больше maxPredictions одновременно), админ подтверждает реально
-/// случившиеся события и отклоняет те, которых не было (см. <see cref="BingoService"/>).
+/// Обработчик ивента "bingo". Игра в два этапа: сначала игроки выбирают клетки-предсказания
+/// (не больше maxPredictions, но не больше половины поля), затем админ закрывает приём,
+/// после чего подтверждает случившиеся события и отклоняет те, которых не было
+/// (см. <see cref="BingoService"/>).
 /// </summary>
 public class BingoHandler : IEventHandler
 {
@@ -32,7 +33,7 @@ public class BingoHandler : IEventHandler
             "size": 5,
             "pointsPerCell": 5,
             "lineBonus": 10,
-            "maxPredictions": 3,
+            "maxPredictions": 12,
             "cells": [
                 "Именинник скажет тост", "Кто-то опрокинет напиток", "Прозвучит песня 2000-х", "Кто-то уснёт до полуночи", "Будет общее фото",
                 "Кто-то принесёт торт", "Будет спор о музыке", "Кто-то выйдет на улицу покурить", "Именинника обнимут 10 раз", "Кто-то расскажет историю из детства",
@@ -63,38 +64,32 @@ public class BingoHandler : IEventHandler
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        if (await BingoService.IsLockedAsync(db, session.Id, ct))
+            return SubmissionResult.Fail("Приём предсказаний закрыт — ведущий уже перешёл к оценке событий");
+
         Dictionary<int, DateTime> marks = await BingoService.GetPlayerMarkTimesAsync(db, session.Id, playerId, ct);
-        HashSet<int> confirmed = await BingoService.GetConfirmedCellsAsync(db, session.Id, ct);
-        HashSet<int> rejected = await BingoService.GetRejectedCellsAsync(db, session.Id, ct);
 
         if (marks.ContainsKey(cellIndex))
             return SubmissionResult.Fail("Уже отмечено");
 
-        if (rejected.Contains(cellIndex))
-            return SubmissionResult.Fail("Ведущий отметил, что этого события не было");
-
-        bool isConfirmed = confirmed.Contains(cellIndex);
-        int pendingCount = marks.Keys.Count(cell => !confirmed.Contains(cell) && !rejected.Contains(cell));
-
-        if (!isConfirmed && pendingCount >= config.MaxPredictions)
+        if (marks.Count >= config.MaxPredictions)
         {
             return SubmissionResult.Fail(
-                $"Лимит предсказаний: {config.MaxPredictions}. Дождись, пока ведущий подтвердит или отклонит события");
+                $"Лимит выбора: {config.MaxPredictions} событий. Нажми на свою отметку, чтобы снять её");
         }
 
         _logger.LogInformation(
-            "Bingo: player {PlayerId} marked cell {CellIndex} in session {SessionId} (confirmed={Confirmed})",
-            playerId, cellIndex, session.Id, isConfirmed);
+            "Bingo: player {PlayerId} marked cell {CellIndex} in session {SessionId}",
+            playerId, cellIndex, session.Id);
 
         return SubmissionResult.Ok(
             0,
-            isConfirmed
-                ? "Отмечено. Баллы за такое предсказание не начисляются — событие уже подтвердили"
-                : "Предсказание принято! Ждём решения ведущего",
+            $"Предсказание принято! Выбрано {marks.Count + 1} из {config.MaxPredictions}",
             new
             {
                 markedCells = marks.Keys.Append(cellIndex).OrderBy(i => i).ToArray(),
-                pendingCount = isConfirmed ? pendingCount : pendingCount + 1,
+                selectedCount = marks.Count + 1,
+                pendingCount = marks.Count + 1,
                 maxPredictions = config.MaxPredictions
             });
     }
