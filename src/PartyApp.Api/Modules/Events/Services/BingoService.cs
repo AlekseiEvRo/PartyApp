@@ -634,7 +634,8 @@ public class BingoService
             parsed.Size = DefaultSize;
 
         int totalCells = parsed.Size * parsed.Size;
-        int maxPredictions = Math.Max(1, totalCells / 2);
+        // Не больше половины поля, с округлением вверх: 5×5 → 13
+        int maxPredictions = Math.Max(1, (totalCells + 1) / 2);
 
         if (parsed.PointsPerCell <= 0)
             parsed.PointsPerCell = DefaultPointsPerCell;

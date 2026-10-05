@@ -288,7 +288,7 @@ public class BingoServiceTests : IDisposable
         state.GetProperty("allConfirmedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(1, 2);
         state.GetProperty("selectedCount").GetInt32().Should().Be(2);
         state.GetProperty("pendingCount").GetInt32().Should().Be(1);
-        state.GetProperty("maxPredictions").GetInt32().Should().Be(4); // половина поля 3×3
+        state.GetProperty("maxPredictions").GetInt32().Should().Be(5); // половина поля 3×3, округление вверх
         state.GetProperty("markedCells").EnumerateArray().Select(e => e.GetInt32())
             .Should().BeEquivalentTo(new[] { 0, 1 });
     }
@@ -483,7 +483,7 @@ public class BingoServiceTests : IDisposable
         state.GetProperty("confirmedCells").EnumerateArray().Select(e => e.GetInt32()).Should().Equal(4);
         state.GetProperty("markCounts").GetProperty("0").GetInt32().Should().Be(2);
         state.GetProperty("markCounts").GetProperty("4").GetInt32().Should().Be(1);
-        state.GetProperty("maxPredictions").GetInt32().Should().Be(4); // половина поля 3×3
+        state.GetProperty("maxPredictions").GetInt32().Should().Be(5); // половина поля 3×3, округление вверх
     }
 
     [Fact]
@@ -496,6 +496,6 @@ public class BingoServiceTests : IDisposable
 
         JsonElement state = Json(await _service.GetAdminStateAsync(session.Id));
 
-        state.GetProperty("maxPredictions").GetInt32().Should().Be(4);
+        state.GetProperty("maxPredictions").GetInt32().Should().Be(5);
     }
 }

@@ -52,7 +52,7 @@
     let configTouched = false;
     let configError = '';
     // Бинго: удобное поле поверх ConfigJson (сам ключ хранится в конфиге)
-    let formMaxPredictions = 12;
+    let formMaxPredictions = 13;
     // Лототрон: удобные поля поверх ConfigJson (ключи хранятся в конфиге)
     let formRafflePrice = 0;
     let formRaffleMaxTickets = 1;
@@ -158,7 +158,7 @@
         } else if (useDefault) {
             const size = Number(config?.size);
             const totalCells = Number.isFinite(size) && size >= 3 && size <= 7 ? size * size : 25;
-            formMaxPredictions = Math.max(1, Math.floor(totalCells / 2));
+            formMaxPredictions = Math.max(1, Math.ceil(totalCells / 2));
         }
     }
 
@@ -180,7 +180,7 @@
 
         const size = Number(config.size);
         const totalCells = Number.isFinite(size) && size >= 3 && size <= 7 ? size * size : 25;
-        const maxAllowed = Math.max(1, Math.floor(totalCells / 2));
+        const maxAllowed = Math.max(1, Math.ceil(totalCells / 2));
         if (value > maxAllowed) {
             configError = `Лимит выбора не может быть больше половины поля (${maxAllowed})`;
             return false;
@@ -473,7 +473,8 @@
                                bind:value={formMaxPredictions} />
                         <p class="hint">
                             Сколько событий игрок выбирает на 1 этапе. Не больше половины клеток поля
-                            (для 5×5 — 12). После «Завершить приём» выбор фиксируется и не меняется.
+                            с округлением вверх (для 5×5 — 13). После «Завершить приём» выбор фиксируется
+                            и не меняется.
                         </p>
                     </div>
                 </div>

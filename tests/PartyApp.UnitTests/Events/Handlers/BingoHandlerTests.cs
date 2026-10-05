@@ -144,7 +144,7 @@ public class BingoHandlerTests : IDisposable
     [Fact]
     public async Task Limit_IsClampedToHalfOfBoard()
     {
-        // В конфиге завышенный лимит: половина поля 3×3 = 4
+        // В конфиге завышенный лимит: половина поля 3×3 с округлением вверх = 5
         const string config = """
             {"size":3,"pointsPerCell":2,"lineBonus":10,"maxPredictions":25,"cells":["1","2","3","4","5","6","7","8","9"]}
             """;
@@ -153,12 +153,13 @@ public class BingoHandlerTests : IDisposable
         await SeedCellAsync(session.Id, playerId, 1);
         await SeedCellAsync(session.Id, playerId, 2);
         await SeedCellAsync(session.Id, playerId, 3);
+        await SeedCellAsync(session.Id, playerId, 4);
 
         SubmissionResult blocked = await _handler.HandleSubmissionAsync(
-            session, definition, playerId, """{"cellIndex":4}""");
+            session, definition, playerId, """{"cellIndex":5}""");
 
         blocked.Success.Should().BeFalse();
-        blocked.Message.Should().Contain("Лимит выбора: 4");
+        blocked.Message.Should().Contain("Лимит выбора: 5");
     }
 
     [Fact]

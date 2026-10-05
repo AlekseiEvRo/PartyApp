@@ -39,7 +39,7 @@
     let bingoRejected = new Set<number>();
     let bingoAllConfirmed = new Set<number>();
     let bingoSelectedCount = 0;
-    let bingoMaxPredictions = 12;
+    let bingoMaxPredictions = 13;
     let bingoAnswersLocked = false;
     let bingoBusy = false;
     let bingoLines = 0;
@@ -362,7 +362,7 @@
         bingoRejected = new Set<number>(state?.rejectedCells ?? []);
         bingoAllConfirmed = new Set<number>(state?.allConfirmedCells ?? []);
         bingoSelectedCount = state?.selectedCount ?? bingoMarked.size;
-        bingoMaxPredictions = state?.maxPredictions ?? 12;
+        bingoMaxPredictions = state?.maxPredictions ?? 13;
         bingoAnswersLocked = state?.locked ?? false;
         bingoLines = state?.lines ?? 0;
         bingoWonLines = state?.wonLines ?? 0;
