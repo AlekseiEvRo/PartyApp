@@ -204,5 +204,9 @@ public class QrScanHandlerTests : IDisposable
         second.Success.Should().BeFalse();
         second.Message.Should().Be("Этот код уже был использован");
         (await _host.Db.Wallets.AsNoTracking().SingleAsync()).Balance.Should().Be(20);
+        (await _host.Db.WalletTransactions.CountAsync()).Should().Be(1);
+
+        await _award.Received(1).NotifyBalanceChangedAsync(
+            player.Id, 20, 20, "QR-код: ABC234", Arg.Any<CancellationToken>());
     }
 }

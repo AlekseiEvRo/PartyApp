@@ -264,3 +264,14 @@ img, svg, video { max-width: 100%; }
     font-weight: bold;
     color: var(--accent);
 }
+
+.raffle-tickets {
+    color: var(--muted, #aaa);
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
+
+.raffle-tickets .won {
+    color: var(--accent, #f5a623);
+    font-weight: bold;
+}

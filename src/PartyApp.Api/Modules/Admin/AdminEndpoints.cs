@@ -319,11 +319,12 @@ public static class AdminEndpoints
             return Results.Ok(new { player, items, total });
         });
 
-        // Лидерборд
+        // Лидерборд: только игроки — админы и супер-админы не участвуют в рейтинге
         group.MapGet("/leaderboard", async (AppDbContext db, CancellationToken ct) =>
         {
             var leaderboard = await db.Users
                 .Include(u => u.Wallet)
+                .Where(u => u.Role == UserRole.Player)
                 .OrderByDescending(u => u.Wallet != null ? u.Wallet.Balance : 0)
                 .Take(20)
                 .Select(u => new

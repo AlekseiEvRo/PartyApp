@@ -14,10 +14,29 @@
     import BingoTab from './BingoTab.svelte';
     import RaffleTab from './RaffleTab.svelte';
     import AuditTab from './AuditTab.svelte';
+    import { onMount } from 'svelte';
     import { user } from '../../stores';
     import { forceRefreshApp } from '../../pwa';
+    import { detachPushSubscription, getPermission, getPushSupport, syncPushSubscription } from '../../push';
+    import { connect, disconnect } from '../../signalr';
+    import NotificationSettings from '../NotificationSettings.svelte';
 
     let activeTab = 'dashboard';
+    let showNotifications = false;
+    let showNotifButton = false;
+    let notificationsEnabled = false;
+
+    onMount(() => {
+        // Админ может вообще не открывать режим игрока, поэтому подписку
+        // на push синхронизируем и здесь — иначе уведомления не приходят
+        const support = getPushSupport();
+        showNotifButton = support.supported || support.reason === 'ios-not-installed';
+        notificationsEnabled = getPermission() === 'granted';
+        void syncPushSubscription();
+
+        // Без SignalR админка не получает живые события модерации и обновления
+        void connect().catch((e) => console.error('SignalR connect failed:', e));
+    });
 
     const tabs = [
         { id: 'dashboard', label: '📊 Дашборд' },
@@ -31,15 +50,28 @@
         { id: 'spy', label: '🕵 Шпионаж' },
         { id: 'polls', label: '🗳 Голосование' },
         { id: 'photos', label: '📸 Фото' },
-        { id: 'wishes', label: '💌 Пожелания' },
+        { id: 'wishes', label: '💌 Отзывы' },
         { id: 'shop', label: '🛍 Магазин' },
         { id: 'screen', label: '🖥 Экран' },
         { id: 'audit', label: '📜 Журнал' }
     ];
 
     function logout() {
-        localStorage.removeItem('party_token');
-        location.href = '/admin';
+        // Отвязываем push на сервере, чтобы уведомления не уходили на телефон
+        // следующего пользователя (на общем устройстве это важно и для админов)
+        void Promise.race([
+            detachPushSubscription(),
+            new Promise<void>((resolve) => setTimeout(resolve, 1500))
+        ]).then(async () => {
+            await disconnect();
+            localStorage.removeItem('party_token');
+            location.href = '/admin';
+        });
+    }
+
+    function closeNotifications() {
+        showNotifications = false;
+        notificationsEnabled = getPermission() === 'granted';
     }
 
     // Видно, какая версия фронтенда загружена — помогает ловить «залипший» кэш
@@ -57,6 +89,14 @@
         <div class="header-actions">
             <a href="/" class="back-link">🎮 Режим игрока</a>
             <a href="/screen" target="_blank" rel="noopener" class="tv-link">📺 Режим TV</a>
+            {#if showNotifButton}
+                <button
+                    class="notif-btn"
+                    class:enabled={notificationsEnabled}
+                    on:click={() => (showNotifications = true)}
+                    title="Настройки уведомлений"
+                >🔔</button>
+            {/if}
             <button
                 class="refresh-btn"
                 on:click={forceRefreshApp}
@@ -113,6 +153,8 @@
             <AuditTab />
         {/if}
     </div>
+
+    <NotificationSettings open={showNotifications} on:close={closeNotifications} />
 </div>
 
 <style>
@@ -161,6 +203,23 @@
         transition: background 0.2s;
     }
     .tv-link:hover { background: #5dade2; }
+    .notif-btn {
+        background: var(--accent, #f5a623);
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .notif-btn.enabled {
+        background: var(--green, #27ae60);
+        box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.35);
+    }
     .refresh-btn {
         background: var(--accent, #f5a623);
         color: #12122e;

@@ -61,7 +61,7 @@ export const bingoCellRejected = writable<{ sessionId: string; cellIndex: number
 // Приём предсказаний закрыт или снова открыт: 1 этап бинго завершён / возвращён
 export const bingoLocked = writable<{ sessionId: string; locked: boolean; lockedAt: string | null } | null>(null);
 
-// Разыграна линия бинго: бонус получил самый быстрый
+// Разыграна линия бинго: бонус получили все, кто её собрал
 export const bingoLineAwarded = writable<{
     sessionId: string;
     lineAwards: { lineIndex: number; lineLabel: string; playerId: string; amount: number }[];

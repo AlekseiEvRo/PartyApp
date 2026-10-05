@@ -31,7 +31,7 @@
 
     $: void load(filter);
 
-    // Новое пожелание на модерации — обновляем очередь
+    // Новый отзыв на модерации — обновляем очередь
     $: if ($moderationVersion !== lastModerationVersion) {
         lastModerationVersion = $moderationVersion;
         void load(filter);
@@ -47,7 +47,7 @@
                 ? page.items
                 : page.items.filter((w) => w.status === current);
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Не удалось загрузить пожелания';
+            error = e instanceof Error ? e.message : 'Не удалось загрузить отзывы';
         } finally {
             loading = false;
         }
@@ -56,7 +56,7 @@
     async function moderate(wish: Wish, action: 'approve' | 'reject') {
         try {
             await api(`/api/wishes/${wish.id}/${action}`, 'POST');
-            showToast(action === 'approve' ? 'Пожелание одобрено' : 'Пожелание отклонено');
+            showToast(action === 'approve' ? 'Отзыв одобрен' : 'Отзыв отклонён');
             await load(filter);
         } catch (e) {
             showToast(e instanceof Error ? e.message : 'Не удалось изменить статус', 'error');
@@ -64,7 +64,7 @@
     }
 
     async function remove(wish: Wish) {
-        if (!confirm('Удалить пожелание?')) return;
+        if (!confirm('Удалить отзыв?')) return;
 
         try {
             await api(`/api/wishes/${wish.id}`, 'DELETE');
@@ -95,7 +95,7 @@
     }
 </script>
 
-<h2>💌 Модерация пожеланий</h2>
+<h2>💌 Модерация отзывов</h2>
 
 <div class="filters">
     {#each filters as item}

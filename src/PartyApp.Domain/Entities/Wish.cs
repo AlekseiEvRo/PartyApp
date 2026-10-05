@@ -3,7 +3,7 @@ using PartyApp.Domain.Enums;
 
 namespace PartyApp.Domain.Entities;
 
-/// <summary>Пожелание или тост, оставленный игроком на «стенке пожеланий».</summary>
+/// <summary>Отзыв о площадке, оставленный игроком на стенке отзывов.</summary>
 public class Wish: BaseEntity
 {
     public Guid PlayerId { get; set; }

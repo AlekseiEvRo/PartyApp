@@ -171,7 +171,7 @@
     Этап 1: игроки выбирают события, которые, по их мнению, произойдут (не больше
     {state?.maxPredictions ?? 13}). Когда все определились, нажми «Завершить приём» — выбор зафиксируется.
     Этап 2: отмечай события, которые реально случились, — за угаданные предсказания игроки получат баллы.
-    Бонус за линию получает тот, кто собрал её быстрее всех.
+    Бонус за линию получают все, кто её собрал.
 </p>
 
 <div class="toolbar">
@@ -215,38 +215,43 @@
         </div>
     {/if}
 
-    <div class="grid" style="grid-template-columns: repeat({state.size}, 1fr)">
-        {#each state.cells.slice(0, state.size * state.size) as cell, i}
-            <div class="cell" class:confirmed={confirmedSet.has(i)} class:rejected={rejectedSet.has(i)}>
-                <span class="cell-text">{cell}</span>
-                <span class="marks">{state.markCounts[i] ?? 0} 👤</span>
+    <div class="grid-scroll">
+        <div
+            class="grid"
+            style="grid-template-columns: repeat({state.size}, minmax(110px, 1fr)); min-width: {state.size * 116}px"
+        >
+            {#each state.cells.slice(0, state.size * state.size) as cell, i}
+                <div class="cell" class:confirmed={confirmedSet.has(i)} class:rejected={rejectedSet.has(i)}>
+                    <span class="cell-text">{cell}</span>
+                    <span class="marks">{state.markCounts[i] ?? 0} 👤</span>
 
-                {#if state.locked}
-                    {#if confirmedSet.has(i)}
-                        <span class="cell-status confirmed-status">✅ было</span>
-                    {:else if rejectedSet.has(i)}
-                        <span class="cell-status rejected-status">🙅 не было</span>
+                    {#if state.locked}
+                        {#if confirmedSet.has(i)}
+                            <span class="cell-status confirmed-status">✅ было</span>
+                        {:else if rejectedSet.has(i)}
+                            <span class="cell-status rejected-status">🙅 не было</span>
+                        {:else}
+                            <div class="cell-actions">
+                                <button class="mini confirm" disabled={busyCell === i} on:click={() => confirmCell(i)}>
+                                    ✅ было
+                                </button>
+                                <button class="mini reject" disabled={busyCell === i} on:click={() => rejectCell(i)}>
+                                    🙅 не было
+                                </button>
+                            </div>
+                        {/if}
                     {:else}
-                        <div class="cell-actions">
-                            <button class="mini confirm" disabled={busyCell === i} on:click={() => confirmCell(i)}>
-                                ✅ было
-                            </button>
-                            <button class="mini reject" disabled={busyCell === i} on:click={() => rejectCell(i)}>
-                                🙅 не было
-                            </button>
-                        </div>
+                        <span class="cell-status waiting-status">⏳ ждём решения</span>
                     {/if}
-                {:else}
-                    <span class="cell-status waiting-status">⏳ ждём решения</span>
-                {/if}
-            </div>
-        {/each}
+                </div>
+            {/each}
+        </div>
     </div>
 
     {#if state.lineAwards.length > 0}
         <h3 class="awards-title">🏆 Разыгранные линии</h3>
         <ul class="awards">
-            {#each state.lineAwards as award (award.lineIndex)}
+            {#each state.lineAwards as award (`${award.lineIndex}:${award.playerId}`)}
                 <li>{award.lineLabel}: <b>{award.playerName}</b> (+{award.amount})</li>
             {/each}
         </ul>
@@ -314,6 +319,12 @@
 
     .mini.lock { background: #7a5c12; color: #ffe9a8; }
     .mini.unlock { background: #2a4a6a; color: #cfe8ff; }
+
+    .grid-scroll {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 6px;
+    }
 
     .grid {
         display: grid;

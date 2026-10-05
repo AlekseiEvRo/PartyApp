@@ -35,7 +35,7 @@ public class ModerationNotifier
     /// <param name="kind">"photo" или "wish"</param>
     /// <param name="itemId">ID элемента, который ждёт проверки</param>
     /// <param name="authorName">Имя автора, чтобы админ понимал, от кого контент</param>
-    /// <param name="preview">Короткий текст пожелания; для фото null</param>
+    /// <param name="preview">Короткий текст отзыва; для фото null</param>
     public async Task NotifyPendingAsync(
         string kind,
         Guid itemId,
@@ -61,7 +61,7 @@ public class ModerationNotifier
 
         string title = kind == "photo"
             ? "📸 Новое фото на модерации"
-            : "💌 Новое пожелание на модерации";
+            : "💌 Новый отзыв на модерации";
 
         string body = string.IsNullOrWhiteSpace(preview)
             ? $"От {authorName}"
@@ -73,7 +73,8 @@ public class ModerationNotifier
                 Title: title,
                 Body: body,
                 Url: "/admin",
-                Tag: "moderation",
+                // Теги раздельные: уведомление об отзыве не заменяет фото (и наоборот)
+                Tag: $"moderation-{kind}",
                 ThrottleWindow: PushThrottle),
             ct);
 

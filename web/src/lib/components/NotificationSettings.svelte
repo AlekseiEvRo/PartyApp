@@ -231,6 +231,8 @@
         justify-content: center;
         z-index: 100;
         padding: 20px;
+        /* Опускаем модалку ниже: не залезаем под «челку»/вырез iPhone */
+        padding-top: calc(32px + env(safe-area-inset-top, 0px));
         padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     }
 
@@ -241,7 +243,7 @@
         width: 100%;
         max-width: 380px;
         max-height: 85vh;
-        max-height: calc(100dvh - 40px);
+        max-height: calc(100dvh - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
         overflow-y: auto;
         overscroll-behavior: contain;
     }

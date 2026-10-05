@@ -275,7 +275,7 @@ public class SignalRTests : IDisposable
         _factory.Push.Calls.Should().Contain(call =>
             call.UserIds != null
             && call.UserIds.Contains(admin.Id)
-            && call.Message.Tag == "moderation");
+            && call.Message.Tag == "moderation-photo");
     }
 
     [Fact]
@@ -297,6 +297,13 @@ public class SignalRTests : IDisposable
         payload.GetProperty("kind").GetString().Should().Be("wish");
         payload.GetProperty("itemId").GetGuid().Should().Be(wishId);
         payload.GetProperty("preview").GetString().Should().Be("Проверь моё пожелание");
+
+        // На отзыв админам тоже уходит push, отдельным тегом от фото
+        _factory.Push.Calls.Should().Contain(call =>
+            call.UserIds != null
+            && call.UserIds.Contains(admin.Id)
+            && call.Message.Tag == "moderation-wish"
+            && call.Message.Title.Contains("отзыв"));
     }
 
     [Fact]
