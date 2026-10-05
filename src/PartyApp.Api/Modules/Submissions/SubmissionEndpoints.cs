@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Common.Security;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Moderation;
 using PartyApp.Domain.Entities;
@@ -91,7 +92,7 @@ public static class SubmissionEndpoints
 
                 IQueryable<Wish> query = db.Wishes.AsNoTracking();
 
-                if (!user.IsInRole("Admin"))
+                if (!user.IsAdminOrSuperAdmin())
                 {
                     // Игрок видит одобренные пожелания и свои собственные
                     query = query.Where(w =>
@@ -132,7 +133,7 @@ public static class SubmissionEndpoints
                 if (wish is null)
                     return Results.NotFound();
 
-                if (wish.PlayerId != userId && !user.IsInRole("Admin"))
+                if (wish.PlayerId != userId && !user.IsAdminOrSuperAdmin())
                     return Results.Forbid();
 
                 db.Wishes.Remove(wish);

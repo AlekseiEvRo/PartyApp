@@ -4,6 +4,7 @@ using System.Text.Json;
 
 using FluentAssertions;
 
+using PartyApp.Domain.Enums;
 using PartyApp.IntegrationTests.Infrastructure;
 
 namespace PartyApp.IntegrationTests.Endpoints;
@@ -169,6 +170,27 @@ public class WishEndpointsTests : IDisposable
         deleted.StatusCode.Should().Be(HttpStatusCode.OK);
 
         (await GetPageAsync(admin)).GetProperty("total").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SuperAdmin_SeesPendingWishesAndCanDeleteForeignOnes()
+    {
+        TestUser author = await _api.RegisterAsync();
+        TestUser superAdmin = await _api.CreateUserAsync(
+            PartyAppApi.UniqueUsername("super"), UserRole.SuperAdmin);
+        Guid wishId = (await SubmitAsync(author, "Проверка супер-админа")).GetProperty("id").GetGuid();
+
+        // Чужое пожелание на модерации видно в очереди супер-админа
+        JsonElement page = await GetPageAsync(superAdmin);
+        page.GetProperty("total").GetInt32().Should().Be(1);
+        page.GetProperty("items")[0].GetProperty("status").GetString().Should().Be("Pending");
+
+        // И он может удалить чужое пожелание
+        _api.Authorize(superAdmin);
+        (await _api.Client.DeleteAsync($"/api/wishes/{wishId}")).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        (await GetPageAsync(superAdmin)).GetProperty("total").GetInt32().Should().Be(0);
     }
 
     [Fact]
