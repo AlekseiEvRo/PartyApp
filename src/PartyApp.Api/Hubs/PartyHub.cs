@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
+using PartyApp.Api.Common.Security;
+
 namespace PartyApp.Api.Hubs;
 
 [Authorize]
@@ -22,7 +24,7 @@ public class PartyHub : Hub
         var username = Context.User?.FindFirst("name")?.Value;
 
         // Админ подписывается на уведомления о новом контенте на модерации
-        if (Context.User?.IsInRole("Admin") == true || Context.User?.IsInRole("SuperAdmin") == true)
+        if (Context.User?.IsAdminOrSuperAdmin() == true)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, AdminsGroup);
         }

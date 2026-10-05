@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Common.Security;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Achievements;
 using PartyApp.Api.Modules.Moderation;
@@ -136,7 +137,7 @@ public static class PhotoEndpoints
                 {
                     query = query.Where(p => p.UploadedById == userId);
                 }
-                else if (!user.IsInRole("Admin"))
+                else if (!user.IsAdminOrSuperAdmin())
                 {
                     // Игрок видит одобренные фото и свои (в том числе на модерации)
                     query = query.Where(p =>
@@ -209,7 +210,7 @@ public static class PhotoEndpoints
                 if (photo is null)
                     return Results.NotFound();
 
-                if (photo.UploadedById != userId && !user.IsInRole("Admin"))
+                if (photo.UploadedById != userId && !user.IsAdminOrSuperAdmin())
                     return Results.Forbid();
 
                 db.PartyPhotos.Remove(photo);
@@ -420,7 +421,7 @@ public static class PhotoEndpoints
     {
         return photo.Status == ModerationStatus.Approved
             || photo.UploadedById == userId
-            || user.IsInRole("Admin");
+            || user.IsAdminOrSuperAdmin();
     }
 
     /// <summary>Определяет тип по сигнатуре файла, а не по данным клиента.</summary>

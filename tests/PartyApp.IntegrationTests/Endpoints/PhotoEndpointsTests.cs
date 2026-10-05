@@ -5,6 +5,7 @@ using System.Text.Json;
 
 using FluentAssertions;
 
+using PartyApp.Domain.Enums;
 using PartyApp.IntegrationTests.Infrastructure;
 
 namespace PartyApp.IntegrationTests.Endpoints;
@@ -244,6 +245,37 @@ public class PhotoEndpointsTests : IDisposable
         JsonElement approvedPage = await PartyAppApi.ReadJsonAsync(
             await api.Client.GetAsync("/api/photos"));
         approvedPage.GetProperty("total").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SuperAdmin_SeesPendingPhotosAndCanModerateForeignOnes()
+    {
+        using PartyAppFactory factory = new()
+        {
+            ConfigureOverrides = settings => settings["Photos:RequireModeration"] = "true"
+        };
+        PartyAppApi api = new(factory);
+        TestUser author = await api.RegisterAsync();
+        TestUser superAdmin = await api.CreateUserAsync(
+            PartyAppApi.UniqueUsername("super"), UserRole.SuperAdmin);
+
+        api.Authorize(author);
+        HttpResponseMessage upload = await api.Client.PostAsync("/api/photos", CreateUpload(JpegBytes));
+        Guid photoId = (await PartyAppApi.ReadJsonAsync(upload)).GetProperty("id").GetGuid();
+
+        // Супер-админ видит чужое фото в очереди модерации и может открыть его контент
+        api.Authorize(superAdmin);
+        JsonElement page = await PartyAppApi.ReadJsonAsync(await api.Client.GetAsync("/api/photos"));
+        page.GetProperty("total").GetInt32().Should().Be(1);
+        page.GetProperty("items")[0].GetProperty("status").GetString().Should().Be("Pending");
+        (await api.Client.GetAsync($"/api/photos/{photoId}/content")).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        // Модерация и удаление чужого фото тоже доступны
+        (await api.Client.PostAsync($"/api/photos/{photoId}/approve", null)).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+        (await api.Client.DeleteAsync($"/api/photos/{photoId}")).StatusCode
+            .Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

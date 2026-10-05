@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using PartyApp.Api.Common.Security;
 using PartyApp.Api.Hubs;
 using PartyApp.Api.Modules.Wallet;
 using PartyApp.Domain.Entities;
@@ -35,7 +36,7 @@ public static class ShopEndpoints
             {
                 IQueryable<ShopItem> query = db.ShopItems.AsNoTracking();
 
-                if (includeInactive == true && user.IsInRole("Admin"))
+                if (includeInactive == true && user.IsAdminOrSuperAdmin())
                     query = query.Where(i => true);
                 else
                     query = query.Where(i => i.IsActive);

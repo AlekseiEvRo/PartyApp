@@ -4,6 +4,7 @@ using System.Text.Json;
 
 using FluentAssertions;
 
+using PartyApp.Domain.Enums;
 using PartyApp.IntegrationTests.Infrastructure;
 
 namespace PartyApp.IntegrationTests.Endpoints;
@@ -59,6 +60,23 @@ public class ShopEndpointsTests : IDisposable
         items.GetArrayLength().Should().Be(2);
         items[0].GetProperty("name").GetString().Should().Be("Дешёвый");
         items[1].GetProperty("name").GetString().Should().Be("Дорогой");
+    }
+
+    [Fact]
+    public async Task Items_AsSuperAdminWithIncludeInactive_ReturnsInactiveOnes()
+    {
+        TestUser admin = await _api.CreateAdminAsync();
+        TestUser superAdmin = await _api.CreateUserAsync(
+            PartyAppApi.UniqueUsername("super"), UserRole.SuperAdmin);
+
+        await CreateItemAsync(admin, name: "Активный", price: 10);
+        await CreateItemAsync(admin, name: "Выключенный", price: 50, isActive: false);
+
+        _api.Authorize(superAdmin);
+        JsonElement items = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync("/api/shop/items?includeInactive=true"));
+
+        items.GetArrayLength().Should().Be(2);
     }
 
     [Fact]
