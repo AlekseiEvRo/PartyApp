@@ -52,7 +52,7 @@
     let configTouched = false;
     let configError = '';
     // Бинго: удобное поле поверх ConfigJson (сам ключ хранится в конфиге)
-    let formMaxPredictions = 3;
+    let formMaxPredictions = 13;
     // Лототрон: удобные поля поверх ConfigJson (ключи хранятся в конфиге)
     let formRafflePrice = 0;
     let formRaffleMaxTickets = 1;
@@ -146,7 +146,7 @@
 
     /**
      * Подтягивает maxPredictions из ConfigJson в удобное поле.
-     * useDefault=true (открытие формы, смена типа) подставляет 3, если ключа нет;
+     * useDefault=true (открытие формы, смена типа) подставляет половину поля, если ключа нет;
      * при ручном редактировании JSON значение не сбрасывается, если ключ убрали.
      */
     function syncBingoMaxPredictions(useDefault = false) {
@@ -156,7 +156,9 @@
         if (Number.isFinite(value) && value > 0) {
             formMaxPredictions = value;
         } else if (useDefault) {
-            formMaxPredictions = 3;
+            const size = Number(config?.size);
+            const totalCells = Number.isFinite(size) && size >= 3 && size <= 7 ? size * size : 25;
+            formMaxPredictions = Math.max(1, Math.ceil(totalCells / 2));
         }
     }
 
@@ -172,14 +174,15 @@
 
         const value = Math.round(Number(formMaxPredictions));
         if (!Number.isFinite(value) || value < 1) {
-            configError = 'Лимит предсказаний должен быть больше 0';
+            configError = 'Лимит выбора должен быть больше 0';
             return false;
         }
 
         const size = Number(config.size);
-        const maxAllowed = Number.isFinite(size) && size >= 3 && size <= 7 ? size * size : 25;
+        const totalCells = Number.isFinite(size) && size >= 3 && size <= 7 ? size * size : 25;
+        const maxAllowed = Math.max(1, Math.ceil(totalCells / 2));
         if (value > maxAllowed) {
-            configError = `Лимит предсказаний не может быть больше числа клеток (${maxAllowed})`;
+            configError = `Лимит выбора не может быть больше половины поля (${maxAllowed})`;
             return false;
         }
 
@@ -466,11 +469,12 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="bingo-max-predictions">Максимум предсказаний</label>
-                        <input id="bingo-max-predictions" type="number" min="1" max="25"
+                        <input id="bingo-max-predictions" type="number" min="1" max="24"
                                bind:value={formMaxPredictions} />
                         <p class="hint">
-                            Сколько неподтверждённых клеток игрок может отметить одновременно.
-                            Подтверждение или отклонение клетки освобождает слот. Максимум — число клеток поля.
+                            Сколько событий игрок выбирает на 1 этапе. Не больше половины клеток поля
+                            с округлением вверх (для 5×5 — 13). После «Завершить приём» выбор фиксируется
+                            и не меняется.
                         </p>
                     </div>
                 </div>

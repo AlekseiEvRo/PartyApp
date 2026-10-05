@@ -228,6 +228,7 @@
     $: bingoCells = Array.isArray(bingoLive.cells) ? bingoLive.cells : [];
     $: bingoConfirmedSet = new Set<number>(bingoLive.confirmedCells ?? []);
     $: bingoRejectedSet = new Set<number>(bingoLive.rejectedCells ?? []);
+    $: bingoAnswersLocked = bingoLive.locked === true;
     $: bingoGridReady = bingoSize > 0 && bingoCells.length >= bingoSize * bingoSize;
 
     // Не показываем данные предыдущего ивента, пока грузятся данные нового
@@ -888,7 +889,8 @@
                 {/if}
 
                 <p class="muted bingo-screen-stats">
-                    ✏️ отмечено: {eventData.live?.markedCount ?? 0}
+                    {bingoAnswersLocked ? '🔒 приём закрыт' : '✏️ приём открыт'}
+                    · выбрано: {eventData.live?.markedCount ?? 0}
                     · ✅ {eventData.live?.confirmedCount ?? 0}
                     · 🙅 {eventData.live?.rejectedCount ?? 0}
                     · 🏆 линий: {eventData.live?.awardedLines ?? 0}

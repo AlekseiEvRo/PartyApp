@@ -1,6 +1,6 @@
 <script lang="ts">
     import { api } from '../api';
-    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, bingoCellRejected, bingoLineAwarded, raffleDrawn } from '../stores';
+    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, bingoCellRejected, bingoLocked, bingoLineAwarded, raffleDrawn } from '../stores';
     import { serverNow } from '../time';
     import { RAFFLE_SPIN_MS } from '../raffle';
     import { getPendingQrCode } from '../qr';
@@ -30,17 +30,18 @@
     let darePoints = 0;
     let confirmedDareApplied = false;
 
-    // Бинго: предсказания, подтверждения, отклонения и линии
+    // Бинго: выбор предсказаний (1 этап), решения админа (2 этап) и линии
     let bingoSize = 5;
     let bingoCells: string[] = [];
     let bingoMarked = new Set<number>();
     let bingoPending = new Set<number>();
     let bingoPredicted = new Set<number>();
-    let bingoLate = new Set<number>();
     let bingoRejected = new Set<number>();
     let bingoAllConfirmed = new Set<number>();
-    let bingoPendingCount = 0;
-    let bingoMaxPredictions = 3;
+    let bingoSelectedCount = 0;
+    let bingoMaxPredictions = 13;
+    let bingoAnswersLocked = false;
+    let bingoBusy = false;
     let bingoLines = 0;
     let bingoWonLines = 0;
 
@@ -133,7 +134,7 @@
         void refreshBingoState();
     }
 
-    // Админ отклонил клетку бинго — слот предсказания освобождён
+    // Админ отклонил клетку бинго — событие не состоялось
     let handledBingoReject: any = null;
 
     $: if (event.type === 'bingo'
@@ -141,7 +142,24 @@
         && $bingoCellRejected.sessionId === event.sessionId
         && handledBingoReject !== $bingoCellRejected) {
         handledBingoReject = $bingoCellRejected;
-        showToast('🙅 Ведущий: этого события не было — слот предсказания освобождён', 'info');
+        showToast('🙅 Ведущий: этого события не было', 'info');
+        void refreshBingoState();
+    }
+
+    // Админ закрыл или вернул приём предсказаний (граница 1 и 2 этапов)
+    let handledBingoLock: any = null;
+
+    $: if (event.type === 'bingo'
+        && $bingoLocked
+        && $bingoLocked.sessionId === event.sessionId
+        && handledBingoLock !== $bingoLocked) {
+        handledBingoLock = $bingoLocked;
+        showToast(
+            $bingoLocked.locked
+                ? '🔒 Приём предсказаний закрыт'
+                : '✏️ Приём предсказаний снова открыт',
+            'info'
+        );
         void refreshBingoState();
     }
 
@@ -283,35 +301,69 @@
     }
 
     async function markBingo(index: number) {
+        // bingoBusy защищает от повторных тапов, пока летит запрос: на iOS
+        // быстрый двойной тап иначе успевал снять и тут же вернуть выбор
+        if (bingoAnswersLocked || bingoBusy) return;
+
+        // До блокировки повторное нажатие по своей клетке снимает выбор
+        if (bingoMarked.has(index)) {
+            await unmarkBingo(index);
+            return;
+        }
+
         if (isBingoCellLocked(index)) return;
 
-        const result = await submit({ cellIndex: index });
-        if (result?.data) {
-            bingoMarked = new Set<number>(result.data.markedCells ?? []);
-            await refreshBingoState();
+        bingoBusy = true;
+
+        try {
+            const result = await submit({ cellIndex: index });
+            if (result?.data) {
+                bingoMarked = new Set<number>(result.data.markedCells ?? []);
+                bingoPending = new Set<number>([...bingoPending, index]);
+                bingoSelectedCount = result.data.selectedCount ?? result.data.pendingCount ?? bingoMarked.size;
+                await refreshBingoState();
+            }
+        } finally {
+            bingoBusy = false;
         }
     }
 
-    /** Клетку нельзя отметить: уже отмечена, отклонена или исчерпан лимит предсказаний. */
-    function isBingoCellLocked(index: number): boolean {
-        if (bingoMarked.has(index) || bingoRejected.has(index)) return true;
+    async function unmarkBingo(index: number) {
+        bingoBusy = true;
 
-        const isConfirmed = bingoAllConfirmed.has(index);
-        return !isConfirmed && bingoPendingCount >= bingoMaxPredictions;
+        try {
+            const data = await api<any>(`/api/events/bingo/${event.sessionId}/marks/${index}`, 'DELETE');
+            bingoMarked = new Set<number>(data.markedCells ?? []);
+            bingoPending = new Set<number>([...bingoPending].filter((cell) => cell !== index));
+            bingoSelectedCount = data.selectedCount ?? bingoMarked.size;
+            showToast('Выбор снят — можно выбрать другое событие', 'info');
+        } catch (e: any) {
+            showToast(e.message, 'error');
+        } finally {
+            bingoBusy = false;
+        }
     }
 
-    /** Состояние бинго: предсказания, подтверждения, отклонения и линии. */
+    /** Клетку нельзя выбрать: приём закрыт, событие отклонено или исчерпан лимит выбора. */
+    function isBingoCellLocked(index: number): boolean {
+        if (bingoAnswersLocked || bingoRejected.has(index)) return true;
+        if (bingoMarked.has(index)) return false; // свою отметку можно снять
+
+        return bingoSelectedCount >= bingoMaxPredictions;
+    }
+
+    /** Состояние бинго: выбор игрока, решения админа, блокировка и линии. */
     function applyBingoState(state: any): void {
         bingoSize = dataConfig.size ?? 5;
         bingoCells = dataConfig.cells ?? [];
         bingoMarked = new Set<number>(state?.markedCells ?? []);
         bingoPending = new Set<number>(state?.pendingCells ?? []);
         bingoPredicted = new Set<number>(state?.predictionCells ?? state?.confirmedCells ?? []);
-        bingoLate = new Set<number>(state?.lateCells ?? []);
         bingoRejected = new Set<number>(state?.rejectedCells ?? []);
         bingoAllConfirmed = new Set<number>(state?.allConfirmedCells ?? []);
-        bingoPendingCount = state?.pendingCount ?? 0;
-        bingoMaxPredictions = state?.maxPredictions ?? 3;
+        bingoSelectedCount = state?.selectedCount ?? bingoMarked.size;
+        bingoMaxPredictions = state?.maxPredictions ?? 13;
+        bingoAnswersLocked = state?.locked ?? false;
         bingoLines = state?.lines ?? 0;
         bingoWonLines = state?.wonLines ?? 0;
     }
@@ -491,22 +543,39 @@
                     <button
                         class="bingo-cell"
                         class:pending={bingoPending.has(i)}
-                        class:hit={bingoPredicted.has(i)}
-                        class:late={bingoLate.has(i)}
+                        class:won={bingoPredicted.has(i)}
+                        class:happened={bingoAllConfirmed.has(i) && !bingoPredicted.has(i)}
                         class:rejected={bingoRejected.has(i)}
-                        class:available={!bingoMarked.has(i) && !bingoRejected.has(i) && bingoAllConfirmed.has(i)}
                         disabled={isBingoCellLocked(i)}
                         on:click={() => markBingo(i)}
-                    >{bingoCells[i]}</button>
+                    >
+                        <span class="bingo-cell-text">{bingoCells[i]}</span>
+                        {#if bingoPredicted.has(i)}
+                            <span class="bingo-badge">🏆</span>
+                        {:else if bingoAllConfirmed.has(i)}
+                            <span class="bingo-badge">✅</span>
+                        {:else if bingoPending.has(i)}
+                            <span class="bingo-badge">✓</span>
+                        {/if}
+                    </button>
                 {/each}
             </div>
             <p class="event-counter">
-                Предсказания: {bingoPendingCount}/{bingoMaxPredictions} · линий: {bingoLines}
+                {#if bingoAnswersLocked}
+                    🔒 Приём закрыт · угадано: {bingoPredicted.size} из {bingoSelectedCount}
+                {:else}
+                    Выбрано: {bingoSelectedCount}/{bingoMaxPredictions}
+                {/if}
+                · линий: {bingoLines}
                 {bingoWonLines > 0 ? ` · выиграно: ${bingoWonLines}` : ''}
             </p>
             <p class="event-counter">
-                Отмечай события заранее — за сбывшееся предсказание дадут баллы. Подтверждённые клетки
-                можно отмечать без лимита, но баллов они не приносят.
+                {#if bingoAnswersLocked}
+                    ✅ — событие произошло, 🏆 — твоё сбывшееся предсказание. Ждём решения ведущего.
+                {:else}
+                    Выбери события, которые, по-твоему, произойдут: не больше {bingoMaxPredictions}.
+                    Повторное нажатие снимает выбор.
+                {/if}
             </p>
         {/if}
 

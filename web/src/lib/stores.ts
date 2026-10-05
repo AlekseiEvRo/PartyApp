@@ -55,8 +55,11 @@ export const dareConfirmed = writable<{ sessionId: string; playerId: string; poi
 // Админ подтвердил клетку бинго — карточки игроков обновляются
 export const bingoCellConfirmed = writable<{ sessionId: string; cellIndex: number; confirmedCount: number } | null>(null);
 
-// Админ отклонил клетку бинго — слоты предсказаний освободились
+// Админ отклонил клетку бинго — событие не состоялось, выбор зафиксирован
 export const bingoCellRejected = writable<{ sessionId: string; cellIndex: number; rejectedCount: number } | null>(null);
+
+// Приём предсказаний закрыт или снова открыт: 1 этап бинго завершён / возвращён
+export const bingoLocked = writable<{ sessionId: string; locked: boolean; lockedAt: string | null } | null>(null);
 
 // Разыграна линия бинго: бонус получил самый быстрый
 export const bingoLineAwarded = writable<{

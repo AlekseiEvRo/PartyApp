@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { api } from '../../api';
-    import { showToast, bingoCellConfirmed, bingoCellRejected, bingoLineAwarded } from '../../stores';
+    import { showToast, bingoCellConfirmed, bingoCellRejected, bingoLocked, bingoLineAwarded } from '../../stores';
 
     interface AdminSession {
         id: string;
@@ -24,12 +24,15 @@
         displayName: string;
         size: number;
         cells: string[];
+        locked: boolean;
+        lockedAt: string | null;
         pointsPerCell: number;
         lineBonus: number;
         maxPredictions: number;
         confirmedCells: number[];
         rejectedCells: number[];
         markCounts: Record<string, number>;
+        pickedPredictions: number;
         playersCount: number;
         lineAwards: LineAward[];
     }
@@ -38,18 +41,21 @@
     let selectedSessionId = '';
     let state: BingoState | null = null;
     let loading = false;
+    let locking = false;
     let busyCell: number | null = null;
     let error = '';
 
     $: confirmedSet = new Set(state?.confirmedCells ?? []);
     $: rejectedSet = new Set(state?.rejectedCells ?? []);
+    $: decisionsCount = (state?.confirmedCells.length ?? 0) + (state?.rejectedCells.length ?? 0);
 
     onMount(load);
 
-    // Клетку могли подтвердить или отклонить с другого экрана — подтянем состояние
+    // Клетку подтвердили/отклонили или админ закрыл приём с другого экрана — подтянем состояние
     $: if (selectedSessionId
         && ($bingoCellConfirmed?.sessionId === selectedSessionId
             || $bingoCellRejected?.sessionId === selectedSessionId
+            || $bingoLocked?.sessionId === selectedSessionId
             || $bingoLineAwarded?.sessionId === selectedSessionId)) {
         void loadState();
     }
@@ -90,6 +96,39 @@
         }
     }
 
+    async function lockAnswers() {
+        if (!state) return;
+        if (!confirm('Завершить приём предсказаний? Игроки больше не смогут менять выбор.')) return;
+
+        locking = true;
+
+        try {
+            await api(`/api/events/bingo/${state.sessionId}/lock`, 'POST');
+            showToast('🔒 Приём предсказаний закрыт — можно отмечать события');
+            await loadState();
+        } catch (e) {
+            showToast(e instanceof Error ? e.message : 'Не удалось закрыть приём', 'error');
+        } finally {
+            locking = false;
+        }
+    }
+
+    async function unlockAnswers() {
+        if (!state) return;
+
+        locking = true;
+
+        try {
+            await api(`/api/events/bingo/${state.sessionId}/unlock`, 'POST');
+            showToast('✏️ Приём предсказаний снова открыт');
+            await loadState();
+        } catch (e) {
+            showToast(e instanceof Error ? e.message : 'Не удалось вернуть приём', 'error');
+        } finally {
+            locking = false;
+        }
+    }
+
     async function confirmCell(index: number) {
         if (!state || confirmedSet.has(index) || rejectedSet.has(index)) return;
 
@@ -100,7 +139,7 @@
                 `/api/events/bingo/${state.sessionId}/cells/${index}/confirm`,
                 'POST'
             );
-            showToast(`Подтверждено! Баллы за предсказание получили: ${result.awardedPlayers}`);
+            showToast(`✅ Событие было! Баллы за предсказание получили: ${result.awardedPlayers}`);
             await loadState();
         } catch (e) {
             showToast(e instanceof Error ? e.message : 'Не удалось подтвердить клетку', 'error');
@@ -115,11 +154,8 @@
         busyCell = index;
 
         try {
-            const result = await api<{ freedPredictions: number }>(
-                `/api/events/bingo/${state.sessionId}/cells/${index}/reject`,
-                'POST'
-            );
-            showToast(`События не было. Слоты предсказаний освобождены: ${result.freedPredictions}`);
+            await api(`/api/events/bingo/${state.sessionId}/cells/${index}/reject`, 'POST');
+            showToast('🙅 События не было — эти предсказания не сбудутся');
             await loadState();
         } catch (e) {
             showToast(e instanceof Error ? e.message : 'Не удалось отклонить клетку', 'error');
@@ -129,13 +165,13 @@
     }
 </script>
 
-<h2>🎯 Бинго: решения по событиям</h2>
+<h2>🎯 Бинго: два этапа</h2>
 
 <p class="hint">
-    Игроки заранее отмечают клетки-предсказания (одновременно не больше {state?.maxPredictions ?? 3}).
-    Подтверждай реально случившиеся события — тогда все, кто предсказал их заранее, получат баллы.
-    Если события не было, нажми «не было»: предсказания не сбудутся, но игроки снова смогут отмечать
-    клетки. Бонус за линию получает тот, кто собрал её быстрее всех.
+    Этап 1: игроки выбирают события, которые, по их мнению, произойдут (не больше
+    {state?.maxPredictions ?? 13}). Когда все определились, нажми «Завершить приём» — выбор зафиксируется.
+    Этап 2: отмечай события, которые реально случились, — за угаданные предсказания игроки получат баллы.
+    Бонус за линию получает тот, кто собрал её быстрее всех.
 </p>
 
 <div class="toolbar">
@@ -160,9 +196,24 @@
     <p class="muted">Выбери сессию бинго.</p>
 {:else}
     <p class="meta">
-        Игроков: {state.playersCount} · за предсказание: {state.pointsPerCell}
-        · за линию: {state.lineBonus} · лимит предсказаний: {state.maxPredictions}
+        Игроков: {state.playersCount} · отметок: {state.pickedPredictions}
+        · за предсказание: {state.pointsPerCell} · за линию: {state.lineBonus}
+        · лимит выбора: {state.maxPredictions}
     </p>
+
+    {#if state.locked}
+        <div class="phase phase-locked">
+            <span>🔒 Этап 2: приём закрыт — отмечай, что было, а что нет.</span>
+            {#if decisionsCount === 0}
+                <button class="mini unlock" disabled={locking} on:click={unlockAnswers}>🔓 Вернуть приём</button>
+            {/if}
+        </div>
+    {:else}
+        <div class="phase">
+            <span>✏️ Этап 1: игроки выбирают события.</span>
+            <button class="mini lock" disabled={locking} on:click={lockAnswers}>🔒 Завершить приём предсказаний</button>
+        </div>
+    {/if}
 
     <div class="grid" style="grid-template-columns: repeat({state.size}, 1fr)">
         {#each state.cells.slice(0, state.size * state.size) as cell, i}
@@ -170,19 +221,23 @@
                 <span class="cell-text">{cell}</span>
                 <span class="marks">{state.markCounts[i] ?? 0} 👤</span>
 
-                {#if confirmedSet.has(i)}
-                    <span class="cell-status confirmed-status">✅ подтверждено</span>
-                {:else if rejectedSet.has(i)}
-                    <span class="cell-status rejected-status">🙅 не было</span>
+                {#if state.locked}
+                    {#if confirmedSet.has(i)}
+                        <span class="cell-status confirmed-status">✅ было</span>
+                    {:else if rejectedSet.has(i)}
+                        <span class="cell-status rejected-status">🙅 не было</span>
+                    {:else}
+                        <div class="cell-actions">
+                            <button class="mini confirm" disabled={busyCell === i} on:click={() => confirmCell(i)}>
+                                ✅ было
+                            </button>
+                            <button class="mini reject" disabled={busyCell === i} on:click={() => rejectCell(i)}>
+                                🙅 не было
+                            </button>
+                        </div>
+                    {/if}
                 {:else}
-                    <div class="cell-actions">
-                        <button class="mini confirm" disabled={busyCell === i} on:click={() => confirmCell(i)}>
-                            ✅ было
-                        </button>
-                        <button class="mini reject" disabled={busyCell === i} on:click={() => rejectCell(i)}>
-                            🙅 не было
-                        </button>
-                    </div>
+                    <span class="cell-status waiting-status">⏳ ждём решения</span>
                 {/if}
             </div>
         {/each}
@@ -240,6 +295,25 @@
     .btn:disabled { opacity: 0.5; cursor: default; }
 
     .meta { font-size: 13px; color: var(--muted, #aaa); margin-bottom: 12px; }
+
+    .phase {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        background: var(--bg-soft, #12122e);
+        border: 1px solid #2a2a5e;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 14px;
+        font-size: 13px;
+    }
+
+    .phase-locked { border-color: #27ae60; }
+
+    .mini.lock { background: #7a5c12; color: #ffe9a8; }
+    .mini.unlock { background: #2a4a6a; color: #cfe8ff; }
 
     .grid {
         display: grid;
@@ -312,6 +386,7 @@
 
     .confirmed-status { color: #7fe0a5; }
     .rejected-status { color: #e08f8f; }
+    .waiting-status { color: var(--muted, #aaa); }
 
     .awards-title { margin: 18px 0 8px; font-size: 15px; }
 
