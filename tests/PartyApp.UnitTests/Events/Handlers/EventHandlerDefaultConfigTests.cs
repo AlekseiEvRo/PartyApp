@@ -138,9 +138,12 @@ public class EventHandlerDefaultConfigTests
         RaffleHandler raffle = new(
             ScopeFactory,
             new RaffleService(ScopeFactory, new RecordingHubContext(), NullLogger<RaffleService>.Instance),
+            PointsAward,
             NullLogger<RaffleHandler>.Instance);
 
-        Parse(raffle.DefaultConfigJson).GetProperty("prize").GetString().Should().NotBeNullOrWhiteSpace();
+        JsonElement raffleConfig = Parse(raffle.DefaultConfigJson);
+        raffleConfig.GetProperty("prize").GetString().Should().NotBeNullOrWhiteSpace();
+        raffleConfig.GetProperty("maxTickets").GetInt32().Should().BePositive();
 
         JsonElement predictionsConfig = Parse(predictions.DefaultConfigJson);
         predictionsConfig.GetProperty("points").GetInt32().Should().BePositive();
@@ -198,6 +201,7 @@ public class EventHandlerDefaultConfigTests
             new RaffleHandler(
                 ScopeFactory,
                 new RaffleService(ScopeFactory, new RecordingHubContext(), NullLogger<RaffleService>.Instance),
+                PointsAward,
                 NullLogger<RaffleHandler>.Instance)
         };
 

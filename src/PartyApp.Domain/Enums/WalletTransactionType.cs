@@ -13,6 +13,9 @@ public enum WalletTransactionType
     Refund = 80,
     PhotoReward = 90,
 
+    /// <summary>Покупка билета лототрона.</summary>
+    RaffleTicket = 100,
+
     /// <summary>Награда за достижение.</summary>
     Achievement = 110
 }

@@ -164,8 +164,8 @@ export async function connect(): Promise<void> {
 
     connection.on('RaffleDrawn', (data: {
         sessionId: string;
-        winner: { id: string; name: string };
-        participants: { id: string; name: string }[];
+        winnerTicket: number;
+        ticketsCount: number;
     }) => {
         raffleDrawn.set(data);
     });

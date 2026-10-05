@@ -104,6 +104,8 @@
             case 'TransferIn':
             case 'TransferOut':
                 return 'Перевод';
+            case 'RaffleTicket':
+                return 'Билет';
             case 'Achievement':
                 return 'Достижение';
             default:

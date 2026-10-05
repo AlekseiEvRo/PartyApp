@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+
 using PartyApp.Api.Hubs;
 using PartyApp.Domain.Entities;
 using PartyApp.Infrastructure.Persistence;
@@ -9,12 +10,15 @@ namespace PartyApp.Api.Modules.Events.Services;
 public record RaffleDrawOutcome(bool Success, string Message, object? Data = null);
 
 /// <summary>
-/// Лототрон: игроки жмут «Участвовать» (заявки — обычные сабмиты),
-/// админ запускает розыгрыш, сервер выбирает одного победителя
-/// и рассылает участников с победителем для анимации колеса.
+/// Лототрон: игроки получают билеты со случайными номерами (заявки — обычные сабмиты),
+/// админ запускает розыгрыш, сервер выбирает случайный билет и рассылает только
+/// победный номер — имена игроков на экран не попадают.
 /// </summary>
 public class RaffleService
 {
+    /// <summary>Максимальный номер билета: номера выдаются в диапазоне 1..9999.</summary>
+    public const int MaxTicketNumber = 9999;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<PartyHub> _hub;
     private readonly ILogger<RaffleService> _logger;
@@ -50,33 +54,65 @@ public class RaffleService
             if (alreadyDrawn)
                 return new RaffleDrawOutcome(false, "Розыгрыш уже проводился");
 
-            List<RaffleParticipant> participants = await GetParticipantsAsync(db, sessionId, ct);
-            if (participants.Count == 0)
+            List<PlayerSubmission> submissions = await db.PlayerSubmissions
+                .Where(s => s.SessionId == sessionId)
+                .OrderBy(s => s.SubmittedAt)
+                .ToListAsync(ct);
+
+            if (submissions.Count == 0)
                 return new RaffleDrawOutcome(false, "Пока никто не участвует");
 
-            RaffleParticipant winner = participants[Random.Shared.Next(participants.Count)];
+            // Заявки старого формата (до появления билетов) получают номера при первом
+            // розыгрыше. Если в сессии уже есть билеты, заявки без номера — это отклонённые
+            // попытки («Ты уже участвуешь», не хватило баллов и т.п.), они не участвуют.
+            if (submissions.All(s => s.TicketNumber is null))
+            {
+                EnsureTicketNumbers(submissions);
+                await db.SaveChangesAsync(ct);
+            }
+
+            List<PlayerSubmission> tickets = submissions
+                .Where(s => s.TicketNumber.HasValue)
+                .ToList();
+
+            if (tickets.Count == 0)
+                return new RaffleDrawOutcome(false, "Пока никто не участвует");
+
+            PlayerSubmission winner = tickets[Random.Shared.Next(tickets.Count)];
+            int winnerTicket = winner.TicketNumber!.Value;
 
             db.RaffleDraws.Add(new RaffleDraw
             {
                 SessionId = sessionId,
-                WinnerId = winner.Id
+                WinnerId = winner.PlayerId,
+                WinnerTicketNumber = winnerTicket
             });
             await db.SaveChangesAsync(ct);
+
+            string winnerName = await db.Users
+                .Where(u => u.Id == winner.PlayerId)
+                .Select(u => u.DisplayName)
+                .SingleAsync(ct);
 
             object payload = new
             {
                 sessionId,
-                winner = new { id = winner.Id, name = winner.Name },
-                participants = participants.Select(p => new { p.Id, p.Name }).ToArray()
+                winnerTicket,
+                ticketsCount = tickets.Count
             };
 
             await _hub.Clients.All.SendAsync("RaffleDrawn", payload, ct);
 
             _logger.LogInformation(
-                "Raffle drawn: session={SessionId}, winner={Winner}, participants={Count}",
-                sessionId, winner.Name, participants.Count);
+                "Raffle drawn: session={SessionId}, winner={Winner}, ticket={Ticket}, tickets={Tickets}",
+                sessionId, winnerName, winnerTicket, tickets.Count);
 
-            return new RaffleDrawOutcome(true, $"🏆 Победитель: {winner.Name}", payload);
+            return new RaffleDrawOutcome(true, $"🏆 Выиграл билет №{winnerTicket} ({winnerName})", new
+            {
+                winnerTicket,
+                winnerName,
+                ticketsCount = tickets.Count
+            });
         }
         finally
         {
@@ -89,40 +125,77 @@ public class RaffleService
         using var scope = _scopeFactory.CreateScope();
         AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        List<RaffleParticipant> participants = await GetParticipantsAsync(db, sessionId, ct);
+        List<int> tickets = await db.PlayerSubmissions
+            .Where(s => s.SessionId == sessionId && s.TicketNumber != null)
+            .Select(s => s.TicketNumber!.Value)
+            .OrderBy(n => n)
+            .ToListAsync(ct);
+
+        int playersCount = await db.PlayerSubmissions
+            .Where(s => s.SessionId == sessionId)
+            .Select(s => s.PlayerId)
+            .Distinct()
+            .CountAsync(ct);
 
         RaffleDraw? draw = await db.RaffleDraws
             .AsNoTracking()
-            .Include(d => d.Winner)
             .SingleOrDefaultAsync(d => d.SessionId == sessionId, ct);
 
         return new
         {
-            participants = participants.Select(p => new { p.Id, p.Name }).ToArray(),
-            winner = draw is null ? null : new { id = draw.WinnerId, name = draw.Winner.DisplayName }
+            tickets,
+            ticketsCount = tickets.Count,
+            playersCount,
+            winnerTicket = draw?.WinnerTicketNumber
         };
     }
 
-    private static async Task<List<RaffleParticipant>> GetParticipantsAsync(
-        AppDbContext db, Guid sessionId, CancellationToken ct)
+    /// <summary>Свободный случайный номер билета в диапазоне 1..9999.</summary>
+    public static int? PickFreeTicketNumber(IEnumerable<int> existingNumbers)
     {
-        var rows = await db.PlayerSubmissions
-            .Where(s => s.SessionId == sessionId)
-            .OrderBy(s => s.SubmittedAt)
-            .Select(s => new { s.PlayerId, Name = s.Player.DisplayName })
-            .ToListAsync(ct);
+        var used = new HashSet<int>(existingNumbers);
 
-        var seen = new HashSet<Guid>();
-        var participants = new List<RaffleParticipant>();
+        if (used.Count >= MaxTicketNumber)
+            return null;
 
-        foreach (var row in rows)
+        // Сначала пробуем случайно; если диапазон плотно занят — добираем перебором
+        for (int attempt = 0; attempt < 50; attempt++)
         {
-            if (seen.Add(row.PlayerId))
-                participants.Add(new RaffleParticipant(row.PlayerId, row.Name));
+            int candidate = Random.Shared.Next(1, MaxTicketNumber + 1);
+            if (!used.Contains(candidate))
+                return candidate;
         }
 
-        return participants;
+        for (int candidate = 1; candidate <= MaxTicketNumber; candidate++)
+        {
+            if (!used.Contains(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
-    private record RaffleParticipant(Guid Id, string Name);
+    /// <summary>Выдаёт номера заявкам без них (сессии старого формата).</summary>
+    private static void EnsureTicketNumbers(List<PlayerSubmission> submissions)
+    {
+        var used = new HashSet<int>();
+        foreach (PlayerSubmission submission in submissions)
+        {
+            if (submission.TicketNumber.HasValue)
+                used.Add(submission.TicketNumber.Value);
+        }
+
+        foreach (PlayerSubmission submission in submissions)
+        {
+            if (submission.TicketNumber.HasValue)
+                continue;
+
+            int? number = PickFreeTicketNumber(used);
+            if (number is null)
+                break;
+
+            submission.TicketNumber = number.Value;
+            used.Add(number.Value);
+        }
+    }
 }

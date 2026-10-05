@@ -58,8 +58,13 @@
 
     // Лототрон
     let raffleJoined = false;
-    let raffleParticipants = 0;
-    let raffleWinner: { id: string; name: string } | null = null;
+    let raffleMyTickets: number[] = [];
+    let raffleMaxTickets = 1;
+    let raffleNextPrice = 0;
+    let rafflePlayers = 0;
+    let raffleWinnerTicket: number | null = null;
+    let raffleBusy = false;
+    $: raffleCanBuyMore = raffleJoined && raffleMyTickets.length < raffleMaxTickets;
 
     const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions', 'raffle'];
 
@@ -98,9 +103,9 @@
                 predictionSent = playerData?.text ?? null;
                 revealedPredictions = data.live?.revealed ?? null;
             } else if (event.type === 'raffle') {
-                raffleJoined = playerData?.joined ?? false;
-                raffleParticipants = data.live?.participants?.length ?? playerData?.participants ?? 0;
-                raffleWinner = data.live?.winner ?? null;
+                applyRafflePlayer(playerData);
+                raffleWinnerTicket = data.live?.winnerTicket ?? null;
+                rafflePlayers = data.live?.playersCount ?? playerData?.playersCount ?? 0;
             }
         } catch { /* карточка просто останется без данных */ }
     });
@@ -151,7 +156,7 @@
         handleBingoLineAwarded($bingoLineAwarded.lineAwards);
     }
 
-    // Лототрон: победитель и уведомление — только после анимации колеса
+    // Лототрон: победный номер и уведомление — только после анимации барабана
     $: if (event.type === 'raffle'
         && $raffleDrawn
         && $raffleDrawn.sessionId === event.sessionId) {
@@ -162,19 +167,23 @@
 
     function handleRaffleDrawn(data: {
         sessionId: string;
-        winner: { id: string; name: string };
-        participants: { id: string; name: string }[];
+        winnerTicket: number;
+        ticketsCount: number;
     }): void {
-        const key = `${data.sessionId}:${data.winner.id}`;
+        const key = `${data.sessionId}:${data.winnerTicket}`;
         if (raffleHandledKey === key) return;
 
         raffleHandledKey = key;
-        raffleParticipants = data.participants.length;
 
-        // Даём колесу на экране докрутиться, потом объявляем результат
+        // Даём барабану на экране докрутиться, потом объявляем номер
         setTimeout(() => {
-            raffleWinner = data.winner;
-            showToast(`🏆 Лототрон: победил ${data.winner.name}!`, 'info');
+            raffleWinnerTicket = data.winnerTicket;
+
+            if (raffleMyTickets.includes(data.winnerTicket)) {
+                showToast(`🎉 Твой билет №${data.winnerTicket} выиграл!`, 'success');
+            } else {
+                showToast(`🏆 Выиграл билет №${data.winnerTicket}`, 'info');
+            }
         }, RAFFLE_SPIN_MS);
     }
 
@@ -365,11 +374,36 @@
     }
 
     async function joinRaffle() {
-        const result = await submit({});
-        if (result?.data?.joined) {
-            raffleJoined = true;
-            raffleParticipants = result.data.participants ?? raffleParticipants;
+        if (raffleBusy) return;
+        if (raffleNextPrice > 0 && !confirm(`Купить ещё один билет за ${raffleNextPrice} баллов?`)) {
+            return;
         }
+
+        raffleBusy = true;
+
+        try {
+            const result = await submit({});
+            if (result?.data?.joined) {
+                applyRafflePlayer(result.data);
+            }
+        } finally {
+            raffleBusy = false;
+        }
+    }
+
+    /** Обновляет билеты игрока из ответа submit или данных игрока. */
+    function applyRafflePlayer(data: any): void {
+        if (!data) return;
+
+        raffleJoined = data.joined ?? raffleJoined;
+
+        if (Array.isArray(data.myTickets)) {
+            raffleMyTickets = data.myTickets;
+        }
+
+        if (typeof data.maxTickets === 'number') raffleMaxTickets = data.maxTickets;
+        if (typeof data.nextTicketPrice === 'number') raffleNextPrice = data.nextTicketPrice;
+        if (typeof data.playersCount === 'number') rafflePlayers = data.playersCount;
     }
 
     function range(count: number): number[] {
@@ -521,15 +555,31 @@
         {/if}
 
     {:else if event.type === 'raffle'}
-        {#if raffleWinner}
-            <p class="desc raffle-winner">🏆 Победитель: {raffleWinner.name}</p>
+        {#if raffleWinnerTicket !== null}
+            {#if raffleMyTickets.includes(raffleWinnerTicket)}
+                <p class="desc raffle-winner">🎉 Твой билет №{raffleWinnerTicket} выиграл!</p>
+            {:else}
+                <p class="desc raffle-winner">🏆 Выиграл билет №{raffleWinnerTicket}</p>
+            {/if}
         {:else if raffleJoined}
-            <p class="desc dare-task">🎟 Ты участвуешь!</p>
-            <p class="event-counter">Участников: {raffleParticipants} · ждём розыгрыша</p>
+            <p class="desc dare-task">
+                🎟 {raffleMyTickets.length > 1
+                    ? `Твои билеты: ${raffleMyTickets.map((n) => `№${n}`).join(', ')}`
+                    : `Твой билет: №${raffleMyTickets[0]}`}
+            </p>
+            {#if raffleCanBuyMore}
+                <button class="btn" on:click={joinRaffle} disabled={raffleBusy}>
+                    {raffleNextPrice > 0 ? `🎟 Ещё билет за ${raffleNextPrice}` : '🎟 Ещё билет'}
+                    {#if raffleMaxTickets > 1}
+                        · {raffleMyTickets.length}/{raffleMaxTickets}
+                    {/if}
+                </button>
+            {/if}
+            <p class="event-counter">Участников: {rafflePlayers} · ждём розыгрыша</p>
         {:else}
-            <button class="btn" on:click={joinRaffle}>🎟 Участвовать</button>
-            {#if raffleParticipants > 0}
-                <p class="event-counter">Уже участвуют: {raffleParticipants}</p>
+            <button class="btn" on:click={joinRaffle} disabled={raffleBusy}>🎟 Участвовать</button>
+            {#if rafflePlayers > 0}
+                <p class="event-counter">Уже участвуют: {rafflePlayers}</p>
             {/if}
         {/if}
 

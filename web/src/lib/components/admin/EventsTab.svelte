@@ -53,6 +53,9 @@
     let configError = '';
     // Бинго: удобное поле поверх ConfigJson (сам ключ хранится в конфиге)
     let formMaxPredictions = 3;
+    // Лототрон: удобные поля поверх ConfigJson (ключи хранятся в конфиге)
+    let formRafflePrice = 0;
+    let formRaffleMaxTickets = 1;
 
     const typeLabels: Record<string, string> = {
         quick_checkin: 'Тост за именинника',
@@ -186,6 +189,57 @@
         return true;
     }
 
+    /**
+     * Подтягивает ticketPrice и maxTickets лототрона из ConfigJson в удобные поля.
+     * useDefault=true (открытие формы, смена типа) подставляет 0 и 1, если ключей нет.
+     */
+    function syncRaffleSettings(useDefault = false) {
+        const config = readConfigObject();
+
+        const price = Math.round(Number(config?.ticketPrice));
+        if (Number.isFinite(price) && price >= 0) {
+            formRafflePrice = price;
+        } else if (useDefault) {
+            formRafflePrice = 0;
+        }
+
+        const maxTickets = Math.round(Number(config?.maxTickets));
+        if (Number.isFinite(maxTickets) && maxTickets > 0) {
+            formRaffleMaxTickets = maxTickets;
+        } else if (useDefault) {
+            formRaffleMaxTickets = 1;
+        }
+    }
+
+    /** Переносит цену и лимит билетов лототрона в ConfigJson перед сохранением. */
+    function applyRaffleSettings(): boolean {
+        if (formType !== 'raffle') return true;
+
+        const config = readConfigObject();
+        if (!config) {
+            configError = 'Невалидный JSON';
+            return false;
+        }
+
+        const price = Math.round(Number(formRafflePrice));
+        if (!Number.isFinite(price) || price < 0) {
+            configError = 'Цена билета не может быть отрицательной';
+            return false;
+        }
+
+        const maxTickets = Math.round(Number(formRaffleMaxTickets));
+        if (!Number.isFinite(maxTickets) || maxTickets < 1) {
+            configError = 'Максимум билетов должен быть больше 0';
+            return false;
+        }
+
+        config.ticketPrice = price;
+        config.maxTickets = maxTickets;
+        formConfigJson = JSON.stringify(config, null, 2);
+        configError = '';
+        return true;
+    }
+
     function openCreateForm() {
         editingId = null;
         formType = types[0]?.type ?? '';
@@ -197,6 +251,7 @@
         configTouched = false;
         configError = '';
         syncBingoMaxPredictions(true);
+        syncRaffleSettings(true);
         formOpen = true;
     }
 
@@ -211,6 +266,7 @@
         configTouched = true;
         configError = '';
         syncBingoMaxPredictions(true);
+        syncRaffleSettings(true);
         formOpen = true;
     }
 
@@ -225,12 +281,14 @@
             formConfigJson = defaultConfigFor(formType);
         }
         syncBingoMaxPredictions(true);
+        syncRaffleSettings(true);
     }
 
     function handleConfigInput() {
         configTouched = true;
         configError = '';
         syncBingoMaxPredictions();
+        syncRaffleSettings();
     }
 
     function formatConfig() {
@@ -274,6 +332,10 @@
 
         if (!applyBingoMaxPredictions()) {
             showToast('Проверь настройки бинго', 'error');
+            return;
+        }
+        if (!applyRaffleSettings()) {
+            showToast('Проверь настройки лототрона', 'error');
             return;
         }
         if (!validateConfig()) {
@@ -410,6 +472,28 @@
                             Сколько неподтверждённых клеток игрок может отметить одновременно.
                             Подтверждение или отклонение клетки освобождает слот. Максимум — число клеток поля.
                         </p>
+                    </div>
+                </div>
+            </div>
+        {/if}
+
+        {#if formType === 'raffle'}
+            <div class="event-settings">
+                <h4>⚙️ Настройки лототрона</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="raffle-price">Цена билета, баллов</label>
+                        <input id="raffle-price" type="number" min="0" bind:value={formRafflePrice} />
+                        <p class="hint">
+                            Первый билет бесплатный, каждый следующий списывает эту сумму.
+                            0 — все билеты бесплатные.
+                        </p>
+                    </div>
+                    <div class="form-group">
+                        <label for="raffle-max-tickets">Максимум билетов на игрока</label>
+                        <input id="raffle-max-tickets" type="number" min="1" max="999"
+                               bind:value={formRaffleMaxTickets} />
+                        <p class="hint">1 — участие одним билетом, больше — билеты можно докупать.</p>
                     </div>
                 </div>
             </div>
@@ -558,14 +642,14 @@
     .form-group input[type="checkbox"] { width: auto; }
     .hint { color: var(--muted, #aaa); font-size: 12px; margin: 6px 0 0; }
 
-    .bingo-settings {
+    .bingo-settings, .event-settings {
         border: 1px dashed var(--border, #333);
         border-radius: 8px;
         padding: 12px 12px 0;
         margin-bottom: 12px;
     }
 
-    .bingo-settings h4 {
+    .bingo-settings h4, .event-settings h4 {
         margin: 0 0 10px;
         font-size: 14px;
         color: var(--accent, #f5a623);

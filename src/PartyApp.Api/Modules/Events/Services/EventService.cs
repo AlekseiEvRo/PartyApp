@@ -236,6 +236,7 @@ public class EventService : IEventService
             PlayerId = playerId,
             PayloadJson = payloadJson,
             DurationMs = result.DurationMs,
+            TicketNumber = result.TicketNumber,
             Score = result.PointsAwarded,
             SubmittedAt = DateTime.UtcNow
         };
