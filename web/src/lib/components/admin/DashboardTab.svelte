@@ -293,7 +293,7 @@
         background: none; color: var(--accent, #f5a623); font-size: 13px; cursor: pointer;
     }
     .btn-history:hover { background: var(--card-soft, #2a2a5e); }
-    .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .actions { display: flex; gap: 6px; flex-wrap: nowrap; justify-content: flex-end; }
     .player-cell { display: flex; align-items: center; gap: 8px; }
     .btn-small {
         padding: 6px 8px; border: 1px solid var(--border, #333); border-radius: 6px;
@@ -317,5 +317,11 @@
     .backup-list li {
         display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
         padding: 8px 12px; border-bottom: 1px solid var(--border, #333); font-size: 14px;
+    }
+    /* На узких экранах кнопки действий компактнее, чтобы не растягивать таблицу по ширине. */
+    @media (max-width: 600px) {
+        .actions { gap: 4px; }
+        .btn-small { padding: 5px 7px; font-size: 12px; }
+        .btn-history { padding: 5px 8px; font-size: 12px; }
     }
 </style>
