@@ -165,6 +165,15 @@ cd ..
 dotnet run --project src/PartyApp.Api
 ```
 
+То же самое одной командой из корня репозитория:
+
+```powershell
+./run.ps1            # или: powershell -ExecutionPolicy Bypass -File run.ps1
+./run.ps1 -NoBuild   # пропустить пересборку SPA, если wwwroot уже свежий
+```
+
+Скрипт проверит наличие `dotnet` и `npm`, при первом запуске сам поставит зависимости фронтенда (`npm ci`, если нет `web/node_modules`), соберёт SPA и запустит приложение; остановка — Ctrl+C. В Windows его можно запускать двойным кликом по `run.cmd`.
+
 Фронтенд собирается в `src/PartyApp.Api/wwwroot` (каталог генерируется, редактировать его нельзя), после чего SPA и API отдаются одним приложением на <http://localhost:5000>. Маршруты — `/` (игрок), `/admin` (админка), `/screen` (TV).
 
 ### Первый администратор
@@ -185,6 +194,7 @@ sqlite3 src/PartyApp.Api/App_Data/party.db "UPDATE Users SET Role = 10 WHERE Use
 | `src/PartyApp.Infrastructure` | `AppDbContext`, EF-конфигурации, миграции, сервисы кошелька/файлов/QR/бэкапов |
 | `src/PartyApp.Api` | Minimal API (модули в `Modules/<Feature>/`), SignalR-хаб, JWT, `Program.cs` |
 | `web/` | Svelte 5 SPA (Vite + TypeScript + PWA); сборка идёт в `wwwroot` |
+| `run.ps1`, `run.cmd` | Запуск единого приложения: сборка SPA и старт API на <http://localhost:5000> |
 | `tests/` | `PartyApp.UnitTests` и `PartyApp.IntegrationTests`; детали — [tests/README.md](tests/README.md) |
 | `deploy/` | `Caddyfile` и инструкция по хостингу — [deploy/README.md](deploy/README.md) |
 | `docs/HOST_GUIDE.md` | Руководство для ведущего: админка, большой экран и сценарий вечера |
