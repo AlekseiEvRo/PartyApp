@@ -51,7 +51,10 @@ public class EventService : IEventService
             .ToListAsync(ct);
     }
 
-    public async Task<List<AvailableEventDto>> GetAvailableEventsAsync(CancellationToken ct = default)
+    public async Task<List<AvailableEventDto>> GetAvailableEventsAsync(
+        Guid? playerId = null,
+        bool isAdmin = false,
+        CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -62,8 +65,20 @@ public class EventService : IEventService
             .Where(s => s.State == EventSessionState.Active && s.Definition.IsActive)
             .ToListAsync(ct);
 
-        return activeSessions
-            .Select(s => new AvailableEventDto(
+        var result = new List<AvailableEventDto>(activeSessions.Count);
+
+        foreach (var s in activeSessions)
+        {
+            // Скрытые ивенты (например, «Шпионы») показываем только участникам;
+            // админ видит всё — ему и большому экрану нужен доступ
+            if (!isAdmin && playerId.HasValue && _handlerFactory.HasHandler(s.Definition.Type))
+            {
+                IEventHandler handler = _handlerFactory.GetHandler(s.Definition.Type);
+                if (!await handler.IsPlayerAllowedAsync(s, s.Definition, playerId.Value, ct))
+                    continue;
+            }
+
+            result.Add(new AvailableEventDto(
                 SessionId: s.Id,
                 DefinitionId: s.DefinitionId,
                 Type: s.Definition.Type,
@@ -71,8 +86,10 @@ public class EventService : IEventService
                 Description: s.Definition.Description,
                 Availability: s.Definition.Availability.ToString(),
                 StartedAt: s.StartedAt,
-                EndsAt: s.EndsAt))
-            .ToList();
+                EndsAt: s.EndsAt));
+        }
+
+        return result;
     }
 
     public async Task<EventSession> StartEventAsync(Guid definitionId, Guid startedById, CancellationToken ct = default)
@@ -90,6 +107,12 @@ public class EventService : IEventService
         if (!_handlerFactory.HasHandler(definition.Type))
             throw new InvalidOperationException($"No handler registered for event type: {definition.Type}");
 
+        // Игры со своим порядком запуска (выбор участников, раздача ролей)
+        // стартуют из админ-вкладки своим эндпоинтом, а не общей кнопкой
+        IEventHandler handler = _handlerFactory.GetHandler(definition.Type);
+        if (handler.RequiresCustomStart)
+            throw new InvalidOperationException($"Ивент «{definition.DisplayName}» запускается из своей вкладки в админке");
+
         var session = new EventSession
         {
             DefinitionId = definitionId,
@@ -106,7 +129,6 @@ public class EventService : IEventService
         await db.SaveChangesAsync(ct);
 
         // Вызываем обработчик для инициализации
-        var handler = _handlerFactory.GetHandler(definition.Type);
         await handler.OnSessionStartedAsync(session, definition, ct);
 
         // Рассылаем всем клиентам событие старта
@@ -268,7 +290,11 @@ public class EventService : IEventService
         return new SubmissionOutcome(result.Success, result.PointsAwarded, result.Message, result.Data);
     }
 
-    public async Task<object?> GetEventDataAsync(Guid sessionId, Guid? playerId = null, CancellationToken ct = default)
+    public async Task<object?> GetEventDataAsync(
+        Guid sessionId,
+        Guid? playerId = null,
+        bool isAdmin = false,
+        CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -280,49 +306,44 @@ public class EventService : IEventService
         if (session is null)
             return null;
 
+        IEventHandler? handler = _handlerFactory.HasHandler(session.Definition.Type)
+            ? _handlerFactory.GetHandler(session.Definition.Type)
+            : null;
+
+        // Скрытые ивенты (шпионы): чужим игрокам данные не отдаём.
+        // Экран и админка ходят под админским токеном — для них проверка не действует.
+        if (handler is not null && playerId.HasValue && !isAdmin
+            && !await handler.IsPlayerAllowedAsync(session, session.Definition, playerId.Value, ct))
+        {
+            return null;
+        }
+
         // «Живые» данные обработчика (например, кто сейчас говорит тост)
         // и личные данные игрока (отмеченные клетки, отвеченные песни и т.п.)
         object? live = null;
         object? player = null;
-        if (_handlerFactory.HasHandler(session.Definition.Type))
+        if (handler is not null)
         {
-            var handler = _handlerFactory.GetHandler(session.Definition.Type);
             live = await handler.GetLiveDataAsync(session, session.Definition, ct);
 
             if (playerId.HasValue)
                 player = await handler.GetPlayerDataAsync(session, session.Definition, playerId.Value, ct);
         }
 
-        // Возвращаем конфиг как объект
-        try
+        // Конфиг глазами игрока: обработчик может его урезать или скрыть
+        object? config = handler is not null ? handler.GetPublicConfig(session.Definition) : new { };
+
+        return new
         {
-            var config = JsonSerializer.Deserialize<JsonElement>(session.Definition.ConfigJson, EventJsonOptions.Default);
-            return new
-            {
-                sessionId = session.Id,
-                type = session.Definition.Type,
-                displayName = session.Definition.DisplayName,
-                startedAt = session.StartedAt,
-                endsAt = session.EndsAt,
-                config,
-                live,
-                player
-            };
-        }
-        catch
-        {
-            return new
-            {
-                sessionId = session.Id,
-                type = session.Definition.Type,
-                displayName = session.Definition.DisplayName,
-                startedAt = session.StartedAt,
-                endsAt = session.EndsAt,
-                config = new { },
-                live,
-                player
-            };
-        }
+            sessionId = session.Id,
+            type = session.Definition.Type,
+            displayName = session.Definition.DisplayName,
+            startedAt = session.StartedAt,
+            endsAt = session.EndsAt,
+            config,
+            live,
+            player
+        };
     }
 }
 

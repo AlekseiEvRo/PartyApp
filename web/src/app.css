@@ -79,6 +79,7 @@ img, svg, video { max-width: 100%; }
 .desc { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .row input { flex: 1 1 160px; min-width: 0; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: #fff; font-size: 16px; }
+.row select { flex: 1 1 160px; min-width: 0; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: #fff; font-size: 16px; }
 .btn {
     padding: 12px 18px;
     border: none;
@@ -274,4 +275,34 @@ img, svg, video { max-width: 100%; }
 .raffle-tickets .won {
     color: var(--accent, #f5a623);
     font-weight: bold;
+}
+
+/* «Шпионы» */
+.spy-role {
+    font-size: 17px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: var(--green);
+}
+
+.spy-role.spy-role-spy { color: var(--red); }
+
+.spy-word { margin: 4px 0 10px; font-size: 15px; }
+
+.spy-word b { color: var(--accent); font-size: 18px; }
+
+.spy-win {
+    font-size: 17px;
+    font-weight: bold;
+    color: var(--accent);
+}
+
+.spy-votes {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--muted);
 }

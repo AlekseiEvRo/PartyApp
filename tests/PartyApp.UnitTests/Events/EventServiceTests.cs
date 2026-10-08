@@ -475,6 +475,11 @@ public class EventServiceTests : IDisposable
         EventDefinition definition = await SeedDefinitionAsync(configJson: config, displayName: "Квиз");
         EventSession session = await SeedSessionAsync(definition);
 
+        // Конфиг для игроков отдаёт обработчик (может его урезать или скрыть),
+        // по умолчанию — как есть из ConfigJson
+        _factory.HasHandler("quiz").Returns(true);
+        _factory.GetHandler("quiz").Returns(new PlainHandler());
+
         object? data = await _service.GetEventDataAsync(session.Id);
 
         data.Should().NotBeNull();
@@ -492,9 +497,28 @@ public class EventServiceTests : IDisposable
         EventDefinition definition = await SeedDefinitionAsync(configJson: "not-json");
         EventSession session = await SeedSessionAsync(definition);
 
+        _factory.HasHandler("quiz").Returns(true);
+        _factory.GetHandler("quiz").Returns(new PlainHandler());
+
         object? data = await _service.GetEventDataAsync(session.Id);
 
         data.Should().NotBeNull();
         Json(data).GetProperty("config").EnumerateObject().Should().BeEmpty();
+    }
+
+    /// <summary>Минимальный реальный обработчик: проверяем дефолтные реализации IEventHandler.</summary>
+    private sealed class PlainHandler : IEventHandler
+    {
+        public string EventType => "quiz";
+
+        public string DefaultConfigJson => "{}";
+
+        public Task<SubmissionResult> HandleSubmissionAsync(
+            EventSession session,
+            EventDefinition definition,
+            Guid playerId,
+            string payloadJson,
+            CancellationToken ct = default)
+            => Task.FromResult(SubmissionResult.Ok(0));
     }
 }

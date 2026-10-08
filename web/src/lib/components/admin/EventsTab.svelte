@@ -6,6 +6,7 @@
     interface EventTypeInfo {
         type: string;
         defaultConfigJson: string;
+        requiresCustomStart?: boolean;
     }
 
     interface EventDefinition {
@@ -56,13 +57,18 @@
     // Лототрон: удобные поля поверх ConfigJson (ключи хранятся в конфиге)
     let formRafflePrice = 0;
     let formRaffleMaxTickets = 1;
+    // «Шпионы»: баллы и пары слов поверх ConfigJson
+    let formSpyPoints = 50;
+    let formSpyCitizenPoints = 25;
+    let formSpyPairs: { citizen: string; spy: string }[] = [];
 
     const typeLabels: Record<string, string> = {
         quick_checkin: 'Тост за именинника',
         promo_code: 'Промокоды',
         quiz: 'Квиз',
         word_rush: 'Слова на буквы',
-        qr_scan: 'Охота за QR-кодами'
+        qr_scan: 'Охота за QR-кодами',
+        spyfall: 'Шпионы'
     };
 
     function typeLabel(type: string) {
@@ -243,6 +249,89 @@
         return true;
     }
 
+    /**
+     * Подтягивает баллы и пары слов «Шпионов» из ConfigJson в удобные поля.
+     * useDefault=true (открытие формы, смена типа) подставляет значения по умолчанию.
+     */
+    function syncSpyFallSettings(useDefault = false) {
+        const config = readConfigObject();
+
+        const pointsSpy = Math.round(Number(config?.pointsSpy));
+        if (Number.isFinite(pointsSpy) && pointsSpy >= 0) {
+            formSpyPoints = pointsSpy;
+        } else if (useDefault) {
+            formSpyPoints = 50;
+        }
+
+        const pointsCitizen = Math.round(Number(config?.pointsCitizen));
+        if (Number.isFinite(pointsCitizen) && pointsCitizen >= 0) {
+            formSpyCitizenPoints = pointsCitizen;
+        } else if (useDefault) {
+            formSpyCitizenPoints = 25;
+        }
+
+        if (Array.isArray(config?.pairs)) {
+            formSpyPairs = config.pairs.map((p: any) => ({
+                citizen: String(p?.citizen ?? ''),
+                spy: String(p?.spy ?? '')
+            }));
+        } else if (useDefault) {
+            formSpyPairs = [];
+        }
+    }
+
+    /** Переносит баллы и пары слов «Шпионов» в ConfigJson перед сохранением. */
+    function applySpyFallSettings(): boolean {
+        if (formType !== 'spyfall') return true;
+
+        const config = readConfigObject();
+        if (!config) {
+            configError = 'Невалидный JSON';
+            return false;
+        }
+
+        const pointsSpy = Math.round(Number(formSpyPoints));
+        const pointsCitizen = Math.round(Number(formSpyCitizenPoints));
+        if (!Number.isFinite(pointsSpy) || pointsSpy < 0 || !Number.isFinite(pointsCitizen) || pointsCitizen < 0) {
+            configError = 'Баллы не могут быть отрицательными';
+            return false;
+        }
+
+        const pairs = formSpyPairs
+            .map((p) => ({ citizen: p.citizen.trim(), spy: p.spy.trim() }))
+            .filter((p) => p.citizen || p.spy);
+
+        if (pairs.some((p) => !p.citizen || !p.spy)) {
+            configError = 'В каждой паре должны быть заполнены оба слова';
+            return false;
+        }
+
+        if (pairs.length < 3) {
+            configError = 'Нужно минимум 3 пары слов';
+            return false;
+        }
+
+        config.pointsSpy = pointsSpy;
+        config.pointsCitizen = pointsCitizen;
+        config.pairs = pairs;
+        formConfigJson = JSON.stringify(config, null, 2);
+        configError = '';
+        return true;
+    }
+
+    function addSpyPair() {
+        formSpyPairs = [...formSpyPairs, { citizen: '', spy: '' }];
+    }
+
+    function removeSpyPair(index: number) {
+        formSpyPairs = formSpyPairs.filter((_, i) => i !== index);
+    }
+
+    /** Ивенты со своим порядком запуска стартуют из отдельной вкладки админки. */
+    function requiresCustomStart(type: string): boolean {
+        return types.find((t) => t.type === type)?.requiresCustomStart === true;
+    }
+
     function openCreateForm() {
         editingId = null;
         formType = types[0]?.type ?? '';
@@ -255,6 +344,7 @@
         configError = '';
         syncBingoMaxPredictions(true);
         syncRaffleSettings(true);
+        syncSpyFallSettings(true);
         formOpen = true;
     }
 
@@ -270,6 +360,7 @@
         configError = '';
         syncBingoMaxPredictions(true);
         syncRaffleSettings(true);
+        syncSpyFallSettings(true);
         formOpen = true;
     }
 
@@ -285,6 +376,7 @@
         }
         syncBingoMaxPredictions(true);
         syncRaffleSettings(true);
+        syncSpyFallSettings(true);
     }
 
     function handleConfigInput() {
@@ -292,6 +384,7 @@
         configError = '';
         syncBingoMaxPredictions();
         syncRaffleSettings();
+        syncSpyFallSettings();
     }
 
     function formatConfig() {
@@ -339,6 +432,10 @@
         }
         if (!applyRaffleSettings()) {
             showToast('Проверь настройки лототрона', 'error');
+            return;
+        }
+        if (!applySpyFallSettings()) {
+            showToast('Проверь настройки «Шпионов»', 'error');
             return;
         }
         if (!validateConfig()) {
@@ -503,6 +600,46 @@
             </div>
         {/if}
 
+        {#if formType === 'spyfall'}
+            <div class="event-settings">
+                <h4>⚙️ Настройки «Шпионов»</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="spyfall-points-spy">Баллы шпиону</label>
+                        <input id="spyfall-points-spy" type="number" min="0" bind:value={formSpyPoints} />
+                        <p class="hint">
+                            За победу: угадал слово горожан или горожане не вычислили шпиона.
+                        </p>
+                    </div>
+                    <div class="form-group">
+                        <label for="spyfall-points-citizen">Баллы горожанам</label>
+                        <input id="spyfall-points-citizen" type="number" min="0" bind:value={formSpyCitizenPoints} />
+                        <p class="hint">
+                            Каждому, кто проголосовал против настоящего шпиона, — но только если горожане победили.
+                        </p>
+                    </div>
+                </div>
+
+                <h4>Пары слов</h4>
+                <p class="hint">
+                    Первое слово видят горожане, второе — шпион. Нужно минимум 3 пары;
+                    какая сторона пары кому достанется, сервер решает случайно.
+                </p>
+
+                {#each formSpyPairs as pair, i}
+                    <div class="pair-row">
+                        <input type="text" placeholder="Слово горожан" bind:value={pair.citizen} />
+                        <input type="text" placeholder="Слово шпиона" bind:value={pair.spy} />
+                        <button class="btn btn-danger" on:click={() => removeSpyPair(i)} title="Удалить пару">✖</button>
+                    </div>
+                {/each}
+
+                <div class="form-actions">
+                    <button class="btn btn-secondary" on:click={addSpyPair}>➕ Добавить пару</button>
+                </div>
+            </div>
+        {/if}
+
         <div class="form-group">
             <label for="event-config">ConfigJson</label>
             <textarea id="event-config" rows="12" spellcheck="false" bind:value={formConfigJson}
@@ -564,8 +701,11 @@
                         {/if}
                     </td>
                     <td class="actions">
-                        {#if d.isActive}
+                        {#if d.isActive && !requiresCustomStart(d.type)}
                             <button class="btn btn-success" on:click={() => startEvent(d.id)}>▶️ Запустить</button>
+                        {/if}
+                        {#if requiresCustomStart(d.type)}
+                            <span class="custom-start-hint">запуск из своей вкладки</span>
                         {/if}
                         <button class="btn btn-primary" on:click={() => openEditForm(d)}>✏️ Изменить</button>
                         <button class="btn btn-warning" on:click={() => toggleActive(d)}>
@@ -657,6 +797,31 @@
         margin: 0 0 10px;
         font-size: 14px;
         color: var(--accent, #f5a623);
+    }
+
+    .pair-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+    }
+
+    .pair-row input {
+        flex: 1 1 140px;
+        min-width: 0;
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border, #333);
+        background: var(--bg, #0f0f23);
+        color: #fff;
+    }
+
+    .pair-row .btn { flex: 0 0 auto; }
+
+    .custom-start-hint {
+        color: var(--muted, #aaa);
+        font-size: 12px;
+        align-self: center;
     }
     .error { color: var(--red, #e74c3c); font-size: 13px; margin: 6px 0 0; }
     .warning { color: var(--orange, #f39c12); font-size: 14px; margin: 0 0 12px; }

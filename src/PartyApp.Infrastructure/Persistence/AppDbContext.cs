@@ -36,6 +36,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Poll> Polls => Set<Poll>();
     public DbSet<PollOption> PollOptions => Set<PollOption>();
     public DbSet<PollVote> PollVotes => Set<PollVote>();
+    public DbSet<SpyFallRound> SpyFallRounds => Set<SpyFallRound>();
+    public DbSet<SpyFallParticipant> SpyFallParticipants => Set<SpyFallParticipant>();
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

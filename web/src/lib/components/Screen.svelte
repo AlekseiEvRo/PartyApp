@@ -968,6 +968,46 @@
                 {:else}
                     <p class="muted">🎟 Пока никто не участвует</p>
                 {/if}
+            {:else if eventData?.type === 'spyfall'}
+                {#if eventData.live?.phase === 'finished'}
+                    <h2 class="spy-reveal">
+                        {eventData.live.winner === 'citizens'
+                            ? '👥 Горожане победили!'
+                            : eventData.live.winner === 'spy'
+                                ? '🕵 Шпион победил!'
+                                : '🤝 Закрыто без результата'}
+                    </h2>
+                    <p class="muted">Шпион — {eventData.live.spyName}</p>
+                    <p class="spy-words">
+                        🧑‍🌾 {eventData.live.citizenWord}
+                        <span class="spy-sep">·</span>
+                        🕵 {eventData.live.spyWord}
+                    </p>
+
+                    {#if eventData.live.guessWord}
+                        <p class="muted">
+                            Догадка шпиона: «{eventData.live.guessWord}»
+                            {eventData.live.guessCorrect ? '✅' : '❌'}
+                        </p>
+                    {/if}
+
+                    {#if eventData.live.votes?.length}
+                        <ul class="spy-screen-votes">
+                            {#each eventData.live.votes as vote}
+                                <li>
+                                    <span class="spy-voter">{vote.voterName}</span>
+                                    <span class="spy-arrow">→</span>
+                                    <span>{vote.targetName ?? '—'}</span>
+                                </li>
+                            {/each}
+                        </ul>
+                    {/if}
+                {:else}
+                    <p class="muted">Обсуждайте вслух: у шпиона другое слово!</p>
+                    <div class="spy-progress">
+                        Проголосовало: {eventData.live?.votedCount ?? 0} из {eventData.live?.citizensCount ?? 0}
+                    </div>
+                {/if}
             {:else if eventData?.type === 'qr_scan'}
                 {#if qrStats}
                     <div class="qr-numbers">
@@ -1984,4 +2024,35 @@
             transform: translateY(115vh) rotate(720deg);
         }
     }
+
+    /* «Шпионы» */
+    .spy-reveal { margin: 8px 0 4px; }
+
+    .spy-words {
+        font-size: clamp(20px, 3vw, 34px);
+        font-weight: bold;
+        color: #f5a623;
+        margin: 10px 0;
+    }
+
+    .spy-sep { color: #666; }
+
+    .spy-progress {
+        font-size: clamp(24px, 4vw, 44px);
+        font-weight: bold;
+        margin-top: 16px;
+    }
+
+    .spy-screen-votes {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 14px;
+        font-size: clamp(14px, 1.8vw, 20px);
+        color: #ccc;
+    }
+
+    .spy-screen-votes .spy-voter { color: #e0e0e0; font-weight: bold; }
+    .spy-screen-votes .spy-arrow { color: #f5a623; margin: 0 8px; }
 </style>

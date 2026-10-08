@@ -5,7 +5,10 @@ namespace PartyApp.Api.Modules.Events.Services;
 public interface IEventService
 {
     Task<List<EventDefinition>> GetDefinitionsAsync(bool includeInactive = false, CancellationToken ct = default);
-    Task<List<AvailableEventDto>> GetAvailableEventsAsync(CancellationToken ct = default);
+    Task<List<AvailableEventDto>> GetAvailableEventsAsync(
+        Guid? playerId = null,
+        bool isAdmin = false,
+        CancellationToken ct = default);
     Task<EventSession> StartEventAsync(Guid definitionId, Guid startedById, CancellationToken ct = default);
     Task FinishEventAsync(Guid sessionId, CancellationToken ct = default);
 
@@ -13,7 +16,11 @@ public interface IEventService
     Task<int> CloseExpiredEventsAsync(CancellationToken ct = default);
 
     Task<SubmissionOutcome> SubmitToEventAsync(Guid sessionId, Guid playerId, string payloadJson, CancellationToken ct = default);
-    Task<object?> GetEventDataAsync(Guid sessionId, Guid? playerId = null, CancellationToken ct = default);
+    Task<object?> GetEventDataAsync(
+        Guid sessionId,
+        Guid? playerId = null,
+        bool isAdmin = false,
+        CancellationToken ct = default);
 }
 
 public record AvailableEventDto(
