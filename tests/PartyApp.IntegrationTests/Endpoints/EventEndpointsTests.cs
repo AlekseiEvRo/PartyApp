@@ -72,6 +72,7 @@ public class EventEndpointsTests : IClassFixture<PartyAppFactory>
         TestUser player = await _api.RegisterAsync();
         string config = """
             {
+                "timeLimitSec": 120,
                 "pointsPerCorrect": 10,
                 "questions": [
                     { "text": "Столица?", "options": ["Москва", "Сочи"], "correctIndex": 0 }
@@ -93,7 +94,18 @@ public class EventEndpointsTests : IClassFixture<PartyAppFactory>
             await _api.Client.GetAsync($"/api/events/{sessionId}/data"));
         data.GetProperty("type").GetString().Should().Be("quiz");
         data.GetProperty("displayName").GetString().Should().Be("Тестовый квиз");
-        data.GetProperty("config").GetProperty("pointsPerCorrect").GetInt32().Should().Be(10);
+
+        // Публичный конфиг не отдаёт правильный ответ и конфиг-таймер:
+        // таймер большого экрана берётся только из endsAt сессии
+        JsonElement publicConfig = data.GetProperty("config");
+        publicConfig.GetProperty("pointsPerCorrect").GetInt32().Should().Be(10);
+        publicConfig.TryGetProperty("timeLimitSec", out _).Should().BeFalse();
+        publicConfig.GetProperty("questions")[0].TryGetProperty("correctIndex", out _).Should().BeFalse();
+
+        // Сводка для большого экрана: ответов пока нет
+        data.GetProperty("live").GetProperty("answeredAll").GetInt32().Should().Be(0);
+        data.GetProperty("live").GetProperty("players").GetInt32().Should().Be(0);
+        data.GetProperty("live").GetProperty("totalPlayers").GetInt32().Should().BeGreaterThanOrEqualTo(1);
 
         // Правильный ответ
         HttpResponseMessage submit = await _api.Client.PostAsJsonAsync(
@@ -113,6 +125,19 @@ public class EventEndpointsTests : IClassFixture<PartyAppFactory>
         replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await PartyAppApi.ReadJsonAsync(replay)).GetProperty("error").GetString()
             .Should().Be("Ты уже ответил на этот вопрос");
+
+        // Сводка: игрок учтён один раз, несмотря на повторную попытку,
+        // и ответил на единственный вопрос квиза
+        JsonElement afterReplay = await PartyAppApi.ReadJsonAsync(
+            await _api.Client.GetAsync($"/api/events/{sessionId}/data"));
+        afterReplay.GetProperty("live").GetProperty("players").GetInt32().Should().Be(1);
+        afterReplay.GetProperty("live").GetProperty("answeredAll").GetInt32().Should().Be(1);
+
+        // Карточка игрока восстанавливает подсветку ответа после перезагрузки
+        JsonElement savedAnswer = afterReplay.GetProperty("player")
+            .GetProperty("answers").EnumerateArray().Single();
+        savedAnswer.GetProperty("answerIndex").GetInt32().Should().Be(0);
+        savedAnswer.GetProperty("isCorrect").GetBoolean().Should().BeTrue();
 
         // Сабмит попал в БД с начисленными баллами
         PlayerSubmission[] submissions = await _factory.DbAsync(db => db.PlayerSubmissions

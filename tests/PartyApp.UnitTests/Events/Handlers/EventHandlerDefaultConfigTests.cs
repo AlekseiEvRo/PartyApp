@@ -36,11 +36,14 @@ public class EventHandlerDefaultConfigTests
         QuizHandler handler = new(
             ScopeFactory,
             PointsAward,
+            new RecordingHubContext(),
             NullLogger<QuizHandler>.Instance);
 
         JsonElement config = Parse(handler.DefaultConfigJson);
 
         config.GetProperty("pointsPerCorrect").GetInt32().Should().BePositive();
+        // Ограничитель времени квиза — только «Длительность, мин» (endsAt сессии)
+        config.TryGetProperty("timeLimitSec", out _).Should().BeFalse();
         JsonElement questions = config.GetProperty("questions");
         questions.GetArrayLength().Should().BePositive();
 
@@ -174,7 +177,7 @@ public class EventHandlerDefaultConfigTests
     {
         IEventHandler[] handlers =
         {
-            new QuizHandler(ScopeFactory, PointsAward, NullLogger<QuizHandler>.Instance),
+            new QuizHandler(ScopeFactory, PointsAward, new RecordingHubContext(), NullLogger<QuizHandler>.Instance),
             new WordRushHandler(
                 ScopeFactory,
                 new RussianDictionaryService(TestConfiguration.Empty(), NullLogger<RussianDictionaryService>.Instance),

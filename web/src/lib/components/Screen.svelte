@@ -824,18 +824,12 @@
                 </div>
             {/if}
 
-            {#if eventData?.type === 'quiz' && eventData.config?.questions?.length}
-                <div class="questions">
-                    {#each eventData.config.questions as question}
-                        <article>
-                            <h2>{question.text}</h2>
-                            <div class="options">
-                                {#each question.options as option}
-                                    <span>{option}</span>
-                                {/each}
-                            </div>
-                        </article>
-                    {/each}
+            {#if eventData?.type === 'quiz'}
+                <div class="quiz-counter">
+                    <div class="quiz-counter-value">
+                        {eventData.live?.answeredAll ?? 0} / {eventData.live?.totalPlayers ?? 0}
+                    </div>
+                    <p class="quiz-counter-label">ответили на все вопросы</p>
                 </div>
             {:else if eventData?.type === 'word_rush'}
                 <div class="letters">
@@ -1572,34 +1566,26 @@
 
     .timer.over { color: #e74c3c; font-size: clamp(28px, 4vw, 72px); }
 
-    .questions {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(420px, 90vw), 1fr));
-        gap: 2vh 3vw;
-        width: min(1500px, 92vw);
-        max-height: 60vh;
-        overflow: hidden;
-    }
-
-    .questions article {
-        background: rgba(255, 255, 255, 0.06);
-        border-radius: 16px;
-        padding: 2vh 2vw;
-    }
-
-    .options {
+    /* Квиз: общий счётчик вместо списка вопросов */
+    .quiz-counter {
         display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 0.8vw;
+        flex-direction: column;
+        align-items: center;
+        gap: 1vh;
     }
 
-    .options span {
-        background: rgba(245, 166, 35, 0.15);
-        border: 1px solid rgba(245, 166, 35, 0.4);
-        border-radius: 999px;
-        padding: 0.6vh 1.2vw;
-        font-size: clamp(14px, 1.4vw, 22px);
+    .quiz-counter-value {
+        font-size: clamp(72px, 12vw, 220px);
+        font-weight: bold;
+        color: #f5a623;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+    }
+
+    .quiz-counter-label {
+        margin: 0;
+        color: var(--muted, #aaa);
+        font-size: clamp(18px, 2vw, 36px);
     }
 
     .letters {

@@ -100,6 +100,9 @@ img, svg, video { max-width: 100%; }
 .quiz-q h4 { margin-bottom: 8px; overflow-wrap: anywhere; }
 .quiz-opt { display: block; width: 100%; text-align: left; padding: 10px; margin: 4px 0; background: #0f3460; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 15px; overflow-wrap: anywhere; }
 .quiz-opt:disabled { background: var(--border); color: #777; }
+/* Выбранный ответ: зелёный — правильно, красный — нет */
+.quiz-opt.correct:disabled { background: #27ae60; color: #fff; }
+.quiz-opt.wrong:disabled { background: #c0392b; color: #fff; }
 
 /* Toast notification */
 .toast {

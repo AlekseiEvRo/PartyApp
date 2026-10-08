@@ -14,6 +14,8 @@
     let cooldownLeft = 0;
     let questions: any[] = [];
     let answered = new Set<number>();
+    // Квиз: выбранный вариант и результат — для подсветки (и после перезагрузки)
+    let quizAnswers: Record<number, { answerIndex: number; isCorrect: boolean; correctIndex: number }> = {};
 
     let dataConfig: any = {};
     let playerData: any = null;
@@ -101,6 +103,7 @@
 
             if (event.type === 'quiz') {
                 questions = dataConfig.questions || [];
+                applyQuizPlayer(playerData);
             } else if (event.type === 'reaction') {
                 reacted = playerData?.reacted ?? false;
                 myReactionMs = playerData?.elapsedMs ?? null;
@@ -321,7 +324,37 @@
     async function answerQuiz(qIndex: number, aIndex: number) {
         if (answered.has(qIndex)) return;
         const result = await submit({ questionIndex: qIndex, answerIndex: aIndex });
-        if (result) answered = new Set([...answered, qIndex]);
+        if (result) {
+            const data = result.data ?? {};
+            quizAnswers = {
+                ...quizAnswers,
+                [qIndex]: {
+                    answerIndex: data.answerIndex ?? aIndex,
+                    isCorrect: data.isCorrect === true,
+                    correctIndex: data.correctIndex ?? -1
+                }
+            };
+            answered = new Set([...answered, qIndex]);
+        }
+    }
+
+    /** Восстанавливает ответы квиза из данных игрока (после перезагрузки страницы). */
+    function applyQuizPlayer(player: any) {
+        const answers: any[] = player?.answers ?? [];
+        const restored: typeof quizAnswers = {};
+        const answeredSet = new Set<number>();
+
+        for (const answer of answers) {
+            restored[answer.questionIndex] = {
+                answerIndex: answer.answerIndex,
+                isCorrect: answer.isCorrect === true,
+                correctIndex: answer.correctIndex ?? -1
+            };
+            answeredSet.add(answer.questionIndex);
+        }
+
+        quizAnswers = restored;
+        answered = answeredSet;
     }
 
     function startReactionCountdown() {
@@ -628,6 +661,8 @@
                 {#each q.options as opt, oi}
                     <button
                             class="quiz-opt"
+                            class:correct={quizAnswers[qi]?.answerIndex === oi && quizAnswers[qi]?.isCorrect}
+                            class:wrong={quizAnswers[qi]?.answerIndex === oi && !quizAnswers[qi]?.isCorrect}
                             disabled={answered.has(qi)}
                             on:click={() => answerQuiz(qi, oi)}
                     >
