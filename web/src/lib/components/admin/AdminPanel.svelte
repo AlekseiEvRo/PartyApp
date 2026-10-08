@@ -48,7 +48,7 @@
         { id: 'qr', label: '📷 QR-коды' },
         { id: 'grant', label: '💰 Начисление' },
         { id: 'leaderboard', label: '🏆 Лидерборд' },
-        { id: 'spy', label: '🕵 Шпионаж' },
+        { id: 'spy', label: '🕵 Двойной агент' },
         { id: 'spyfall', label: '🕵 Шпионы' },
         { id: 'polls', label: '🗳 Голосование' },
         { id: 'photos', label: '📸 Фото' },

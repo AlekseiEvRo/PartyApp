@@ -193,24 +193,24 @@ export async function connect(): Promise<void> {
         raffleDrawn.set(data);
     });
 
-    // === Шпионаж ===
+    // === Двойной агент ===
     connection.on('SpyGameRoleAssigned', (data: any) => {
         console.log('SpyGameRoleAssigned received:', data);
         spyGameRole.set(data);
     });
 
     connection.on('SpyGameStarted', (data: any) => {
-        showToast(`🕵 Началась игра «Шпионаж»! Игроков: ${data.playersCount}`, 'info');
+        showToast(`🕵 Началась игра «Двойной агент»! Игроков: ${data.playersCount}`, 'info');
     });
 
     connection.on('SpyGameFinished', (result: any) => {
         spyGameRole.set(null);
         if (result.winner === 'spies') {
-            showToast(`🕵 Шпионы победили! Слово: ${result.secretWord}`, 'info');
+            showToast(`🕵 Двойной агент: шпионы победили! Слово: ${result.secretWord}`, 'info');
         } else if (result.winner === 'town') {
-            showToast(`👤 ${result.townWinnerName} разоблачил шпионов! Слово: ${result.secretWord}`, 'info');
+            showToast(`🕵 Двойной агент: ${result.townWinnerName} разоблачил шпионов! Слово: ${result.secretWord}`, 'info');
         } else {
-            showToast(`Ничья. Слово было: ${result.secretWord}`, 'info');
+            showToast(`🕵 Двойной агент: ничья. Слово было: ${result.secretWord}`, 'info');
         }
     });
 

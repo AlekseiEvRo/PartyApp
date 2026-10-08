@@ -1165,10 +1165,10 @@
     {:else if currentView === 'spy'}
         <main class="spy">
             {#if !spyState || spyState.phase === 'Idle'}
-                <h1>🕵 Шпионаж</h1>
+                <h1>🕵 Двойной агент</h1>
                 <p class="muted">Игра ещё не запущена</p>
             {:else if spyState.phase === 'Playing'}
-                <h1>🕵 Шпионаж</h1>
+                <h1>🕵 Двойной агент</h1>
                 <p class="muted">Обсуждайте, кто из вас шпион!</p>
 
                 <div class="spy-players">
@@ -1414,7 +1414,7 @@
         font-size: clamp(17px, 1.8vw, 30px);
     }
 
-    /* Шпионаж */
+    /* Двойной агент */
     .spy-players {
         display: flex;
         flex-wrap: wrap;

@@ -144,7 +144,7 @@ public class SpyGameService
             await _push.SendToUsersAsync(
                 players.Select(p => p.UserId).ToList(),
                 new PushMessage(
-                    Title: "🕵 Игра «Шпионаж» началась!",
+                    Title: "🕵 Игра «Двойной агент» началась!",
                     Body: "Открой приложение и посмотри свою роль",
                     Url: "/",
                     Tag: "spy-game"),
@@ -263,7 +263,7 @@ public class SpyGameService
         // Начисляем баллы обоим шпионам
         foreach (var spyId in spyIds)
         {
-            await _pointsAward.AwardAsync(spyId, points, $"Шпионаж: победа (слово: {_state.SecretWord})", ct: ct);
+            await _pointsAward.AwardAsync(spyId, points, $"Двойной агент: победа (слово: {_state.SecretWord})", ct: ct);
         }
 
         var result = new SpyGameResult
@@ -290,7 +290,7 @@ public class SpyGameService
         _state.Winner = "town";
 
         var points = 50;
-        await _pointsAward.AwardAsync(winner.UserId, points, $"Шпионаж: разоблачил шпиона (слово: {_state.SecretWord})", ct: ct);
+        await _pointsAward.AwardAsync(winner.UserId, points, $"Двойной агент: разоблачил шпиона (слово: {_state.SecretWord})", ct: ct);
 
         var spyNames = _state.Spies.Select(s => s.DisplayName).ToList();
 

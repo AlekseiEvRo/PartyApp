@@ -38,7 +38,7 @@
 
 {#if $spyGameRole}
     <div class="spy-game">
-        <h3>🕵 Шпионаж</h3>
+        <h3>🕵 Двойной агент</h3>
 
         {#if $spyGameRole.role === 'Spy'}
             <!-- ШПИОН -->

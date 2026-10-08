@@ -204,7 +204,7 @@ public class SpyGameServiceTests : IDisposable
         payload.GetProperty("spyCount").GetInt32().Should().Be(2);
 
         PushCall push = _push.Calls.Should().ContainSingle().Subject;
-        push.Message.Title.Should().Be("🕵 Игра «Шпионаж» началась!");
+        push.Message.Title.Should().Be("🕵 Игра «Двойной агент» началась!");
         push.Message.Tag.Should().Be("spy-game");
         push.UserIds.Should().BeEquivalentTo(players.Select(p => p.Id));
     }
@@ -301,7 +301,7 @@ public class SpyGameServiceTests : IDisposable
             await _award.Received(1).AwardAsync(
                 spy.UserId,
                 50,
-                $"Шпионаж: победа (слово: {state.SecretWord})",
+                $"Двойной агент: победа (слово: {state.SecretWord})",
                 Arg.Any<WalletTransactionType>(),
                 Arg.Any<Guid?>(),
                 Arg.Any<CancellationToken>());
@@ -411,7 +411,7 @@ public class SpyGameServiceTests : IDisposable
         await _award.Received(1).AwardAsync(
             town.UserId,
             50,
-            $"Шпионаж: разоблачил шпиона (слово: {state.SecretWord})",
+            $"Двойной агент: разоблачил шпиона (слово: {state.SecretWord})",
             Arg.Any<WalletTransactionType>(),
             Arg.Any<Guid?>(),
             Arg.Any<CancellationToken>());
