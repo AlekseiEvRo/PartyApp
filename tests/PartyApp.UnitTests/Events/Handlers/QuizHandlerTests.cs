@@ -28,12 +28,13 @@ public class QuizHandlerTests : IDisposable
 
     private readonly SqliteTestHost _host;
     private readonly IPointsAwardService _award = Substitute.For<IPointsAwardService>();
+    private readonly RecordingHubContext _hub = new();
     private readonly QuizHandler _handler;
 
     public QuizHandlerTests()
     {
         _host = new SqliteTestHost();
-        _handler = new QuizHandler(_host.ScopeFactory, _award, NullLogger<QuizHandler>.Instance);
+        _handler = new QuizHandler(_host.ScopeFactory, _award, _hub, NullLogger<QuizHandler>.Instance);
     }
 
     public void Dispose()
@@ -256,4 +257,123 @@ public class QuizHandlerTests : IDisposable
         result.Success.Should().BeFalse();
         result.Message.Should().Be("Неверный индекс вопроса");
     }
+
+    [Fact]
+    public void GetPublicConfig_HidesCorrectIndexAndTimeLimitSec()
+    {
+        EventDefinition definition = TestData.Definition("quiz", """
+            {
+                "timeLimitSec": 120,
+                "pointsPerCorrect": 10,
+                "questions": [
+                    { "text": "Q1", "options": ["a", "b"], "correctIndex": 1 }
+                ]
+            }
+            """);
+
+        JsonElement publicConfig = JsonSerializer.SerializeToElement(_handler.GetPublicConfig(definition));
+
+        // Таймер экрана берётся только из endsAt сессии, а не из конфига
+        publicConfig.TryGetProperty("timeLimitSec", out _).Should().BeFalse();
+        publicConfig.GetProperty("pointsPerCorrect").GetInt32().Should().Be(10);
+
+        JsonElement question = publicConfig.GetProperty("questions").EnumerateArray().Single();
+        question.GetProperty("text").GetString().Should().Be("Q1");
+        question.GetProperty("options").GetArrayLength().Should().Be(2);
+
+        // Правильный ответ не должен утекать игрокам в GET /data
+        question.TryGetProperty("correctIndex", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetLiveDataAsync_CountsAnsweredAllAndTotalPlayers()
+    {
+        User admin = TestData.User("admin", UserRole.Admin);
+        User first = TestData.User("first");
+        User second = TestData.User("second");
+        User idle = TestData.User("idle");
+        User banned = TestData.User("banned");
+        banned.IsActive = false;
+
+        EventDefinition definition = TestData.Definition("quiz", ConfigJson);
+        EventSession session = TestData.Session(definition, admin.Id);
+
+        _host.Db.Users.AddRange(admin, first, second, idle, banned);
+        _host.Db.EventDefinitions.Add(definition);
+        _host.Db.EventSessions.Add(session);
+        _host.Db.PlayerSubmissions.AddRange(
+            // first ответил на оба вопроса (повтор счётчик не удваивает)
+            Submission(session, first, """{"questionIndex":0,"answerIndex":2}"""),
+            Submission(session, first, """{"questionIndex":0,"answerIndex":2}"""),
+            Submission(session, first, """{"questionIndex":1,"answerIndex":0}"""),
+            // second — только на первый
+            Submission(session, second, """{"questionIndex":0,"answerIndex":1}"""),
+            // битый payload не считается
+            Submission(session, idle, "not-json"));
+        await _host.Db.SaveChangesAsync();
+
+        object? live = await _handler.GetLiveDataAsync(session, definition);
+        JsonElement json = JsonSerializer.SerializeToElement(live);
+
+        json.GetProperty("answeredAll").GetInt32().Should().Be(1);
+        json.GetProperty("players").GetInt32().Should().Be(2);
+        // admin и забаненный в общий счётчик не входят
+        json.GetProperty("totalPlayers").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
+    public async Task AfterSubmissionAsync_BroadcastsLiveProgress()
+    {
+        (User player, EventDefinition definition, EventSession session) = await SeedAsync(
+            playerSubmissionPayloads: """{"questionIndex":0,"answerIndex":2}""");
+
+        await _handler.AfterSubmissionAsync(session, definition, player.Id);
+
+        RecordingHubContext.HubCall call = _hub.SingleCall("EventLiveUpdated");
+        call.Target.Should().Be("all");
+
+        JsonElement payload = JsonSerializer.SerializeToElement(call.Payload);
+        payload.GetProperty("sessionId").GetGuid().Should().Be(session.Id);
+
+        JsonElement live = payload.GetProperty("live");
+        live.GetProperty("players").GetInt32().Should().Be(1);
+        // Ответ пока только на один вопрос из двух — «все» ещё не пройдены
+        live.GetProperty("answeredAll").GetInt32().Should().Be(0);
+        live.GetProperty("totalPlayers").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetPlayerDataAsync_ReturnsAnswersWithResults()
+    {
+        (User player, EventDefinition definition, EventSession session) = await SeedAsync(
+            playerSubmissionPayloads: new[]
+            {
+                """{"questionIndex":0,"answerIndex":2}""", // верно: correctIndex = 2
+                """{"questionIndex":1,"answerIndex":1}""", // неверно: correctIndex = 0
+                """{"questionIndex":1,"answerIndex":1}"""  // повторная попытка — не дублируем
+            });
+
+        object? playerData = await _handler.GetPlayerDataAsync(session, definition, player.Id);
+        JsonElement[] answers = JsonSerializer.SerializeToElement(playerData)
+            .GetProperty("answers").EnumerateArray().ToArray();
+
+        answers.Should().HaveCount(2);
+
+        JsonElement first = answers.Single(a => a.GetProperty("questionIndex").GetInt32() == 0);
+        first.GetProperty("answerIndex").GetInt32().Should().Be(2);
+        first.GetProperty("isCorrect").GetBoolean().Should().BeTrue();
+        first.GetProperty("correctIndex").GetInt32().Should().Be(2);
+
+        JsonElement second = answers.Single(a => a.GetProperty("questionIndex").GetInt32() == 1);
+        second.GetProperty("answerIndex").GetInt32().Should().Be(1);
+        second.GetProperty("isCorrect").GetBoolean().Should().BeFalse();
+        second.GetProperty("correctIndex").GetInt32().Should().Be(0);
+    }
+
+    private static PlayerSubmission Submission(EventSession session, User player, string payloadJson) => new()
+    {
+        SessionId = session.Id,
+        PlayerId = player.Id,
+        PayloadJson = payloadJson
+    };
 }

@@ -366,7 +366,6 @@ using (var scope = app.Services.CreateScope())
             Description = "Ответь на вопросы правильно и получи баллы!",
             ConfigJson = """
                          {
-                             "timeLimitSec": 30,
                              "pointsPerCorrect": 10,
                              "questions": [
                                  {
