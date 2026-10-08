@@ -75,6 +75,9 @@ export const raffleDrawn = writable<{
     ticketsCount: number;
 } | null>(null);
 
+// «Шпионы»: прогресс голосования и итог — карточки участников обновляются живьём
+export const spyFallUpdated = writable<{ sessionId: string; live: any } | null>(null);
+
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
     toast.set({ message, type });
     setTimeout(() => toast.set(null), 3000);

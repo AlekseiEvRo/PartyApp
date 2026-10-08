@@ -1,4 +1,6 @@
-﻿using PartyApp.Domain.Entities;
+﻿using System.Text.Json;
+
+using PartyApp.Domain.Entities;
 
 namespace PartyApp.Api.Modules.Events.Handlers;
 
@@ -19,6 +21,40 @@ public interface IEventHandler
     /// Используется админкой как заготовка при создании нового ивента.
     /// </summary>
     string DefaultConfigJson { get; }
+
+    /// <summary>
+    /// Ивент запускается только из своей админ-вкладки (например, «Шпионы»:
+    /// обычный старт создал бы сессию без ролей и участников). По умолчанию false.
+    /// </summary>
+    bool RequiresCustomStart => false;
+
+    /// <summary>
+    /// Конфиг, который можно отдавать игрокам в GET /data. По умолчанию — как есть;
+    /// обработчик может вернуть null или урезанный объект (например, чтобы не
+    /// утекли загаданные слова).
+    /// </summary>
+    object? GetPublicConfig(EventDefinition definition)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<JsonElement>(definition.ConfigJson, EventJsonOptions.Default);
+        }
+        catch (JsonException)
+        {
+            return new { };
+        }
+    }
+
+    /// <summary>
+    /// Может ли игрок видеть ивент в списке доступных и читать его данные.
+    /// По умолчанию — да; игры со скрытым составом (шпионы) переопределяют.
+    /// </summary>
+    Task<bool> IsPlayerAllowedAsync(
+        EventSession session,
+        EventDefinition definition,
+        Guid playerId,
+        CancellationToken ct = default)
+        => Task.FromResult(true);
 
     /// <summary>
     /// Обрабатывает действие игрока в рамках активного ивента.

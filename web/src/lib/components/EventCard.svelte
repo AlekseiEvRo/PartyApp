@@ -1,6 +1,6 @@
 <script lang="ts">
     import { api } from '../api';
-    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, bingoCellRejected, bingoLocked, bingoLineAwarded, raffleDrawn } from '../stores';
+    import { showToast, balance, user, dareConfirmed, bingoCellConfirmed, bingoCellRejected, bingoLocked, bingoLineAwarded, raffleDrawn, spyFallUpdated } from '../stores';
     import { serverNow } from '../time';
     import { RAFFLE_SPIN_MS } from '../raffle';
     import { getPendingQrCode } from '../qr';
@@ -68,7 +68,21 @@
     let raffleBusy = false;
     $: raffleCanBuyMore = raffleJoined && raffleMyTickets.length < raffleMaxTickets;
 
-    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions', 'raffle'];
+    // «Шпионы»: роль, слово, тайный голос и единственная попытка шпиона
+    let spyRole: 'spy' | 'citizen' | null = null;
+    let spyWord = '';
+    let spyCanVoteFor: { userId: string; displayName: string }[] = [];
+    let spyVoteChoice = '';
+    let spyMyVote: string | null = null;
+    let spyVotedCount = 0;
+    let spyCitizensCount = 0;
+    let spyAttemptUsed = false;
+    let spyResult: any = null;
+    let spyGuessInput = '';
+    let spyVoteBusy = false;
+    let spyGuessBusy = false;
+
+    const dataTypes = ['quiz', 'reaction', 'dare', 'bingo', 'emoji_song', 'predictions', 'raffle', 'spyfall'];
 
     onMount(async () => {
         // Если код из QR-ссылки не активировался автоматически (например,
@@ -108,6 +122,8 @@
                 applyRafflePlayer(playerData);
                 raffleWinnerTicket = data.live?.winnerTicket ?? null;
                 rafflePlayers = data.live?.playersCount ?? playerData?.playersCount ?? 0;
+            } else if (event.type === 'spyfall') {
+                applySpyFallState(playerData);
             }
         } catch { /* карточка просто останется без данных */ }
     });
@@ -204,6 +220,45 @@
                 showToast(`🏆 Выиграл билет №${data.winnerTicket}`, 'info');
             }
         }, RAFFLE_SPIN_MS);
+    }
+
+    // «Шпионы»: прогресс голосования и итог приходят живьём;
+    // на финал перечитываем личные данные (там баллы и голоса)
+    let handledSpyFall: any = null;
+
+    $: if (event.type === 'spyfall'
+        && $spyFallUpdated
+        && $spyFallUpdated.sessionId === event.sessionId
+        && handledSpyFall !== $spyFallUpdated) {
+        handledSpyFall = $spyFallUpdated;
+        applySpyFallLive($spyFallUpdated.live);
+    }
+
+    function applySpyFallLive(live: any): void {
+        if (!live) return;
+
+        spyVotedCount = live.votedCount ?? spyVotedCount;
+        spyCitizensCount = live.citizensCount ?? spyCitizensCount;
+
+        if (live.phase === 'finished') void refreshSpyFallState();
+    }
+
+    // Параллельные обновления склеиваем в один запрос
+    let spyFallRefreshInFlight: Promise<void> | null = null;
+
+    function refreshSpyFallState(): Promise<void> {
+        if (spyFallRefreshInFlight) return spyFallRefreshInFlight;
+
+        spyFallRefreshInFlight = (async () => {
+            try {
+                const data = await api<any>(`/api/events/${event.sessionId}/data`);
+                applySpyFallState(data.player ?? null);
+            } catch { /* обновимся при следующем действии */ } finally {
+                spyFallRefreshInFlight = null;
+            }
+        })();
+
+        return spyFallRefreshInFlight;
     }
 
     async function submit(payload: any) {
@@ -483,6 +538,55 @@
         if (typeof data.playersCount === 'number') rafflePlayers = data.playersCount;
     }
 
+    /** Личное состояние в «Шпионах»: роль, слово, голос, попытка и итог. */
+    function applySpyFallState(state: any): void {
+        if (!state || state.participates === false) return;
+
+        spyRole = state.isSpy ? 'spy' : 'citizen';
+        spyWord = state.word ?? '';
+        spyCanVoteFor = state.canVoteFor ?? [];
+        spyMyVote = state.myVote ?? null;
+        spyVoteChoice = state.myVote ?? '';
+        spyVotedCount = state.votedCount ?? 0;
+        spyCitizensCount = state.citizensCount ?? 0;
+        spyAttemptUsed = state.attemptUsed ?? false;
+        spyResult = state.result ?? null;
+    }
+
+    async function submitSpyVote(): Promise<void> {
+        if (!spyVoteChoice || spyVoteBusy || spyResult) return;
+
+        spyVoteBusy = true;
+
+        try {
+            const result = await submit({ vote: spyVoteChoice });
+            if (result?.data?.participates) applySpyFallState(result.data);
+        } finally {
+            spyVoteBusy = false;
+        }
+    }
+
+    async function submitSpyGuess(): Promise<void> {
+        const guess = spyGuessInput.trim();
+        if (!guess || spyGuessBusy || spyResult || spyAttemptUsed) return;
+
+        if (!confirm('Использовать единственную попытку? Если слово неверное — угадывать больше нельзя.')) {
+            return;
+        }
+
+        spyGuessBusy = true;
+
+        try {
+            const result = await submit({ guess });
+            if (result?.data?.participates) {
+                applySpyFallState(result.data);
+                spyGuessInput = '';
+            }
+        } finally {
+            spyGuessBusy = false;
+        }
+    }
+
     function range(count: number): number[] {
         return Array.from({ length: count }, (_, i) => i);
     }
@@ -681,6 +785,81 @@
             {#if rafflePlayers > 0}
                 <p class="event-counter">Уже участвуют: {rafflePlayers}</p>
             {/if}
+        {/if}
+
+    {:else if event.type === 'spyfall'}
+        <p class="desc">
+            Обсуждайте вслух: у шпиона другое слово. Горожане голосуют, а шпион может один раз угадать слово.
+        </p>
+
+        {#if spyRole === null}
+            <p class="desc">Роли ещё не раздали</p>
+        {:else if spyResult}
+            {#if spyResult.winner === 'citizens'}
+                <p class="desc spy-win">👥 Горожане победили!</p>
+            {:else if spyResult.winner === 'spy'}
+                <p class="desc spy-win">🕵 Шпион победил!</p>
+            {:else}
+                <p class="desc">🤝 Игра завершена без результата</p>
+            {/if}
+
+            {#if spyResult.spyName}
+                <p class="spy-word">Шпион — <b>{spyResult.spyName}</b></p>
+            {/if}
+            <p class="spy-word">🧑‍🌾 Слово горожан: <b>{spyResult.citizenWord}</b></p>
+            <p class="spy-word">🕵 Слово шпиона: <b>{spyResult.spyWord}</b></p>
+
+            {#if spyResult.guessWord}
+                <p class="event-counter">
+                    Догадка шпиона: «{spyResult.guessWord}» {spyResult.guessCorrect ? '✅' : '❌'}
+                </p>
+            {/if}
+
+            {#if spyResult.myPoints > 0}
+                <p class="desc">⭐ Ты получил(а) +{spyResult.myPoints} баллов</p>
+            {/if}
+
+            {#if spyResult.votes?.length}
+                <ul class="spy-votes">
+                    {#each spyResult.votes as vote}
+                        <li>{vote.voterName} → {vote.targetName ?? '—'}</li>
+                    {/each}
+                </ul>
+            {/if}
+        {:else}
+            <div class="spy-role" class:spy-role-spy={spyRole === 'spy'}>
+                {spyRole === 'spy' ? '🕵 Ты шпион' : '🧑‍🌾 Ты горожанин'}
+            </div>
+            <p class="spy-word">Твоё слово: <b>{spyWord}</b></p>
+
+            {#if spyRole === 'spy'}
+                {#if spyAttemptUsed}
+                    <p class="desc">Попытка использована — ждём голосования</p>
+                {:else}
+                    <p class="desc">Угадай слово горожан. Попытка одна!</p>
+                    <div class="row">
+                        <input type="text" placeholder="Слово горожан" bind:value={spyGuessInput} />
+                        <button class="btn" on:click={submitSpyGuess} disabled={spyGuessBusy}>🎯 Угадать</button>
+                    </div>
+                {/if}
+            {:else}
+                <div class="row">
+                    <select bind:value={spyVoteChoice} disabled={spyVoteBusy}>
+                        <option value="">Выбери, кто шпион…</option>
+                        {#each spyCanVoteFor as player (player.userId)}
+                            <option value={player.userId}>{player.displayName}</option>
+                        {/each}
+                    </select>
+                    <button class="btn" on:click={submitSpyVote} disabled={spyVoteBusy || !spyVoteChoice}>
+                        🗳 Подтвердить выбор
+                    </button>
+                </div>
+                {#if spyMyVote}
+                    <p class="event-counter">Голос принят — можно поменять, пока не проголосовали все</p>
+                {/if}
+            {/if}
+
+            <p class="event-counter">Проголосовало: {spyVotedCount} из {spyCitizensCount}</p>
         {/if}
 
     {:else}

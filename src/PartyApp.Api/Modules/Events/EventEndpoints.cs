@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using PartyApp.Api.Hubs;
+using PartyApp.Api.Modules.Events.Handlers;
 using PartyApp.Api.Modules.Events.Services;
 using PartyApp.Domain.Entities;
 using PartyApp.Domain.Enums;
@@ -18,9 +19,15 @@ public static class EventsEndpoints
 
         // === Для всех авторизованных игроков ===
 
-        group.MapGet("/available", async (IEventService eventService, CancellationToken ct) =>
+        group.MapGet("/available", async (ClaimsPrincipal user, IEventService eventService, CancellationToken ct) =>
         {
-            var events = await eventService.GetAvailableEventsAsync(ct);
+            // Скрытые ивенты (шпионы) видит только их состав, админ — всё
+            Guid? playerId = Guid.TryParse(user.FindFirst("sub")?.Value, out Guid parsed)
+                ? parsed
+                : null;
+            bool isAdmin = user.IsInRole("Admin") || user.IsInRole("SuperAdmin");
+
+            var events = await eventService.GetAvailableEventsAsync(playerId, isAdmin, ct);
             return Results.Ok(events);
         })
         .RequireAuthorization();
@@ -60,8 +67,9 @@ public static class EventsEndpoints
                 Guid? playerId = Guid.TryParse(user.FindFirst("sub")?.Value, out Guid parsed)
                     ? parsed
                     : null;
+                bool isAdmin = user.IsInRole("Admin") || user.IsInRole("SuperAdmin");
 
-                var data = await eventService.GetEventDataAsync(sessionId, playerId, ct);
+                var data = await eventService.GetEventDataAsync(sessionId, playerId, isAdmin, ct);
                 if (data is null)
                     return Results.NotFound(new { error = "Ивент не найден" });
 
@@ -76,10 +84,16 @@ public static class EventsEndpoints
         {
             var types = handlerFactory.GetEventTypes()
                 .OrderBy(t => t)
-                .Select(t => new
+                .Select(t =>
                 {
-                    type = t,
-                    defaultConfigJson = handlerFactory.GetHandler(t).DefaultConfigJson
+                    IEventHandler handler = handlerFactory.GetHandler(t);
+                    return new
+                    {
+                        type = t,
+                        defaultConfigJson = handler.DefaultConfigJson,
+                        // Такие ивенты стартуют из своей админ-вкладки (например, «Шпионы»)
+                        requiresCustomStart = handler.RequiresCustomStart
+                    };
                 })
                 .ToList();
 

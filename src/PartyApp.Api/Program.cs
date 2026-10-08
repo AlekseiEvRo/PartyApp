@@ -229,6 +229,7 @@ builder.Services.AddHostedService<EventClosingService>();
 builder.Services.AddHostedService<BackupBackgroundService>();
 builder.Services.AddSingleton<BingoService>();
 builder.Services.AddSingleton<RaffleService>();
+builder.Services.AddSingleton<SpyFallService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSignalR();
 
@@ -562,7 +563,27 @@ using (var scope = app.Services.CreateScope())
             CreatedById = null
         });
     }
-    
+
+    // Seed: игра «Шпионы». Пары слов берём из обработчика, чтобы список
+    // по умолчанию не дублировался в двух местах
+    if (!db.EventDefinitions.Any(d => d.Type == "spyfall"))
+    {
+        IEventHandler spyFallHandler = scope.ServiceProvider
+            .GetRequiredService<IEventHandlerFactory>()
+            .GetHandler("spyfall");
+
+        db.EventDefinitions.Add(new PartyApp.Domain.Entities.EventDefinition
+        {
+            Type = "spyfall",
+            DisplayName = "Шпионы",
+            Description = "Один из вас — шпион, и его слово отличается. Обсуждайте, задавайте вопросы и голосуйте: угадавших шпиона ждут баллы!",
+            ConfigJson = spyFallHandler.DefaultConfigJson,
+            Availability = PartyApp.Domain.Enums.AvailabilityMode.Manual,
+            IsActive = true,
+            CreatedById = null
+        });
+    }
+
     db.SaveChanges();
 }
 
@@ -631,6 +652,7 @@ app.MapEventsEndpoints();
 app.MapDareEndpoints();
 app.MapBingoEndpoints();
 app.MapRaffleEndpoints();
+app.MapSpyFallEndpoints();
 app.MapQrEndpoints();
 app.MapAdminEndpoints();
 app.MapBackupEndpoints();

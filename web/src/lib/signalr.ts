@@ -1,4 +1,5 @@
 import * as signalR from '@microsoft/signalr';
+import { get } from 'svelte/store';
 import {
     activeEvents,
     connectionState,
@@ -19,7 +20,9 @@ import {
     raffleDrawn,
     profileUpdated,
     achievementsVersion,
-    pollUpdated
+    pollUpdated,
+    spyFallUpdated,
+    user
 } from './stores';
 import type { Poll } from './polls';
 import { getToken, setToken, isTokenExpired } from './api';
@@ -54,6 +57,14 @@ export async function connect(): Promise<void> {
 
     // === Ивенты ===
     connection.on('EventStarted', (ev) => {
+        // Скрытые игры («Шпионы») приходят с составом участников:
+        // остальным карточку не показываем и не шумим уведомлением
+        const participantIds: string[] | undefined = ev.participantIds;
+        if (Array.isArray(participantIds) && participantIds.length > 0) {
+            const me = get(user)?.userId;
+            if (!me || !participantIds.includes(me)) return;
+        }
+
         activeEvents.update((events) => {
             if (events.some((e) => e.sessionId === ev.sessionId)) return events;
             return [...events, ev];
@@ -69,8 +80,15 @@ export async function connect(): Promise<void> {
     });
 
     connection.on('EventFinished', (data) => {
-        activeEvents.update((events) => events.filter((e) => e.sessionId !== data.sessionId));
-        showToast('🏁 Ивент завершён', 'info');
+        let wasVisible = false;
+
+        activeEvents.update((events) => {
+            wasVisible = events.some((e) => e.sessionId === data.sessionId);
+            return events.filter((e) => e.sessionId !== data.sessionId);
+        });
+
+        // Скрытую игру не анонсируем тем, кто её не видел
+        if (wasVisible) showToast('🏁 Ивент завершён', 'info');
     });
 
     connection.on('ReceiveBroadcast', (message: string) => {
@@ -223,6 +241,12 @@ export async function connect(): Promise<void> {
     // === Голосование за следующий ивент ===
     connection.on('PollUpdated', (poll: Poll) => pollUpdated.set(poll));
     connection.on('PollClosed', (poll: Poll) => pollUpdated.set(poll));
+
+    // === «Шпионы» ===
+    // Прогресс голосования и итог: карточки участников обновляются без перезагрузки
+    connection.on('SpyFallUpdated', (data: { sessionId: string; live: any }) => {
+        spyFallUpdated.set(data);
+    });
 
     // === Сессия ===
     // Админ сменил роль, кикнул или заблокировал — токен больше не действует

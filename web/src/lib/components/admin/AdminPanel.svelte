@@ -5,6 +5,7 @@
     import GrantTab from './GrantTab.svelte';
     import LeaderboardTab from './LeaderboardTab.svelte';
     import SpyGameTab from './SpyGameTab.svelte';
+    import SpyFallTab from './SpyFallTab.svelte';
     import PhotosTab from './PhotosTab.svelte';
     import WishesTab from './WishesTab.svelte';
     import ScreenTab from './ScreenTab.svelte';
@@ -48,6 +49,7 @@
         { id: 'grant', label: '💰 Начисление' },
         { id: 'leaderboard', label: '🏆 Лидерборд' },
         { id: 'spy', label: '🕵 Шпионаж' },
+        { id: 'spyfall', label: '🕵 Шпионы' },
         { id: 'polls', label: '🗳 Голосование' },
         { id: 'photos', label: '📸 Фото' },
         { id: 'wishes', label: '💌 Отзывы' },
@@ -139,6 +141,8 @@
             <LeaderboardTab />
         {:else if activeTab === 'spy'}
             <SpyGameTab />
+        {:else if activeTab === 'spyfall'}
+            <SpyFallTab />
         {:else if activeTab === 'polls'}
             <PollsTab />
         {:else if activeTab === 'photos'}
